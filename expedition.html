@@ -1,0 +1,1379 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#1a1815">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Expédition · Chasse au Trésor Photo</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;0,9..144,900;1,9..144,600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+:root{
+  --parchment:#f4ede0;
+  --parchment-2:#ebe2cf;
+  --parchment-3:#dfd4b8;
+  --ink:#1a1815;
+  --ink-soft:#4a4438;
+  --ink-mute:#8a8068;
+  --gold:#c9a55a;
+  --gold-dark:#a0832f;
+  --oxblood:#8b2e2e;
+  --oxblood-dark:#6e2222;
+  --forest:#2d4a3a;
+  --line:#d8ccb0;
+  --line-strong:#c0b394;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;font-family:'Geist',-apple-system,sans-serif;background:var(--parchment);color:var(--ink);min-height:100vh;min-height:100dvh;overscroll-behavior-y:none;font-size:16px;line-height:1.5}
+body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(circle at 18% 22%,rgba(139,46,46,.045),transparent 45%),radial-gradient(circle at 82% 78%,rgba(45,74,58,.04),transparent 45%),radial-gradient(circle at 50% 50%,transparent 60%,rgba(0,0,0,.04) 100%);pointer-events:none;z-index:0}
+body::after{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .04 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.6}
+
+.display{font-family:'Fraunces',serif;font-variation-settings:"opsz" 144;letter-spacing:-.025em;line-height:1.05;font-weight:800}
+.mono{font-family:'Geist Mono',monospace;font-feature-settings:"ss01","cv11"}
+.italic-d{font-family:'Fraunces',serif;font-style:italic}
+
+#app{position:relative;z-index:1;max-width:520px;margin:0 auto;min-height:100vh;min-height:100dvh;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);display:flex;flex-direction:column}
+
+.screen{flex:1;display:flex;flex-direction:column;padding:24px 20px 24px;animation:fade .35s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:6px 0 22px;border-bottom:1px solid var(--line);margin-bottom:22px}
+.brand{display:flex;align-items:center;gap:10px;font-family:'Fraunces',serif;font-weight:600;font-size:15px;letter-spacing:.04em;text-transform:uppercase}
+.brand-icon{width:28px;height:28px;display:grid;place-items:center;border:1.5px solid var(--ink);border-radius:50%;font-size:14px}
+.chip{font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-soft);padding:5px 9px;border:1px solid var(--line-strong);border-radius:999px;background:rgba(255,255,255,.3)}
+.chip.live{color:var(--oxblood);border-color:var(--oxblood);background:rgba(139,46,46,.06)}
+.chip.live::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--oxblood);margin-right:7px;animation:pulse 1.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.chip.gold{color:var(--gold-dark);border-color:var(--gold-dark);background:rgba(201,165,90,.1)}
+
+h1.title{font-family:'Fraunces',serif;font-weight:800;font-size:44px;line-height:.95;letter-spacing:-.03em;margin:0 0 8px}
+h1.title em{font-style:italic;font-weight:600;color:var(--oxblood)}
+.subtitle{color:var(--ink-soft);font-size:15px;margin-bottom:28px;max-width:34ch}
+h2{font-family:'Fraunces',serif;font-weight:700;font-size:24px;letter-spacing:-.02em;margin:0 0 12px}
+h3{font-family:'Fraunces',serif;font-weight:700;font-size:18px;margin:0 0 8px;letter-spacing:-.01em}
+
+.btn{appearance:none;border:none;background:var(--ink);color:var(--parchment);font-family:'Geist',sans-serif;font-weight:600;font-size:15px;padding:16px 22px;border-radius:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;transition:transform .15s,background .2s;letter-spacing:-.01em}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.gold{background:var(--gold-dark);color:#fff}
+.btn.oxblood{background:var(--oxblood);color:#fff}
+.btn.forest{background:var(--forest);color:#fff}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--ink)}
+.btn.sm{padding:10px 14px;font-size:13px;border-radius:8px;width:auto}
+.btn-row{display:flex;gap:10px}
+.btn-row .btn{flex:1}
+
+.role-grid{display:grid;gap:14px;margin-top:auto;margin-bottom:24px}
+.role-card{border:1.5px solid var(--line-strong);background:rgba(255,255,255,.35);border-radius:16px;padding:22px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:16px;transition:all .2s;font-family:inherit;color:inherit;width:100%}
+.role-card:active{transform:scale(.99);background:rgba(255,255,255,.55)}
+.role-card .glyph{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-family:'Fraunces',serif;font-size:24px;font-weight:700;flex-shrink:0}
+.role-card.admin .glyph{background:var(--ink);color:var(--gold)}
+.role-card.team .glyph{background:var(--oxblood);color:var(--parchment)}
+.role-card .label{font-family:'Fraunces',serif;font-weight:700;font-size:20px;line-height:1.1;margin-bottom:3px}
+.role-card .desc{font-size:13px;color:var(--ink-soft);line-height:1.4}
+.role-card .arrow{margin-left:auto;font-size:20px;color:var(--ink-mute)}
+
+.field{margin-bottom:16px}
+.field label{display:block;font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-soft);margin-bottom:6px}
+.input,textarea.input{width:100%;background:rgba(255,255,255,.45);border:1.5px solid var(--line-strong);border-radius:10px;padding:13px 14px;font-family:'Geist',sans-serif;font-size:15px;color:var(--ink);outline:none;transition:border-color .15s}
+.input:focus{border-color:var(--ink)}
+textarea.input{resize:vertical;min-height:80px;font-family:inherit}
+.input.code{font-family:'Geist Mono',monospace;font-size:22px;text-align:center;letter-spacing:.3em;text-transform:uppercase;font-weight:600}
+
+.card{background:rgba(255,255,255,.4);border:1.5px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+.card.dark{background:var(--ink);color:var(--parchment);border-color:var(--ink)}
+.card.dark h3{color:var(--parchment)}
+
+.code-display{background:var(--ink);color:var(--gold);padding:24px;border-radius:14px;text-align:center;margin:18px 0}
+.code-display .label{font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.2em;opacity:.7;margin-bottom:8px}
+.code-display .code{font-family:'Geist Mono',monospace;font-size:42px;font-weight:600;letter-spacing:.25em}
+
+.clue-list{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
+.clue-item{display:flex;align-items:flex-start;gap:12px;padding:14px;background:rgba(255,255,255,.4);border:1.5px solid var(--line);border-radius:12px;cursor:pointer;transition:all .15s;text-align:left;font-family:inherit;color:inherit;width:100%;border-style:solid}
+.clue-item:active{transform:scale(.99)}
+.clue-item .num{width:32px;height:32px;flex-shrink:0;border-radius:50%;background:var(--ink);color:var(--gold);display:grid;place-items:center;font-family:'Fraunces',serif;font-weight:700;font-size:16px}
+.clue-item.done .num{background:var(--forest);color:#fff}
+.clue-item.pending .num{background:var(--gold-dark);color:#fff}
+.clue-item .body{flex:1;min-width:0}
+.clue-item .title-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:2px}
+.clue-item .name{font-weight:600;font-size:15px}
+.clue-item .pts{font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink-mute)}
+.clue-item .preview{font-size:13px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+
+.timer{font-family:'Geist Mono',monospace;font-weight:600;font-size:13px;padding:6px 10px;background:var(--ink);color:var(--parchment);border-radius:6px;display:inline-flex;align-items:center;gap:6px}
+.timer.warn{background:var(--oxblood)}
+.timer.alert{background:var(--oxblood);animation:pulse 1s infinite}
+
+.map-wrap{position:relative;border-radius:12px;overflow:hidden;border:1.5px solid var(--line-strong);margin-bottom:14px}
+#map,.minimap{height:280px;width:100%;background:#e8dcc4}
+.minimap{height:140px}
+.map-hint{position:absolute;top:10px;left:10px;background:rgba(26,24,21,.92);color:var(--parchment);font-size:12px;padding:7px 10px;border-radius:6px;font-family:'Geist Mono',monospace;pointer-events:none}
+
+.photo-preview{width:100%;aspect-ratio:4/3;background:var(--parchment-3);border:1.5px dashed var(--line-strong);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;cursor:pointer;overflow:hidden;margin-bottom:14px;color:var(--ink-soft);font-size:14px;position:relative}
+.photo-preview img{width:100%;height:100%;object-fit:cover}
+.photo-preview .icon{font-family:'Fraunces',serif;font-size:32px}
+.photo-preview .retake{position:absolute;bottom:10px;right:10px;background:rgba(26,24,21,.92);color:var(--parchment);font-size:12px;padding:6px 10px;border-radius:6px;font-family:'Geist Mono',monospace}
+
+.divider{height:1px;background:var(--line);margin:20px 0}
+.divider.thick{height:2px;background:var(--line-strong)}
+.divider-stars{display:flex;align-items:center;gap:10px;color:var(--ink-mute);font-family:'Fraunces',serif;font-size:12px;letter-spacing:.3em;margin:24px 0;text-transform:uppercase}
+.divider-stars::before,.divider-stars::after{content:'';flex:1;height:1px;background:var(--line-strong)}
+
+.scoreboard{margin:18px 0}
+.scoreboard .row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(255,255,255,.4);border:1.5px solid var(--line);border-radius:10px;margin-bottom:8px}
+.scoreboard .row.first{background:var(--ink);color:var(--gold);border-color:var(--ink)}
+.scoreboard .row.first .pts{color:var(--gold)}
+.scoreboard .rank{font-family:'Fraunces',serif;font-weight:800;font-size:20px;width:28px;text-align:center}
+.scoreboard .name{flex:1;font-weight:600}
+.scoreboard .pts{font-family:'Geist Mono',monospace;font-weight:600;font-size:18px}
+
+.submission-card{background:rgba(255,255,255,.45);border:1.5px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:14px}
+.submission-card .photo{width:100%;aspect-ratio:4/3;background:#000;display:block}
+.submission-card .photo img{width:100%;height:100%;object-fit:cover;cursor:pointer}
+.submission-card .meta{padding:14px}
+.submission-card .meta .row1{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;gap:8px;flex-wrap:wrap}
+.submission-card .team{font-family:'Fraunces',serif;font-weight:700;font-size:17px}
+.submission-card .clue-ref{font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.1em}
+.submission-card .stats{display:flex;gap:14px;font-family:'Geist Mono',monospace;font-size:12px;color:var(--ink-soft);margin-bottom:12px}
+.submission-card .stats span{display:inline-flex;align-items:center;gap:4px}
+.submission-card .actions{display:flex;gap:8px;flex-wrap:wrap}
+.submission-card .bonus-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.submission-card .bonus-row label{font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft)}
+.bonus-input{width:70px;background:rgba(255,255,255,.6);border:1.5px solid var(--line-strong);border-radius:8px;padding:7px 10px;font-family:'Geist Mono',monospace;font-size:14px;text-align:center}
+
+.status-badge{font-family:'Geist Mono',monospace;font-size:10px;padding:3px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.1em;font-weight:500}
+.status-badge.pending{background:var(--gold);color:var(--ink)}
+.status-badge.approved{background:var(--forest);color:#fff}
+.status-badge.rejected{background:var(--oxblood);color:#fff}
+
+.tabs{display:flex;gap:4px;background:var(--parchment-2);padding:4px;border-radius:10px;margin-bottom:18px}
+.tabs button{flex:1;border:none;background:transparent;padding:10px;font-family:'Geist',sans-serif;font-size:13px;font-weight:600;color:var(--ink-soft);border-radius:7px;cursor:pointer;transition:all .15s}
+.tabs button.active{background:var(--ink);color:var(--parchment)}
+
+.empty{text-align:center;padding:36px 20px;color:var(--ink-mute);font-family:'Fraunces',serif;font-style:italic}
+
+.gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px}
+.gallery .item{aspect-ratio:1;background:#000;border-radius:8px;overflow:hidden;cursor:pointer;position:relative}
+.gallery .item img{width:100%;height:100%;object-fit:cover}
+.gallery .item .label{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.8));color:#fff;padding:8px 8px 6px;font-size:11px;font-family:'Geist Mono',monospace}
+.gallery .item .bonus-mark{position:absolute;top:6px;right:6px;background:var(--gold);color:var(--ink);font-family:'Geist Mono',monospace;font-size:10px;font-weight:600;padding:3px 6px;border-radius:4px}
+
+.modal{position:fixed;inset:0;background:rgba(26,24,21,.95);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.modal.open{display:flex;animation:fade .2s}
+.modal .modal-inner{max-width:100%;max-height:100%;text-align:center}
+.modal img{max-width:100%;max-height:80vh;border-radius:8px}
+.modal .close{position:absolute;top:env(safe-area-inset-top,16px);right:16px;background:rgba(244,237,224,.15);color:#fff;border:none;width:40px;height:40px;border-radius:50%;font-size:22px;cursor:pointer}
+.modal .info{color:var(--parchment);margin-top:12px;font-family:'Geist Mono',monospace;font-size:12px}
+
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--parchment);padding:12px 18px;border-radius:10px;font-size:14px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:toastIn .3s ease;max-width:90%}
+.toast.success{background:var(--forest)}
+.toast.error{background:var(--oxblood)}
+@keyframes toastIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
+
+.spinner{width:18px;height:18px;border:2px solid rgba(244,237,224,.3);border-top-color:var(--parchment);border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.sticky-bottom{position:sticky;bottom:0;background:linear-gradient(transparent,var(--parchment) 30%);padding:16px 0 0;margin-top:auto}
+
+.help-text{font-size:12px;color:var(--ink-mute);margin-top:6px;line-height:1.4}
+.muted{color:var(--ink-mute)}
+.flex-row{display:flex;gap:10px;align-items:center}
+.flex-between{display:flex;justify-content:space-between;align-items:center;gap:10px}
+
+.leaflet-container{font-family:inherit}
+.leaflet-control-attribution{font-size:9px!important}
+
+/* Custom Leaflet marker */
+.team-marker{background:var(--oxblood);width:22px;height:22px;border-radius:50%;border:3px solid var(--parchment);box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.target-marker{background:var(--forest);width:22px;height:22px;border-radius:50%;border:3px solid var(--parchment);box-shadow:0 2px 6px rgba(0,0,0,.3)}
+
+.hidden-input{position:absolute;left:-9999px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal" class="modal"><button class="close" onclick="closeModal()">×</button><div class="modal-inner"></div></div>
+
+<script>
+// ============ STATE & STORAGE ============
+const STATE = { me:null, game:null, submissions:[], teams:[], realtimeChannel:null, pollTimer:null, currentClueId:null, perClueStartTime:{}, mapInstance:null, capturedPhoto:null, draftClues:null, adminTab:null, tempLoc:null };
+
+const $ = (sel,p=document)=>p.querySelector(sel);
+const $$ = (sel,p=document)=>Array.from(p.querySelectorAll(sel));
+const app = ()=>$('#app');
+
+function toast(msg, kind='', dur=2400){
+  document.querySelectorAll('.toast').forEach(t=>t.remove());
+  const t=document.createElement('div'); t.className='toast '+kind; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(), dur);
+}
+
+// ────── Supabase client ──────
+let sb = null;
+
+function loadConfig(){
+  const url = localStorage.getItem('sb_url');
+  const key = localStorage.getItem('sb_key');
+  if(url && key && window.supabase){
+    sb = window.supabase.createClient(url, key, {
+      realtime: { params: { eventsPerSecond: 10 } }
+    });
+    return true;
+  }
+  return false;
+}
+function saveConfig(url, key){
+  localStorage.setItem('sb_url', url);
+  localStorage.setItem('sb_key', key);
+  return loadConfig();
+}
+function clearConfig(){
+  localStorage.removeItem('sb_url');
+  localStorage.removeItem('sb_key');
+  sb = null;
+}
+
+// ────── "me" : identité de session, locale par appareil ──────
+async function loadMe(){
+  try{ STATE.me = JSON.parse(localStorage.getItem('me')||'null'); }catch(e){ STATE.me=null; }
+  return STATE.me;
+}
+async function saveMe(){
+  if(STATE.me) localStorage.setItem('me', JSON.stringify(STATE.me));
+  else localStorage.removeItem('me');
+}
+async function clearMe(){ STATE.me=null; localStorage.removeItem('me'); }
+
+// ────── Mapping DB ↔ objets ──────
+function rowToGame(row, teamsRows){
+  if(!row) return null;
+  return {
+    code: row.code,
+    name: row.name,
+    status: row.status,
+    durationMinutes: row.duration_minutes,
+    perClueMinutes: row.per_clue_minutes,
+    clues: row.clues || [],
+    teams: (teamsRows||[]).map(t=>({id:t.id, name:t.name, joinedAt:new Date(t.joined_at).getTime()})),
+    createdAt: new Date(row.created_at).getTime(),
+    startedAt: row.started_at ? new Date(row.started_at).getTime() : null,
+    endedAt: row.ended_at ? new Date(row.ended_at).getTime() : null,
+    adminId: row.admin_id
+  };
+}
+function rowToSub(row){
+  return {
+    id: row.id,
+    gameCode: row.game_code,
+    teamId: row.team_id,
+    clueId: row.clue_id,
+    photoDataUrl: row.photo_url,
+    photoUrl: row.photo_url,
+    lat: row.lat,
+    lng: row.lng,
+    status: row.status,
+    points: row.points,
+    bonusPoints: row.bonus_points,
+    submittedAt: new Date(row.submitted_at).getTime()
+  };
+}
+
+// ────── Lecture / écriture ──────
+async function loadGame(code){
+  if(!code || !sb) return null;
+  const [{data:g, error:e1}, {data:teams, error:e2}] = await Promise.all([
+    sb.from('games').select('*').eq('code', code).maybeSingle(),
+    sb.from('teams').select('*').eq('game_code', code).order('joined_at')
+  ]);
+  if(e1){ toast('Lecture jeu: '+e1.message,'error',4500); return null; }
+  if(!g) return null;
+  return rowToGame(g, teams||[]);
+}
+
+async function saveGame(game){
+  if(!sb) return;
+  const { error } = await sb.from('games').upsert({
+    code: game.code,
+    name: game.name,
+    status: game.status,
+    duration_minutes: game.durationMinutes,
+    per_clue_minutes: game.perClueMinutes,
+    clues: game.clues,
+    admin_id: game.adminId,
+    started_at: game.startedAt ? new Date(game.startedAt).toISOString() : null,
+    ended_at: game.endedAt ? new Date(game.endedAt).toISOString() : null
+  });
+  if(error){ toast('Sauvegarde jeu: '+error.message,'error',4500); return; }
+  STATE.game = game;
+}
+
+async function deleteGame(code){
+  if(!sb) return;
+  await sb.from('games').delete().eq('code', code);
+}
+
+async function loadSubmissions(code){
+  if(!code || !sb) return [];
+  const { data, error } = await sb.from('submissions').select('*').eq('game_code', code).order('submitted_at', { ascending:false });
+  if(error){ toast('Lecture preuves: '+error.message,'error',4500); return []; }
+  return (data||[]).map(rowToSub);
+}
+
+async function saveSubmission(sub){
+  if(!sb) return;
+  // Upload photo si dataURL
+  let photoUrl = sub.photoUrl;
+  if(sub.photoDataUrl && sub.photoDataUrl.startsWith('data:')){
+    photoUrl = await uploadPhoto(sub.photoDataUrl, sub.gameCode, sub.id);
+    if(!photoUrl) return;
+    sub.photoUrl = photoUrl;
+    sub.photoDataUrl = photoUrl;
+  }
+  const { error } = await sb.from('submissions').upsert({
+    id: sub.id,
+    game_code: sub.gameCode,
+    team_id: sub.teamId,
+    clue_id: sub.clueId,
+    photo_url: photoUrl,
+    lat: sub.lat,
+    lng: sub.lng,
+    status: sub.status,
+    points: sub.points||0,
+    bonus_points: sub.bonusPoints||0,
+    judged_at: sub.status!=='pending' ? new Date().toISOString() : null
+  });
+  if(error){ toast('Sauvegarde preuve: '+error.message,'error',4500); }
+}
+
+async function uploadPhoto(dataUrl, gameCode, subId){
+  try{
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const path = `${gameCode}/${subId}.jpg`;
+    const { error } = await sb.storage.from('photos').upload(path, blob, {
+      contentType:'image/jpeg', upsert:true
+    });
+    if(error){ toast('Upload photo: '+error.message,'error',4500); return null; }
+    const { data } = sb.storage.from('photos').getPublicUrl(path);
+    return data.publicUrl;
+  }catch(e){
+    toast('Upload photo: '+e.message,'error',4500);
+    return null;
+  }
+}
+
+async function addTeam(code, teamName){
+  const id = uid();
+  const { error } = await sb.from('teams').insert({ id, game_code:code, name:teamName });
+  if(error){ toast('Ajout équipe: '+error.message,'error',4500); return null; }
+  return id;
+}
+async function removeTeam(teamId){
+  if(!sb) return;
+  await sb.from('teams').delete().eq('id', teamId);
+}
+
+// ============ UTILS ============
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function genCode(){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:4},()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+function fmtTime(secs){
+  if(secs<=0) return '00:00';
+  const m=Math.floor(secs/60), s=Math.floor(secs%60);
+  return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function distMeters(a,b){
+  const R=6371000, toR=d=>d*Math.PI/180;
+  const dLat=toR(b.lat-a.lat), dLng=toR(b.lng-a.lng);
+  const x = Math.sin(dLat/2)**2 + Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(x));
+}
+
+// Compress image: canvas resize to max 1000px, JPEG 0.7
+async function compressImage(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const max=1000;
+        let w=img.width, h=img.height;
+        if(w>max||h>max){
+          if(w>h){ h=Math.round(h*max/w); w=max; } else { w=Math.round(w*max/h); h=max; }
+        }
+        const canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        const ctx=canvas.getContext('2d');
+        ctx.drawImage(img,0,0,w,h);
+        let q = 0.72;
+        let url = canvas.toDataURL('image/jpeg', q);
+        // Re-compress if still too large
+        while(url.length > 1_400_000 && q > 0.35){
+          q -= 0.1;
+          url = canvas.toDataURL('image/jpeg', q);
+        }
+        resolve(url);
+      };
+      img.onerror=reject;
+      img.src=e.target.result;
+    };
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ============ REALTIME ============
+function startRealtime(){
+  stopRealtime();
+  if(!STATE.me?.gameCode || !sb) return;
+  const code = STATE.me.gameCode;
+  STATE.realtimeChannel = sb.channel('expedition:'+code)
+    .on('postgres_changes', { event:'*', schema:'public', table:'games', filter:`code=eq.${code}` }, ()=>refreshState())
+    .on('postgres_changes', { event:'*', schema:'public', table:'teams', filter:`game_code=eq.${code}` }, ()=>refreshState())
+    .on('postgres_changes', { event:'*', schema:'public', table:'submissions', filter:`game_code=eq.${code}` }, ()=>refreshState())
+    .subscribe();
+  // Filet de sécurité : poll lent au cas où le ws lâche
+  if(STATE.pollTimer) clearInterval(STATE.pollTimer);
+  STATE.pollTimer = setInterval(refreshState, 15000);
+}
+function stopRealtime(){
+  if(STATE.realtimeChannel){ sb?.removeChannel(STATE.realtimeChannel); STATE.realtimeChannel=null; }
+  if(STATE.pollTimer){ clearInterval(STATE.pollTimer); STATE.pollTimer=null; }
+}
+async function refreshState(){
+  if(!STATE.me?.gameCode) return;
+  const g = await loadGame(STATE.me.gameCode);
+  const subs = await loadSubmissions(STATE.me.gameCode);
+  const gameChanged = JSON.stringify(g)!==JSON.stringify(STATE.game);
+  const subsChanged = JSON.stringify(subs.map(s=>s.id+s.status+s.points+s.bonusPoints))!==JSON.stringify(STATE.submissions.map(s=>s.id+s.status+s.points+s.bonusPoints));
+  if(gameChanged || subsChanged){
+    STATE.game=g; STATE.submissions=subs;
+    const cur = $('[data-screen]')?.dataset.screen;
+    if(['admin-lobby','admin-live','admin-end','team-lobby','team-active','team-end','team-submitted'].includes(cur)){
+      render();
+    }
+  }
+}
+
+// ============ ROUTING ============
+async function render(){
+  // Vérifie config Supabase d'abord
+  if(!sb){
+    if(!loadConfig()) return screenSetup();
+  }
+  await loadMe();
+  if(STATE.me?.gameCode){
+    STATE.game = await loadGame(STATE.me.gameCode);
+    STATE.submissions = await loadSubmissions(STATE.me.gameCode);
+    if(!STATE.game){
+      await clearMe();
+    }
+  }
+  // Update game status based on time
+  if(STATE.game?.status==='active' && STATE.game.startedAt){
+    const elapsed = (Date.now() - STATE.game.startedAt)/1000;
+    if(elapsed >= STATE.game.durationMinutes*60){
+      STATE.game.status='ended';
+      STATE.game.endedAt = STATE.game.startedAt + STATE.game.durationMinutes*60*1000;
+      if(STATE.me?.role==='admin') await saveGame(STATE.game);
+    }
+  }
+
+  // Pick screen
+  if(!STATE.me) return screenRoleSelect();
+  if(STATE.me.role==='admin'){
+    if(!STATE.game) return screenAdminSetup();
+    if(STATE.game.status==='setup') return screenAdminLobby();
+    if(STATE.game.status==='active') return screenAdminLive();
+    return screenAdminEnd();
+  }
+  if(STATE.me.role==='team'){
+    if(!STATE.game) return screenTeamJoin();
+    if(STATE.game.status==='setup') return screenTeamLobby();
+    if(STATE.game.status==='active'){
+      if(STATE.currentClueId) return screenTeamCapture();
+      return screenTeamActive();
+    }
+    return screenTeamEnd();
+  }
+}
+
+// ============ SCREENS ============
+
+function screenSetup(){
+  const url = localStorage.getItem('sb_url') || '';
+  const key = localStorage.getItem('sb_key') || '';
+  app().innerHTML = `
+    <div class="screen" data-screen="setup">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>Expédition</div>
+        <span class="chip">Configuration</span>
+      </div>
+      <h1 class="title">Connecter à<br><em>Supabase</em></h1>
+      <p class="subtitle">L'app a besoin de votre projet Supabase pour synchroniser les téléphones. Ces infos restent dans votre navigateur, partagées avec personne.</p>
+
+      <div class="field">
+        <label>Project URL</label>
+        <input id="sb-url" class="input" value="${escapeHtml(url)}" placeholder="https://xxxxxxxxxxxx.supabase.co" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <p class="help-text">Supabase → Settings → API → Project URL</p>
+      </div>
+      <div class="field">
+        <label>Anon (public) key</label>
+        <textarea id="sb-key" class="input" placeholder="eyJhbGciOi..." autocomplete="off" autocapitalize="off" spellcheck="false" style="font-family:'Geist Mono',monospace;font-size:11px;min-height:90px">${escapeHtml(key)}</textarea>
+        <p class="help-text">Supabase → Settings → API → anon public</p>
+      </div>
+
+      <div class="card" style="margin-top:18px">
+        <h3 style="margin-bottom:6px">Pas encore configuré ?</h3>
+        <p class="help-text" style="margin:0 0 8px">
+          1. Créez un projet sur <strong>supabase.com</strong> (gratuit)<br>
+          2. SQL Editor → collez le contenu de <strong>supabase-setup.sql</strong> → Run<br>
+          3. Settings → API → copiez URL + anon key ci-dessus
+        </p>
+      </div>
+
+      <div class="sticky-bottom">
+        <button class="btn gold" onclick="saveSetup()">Connecter →</button>
+      </div>
+    </div>`;
+}
+
+async function saveSetup(){
+  const url = $('#sb-url').value.trim();
+  const key = $('#sb-key').value.trim();
+  if(!url.startsWith('https://') || !url.includes('.supabase.')){ toast('URL invalide','error'); return; }
+  if(key.length < 100){ toast('Clé anon invalide','error'); return; }
+  if(!saveConfig(url, key)){ toast('Connexion Supabase impossible','error'); return; }
+  // Test ping
+  try{
+    const { error } = await sb.from('games').select('code').limit(1);
+    if(error){ toast('Échec test : '+error.message,'error',5000); return; }
+    toast('Connecté à Supabase','success');
+    render();
+  }catch(e){
+    toast('Échec : '+e.message,'error',5000);
+  }
+}
+
+function screenRoleSelect(){
+  app().innerHTML = `
+    <div class="screen" data-screen="role-select">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>Expédition</div>
+        <span class="chip">Prototype</span>
+      </div>
+      <h1 class="title">La chasse <em>commence</em><br>par un choix.</h1>
+      <p class="subtitle">Une chasse au trésor photo où les équipes courent, capturent et marquent. L'admin orchestre, juge, récompense.</p>
+      
+      <div class="role-grid">
+        <button class="role-card admin" onclick="pickRole('admin')">
+          <div class="glyph">A</div>
+          <div>
+            <div class="label">Maître du jeu</div>
+            <div class="desc">Créer une chasse, ajouter les indices, juger les photos, distribuer les points.</div>
+          </div>
+          <div class="arrow">→</div>
+        </button>
+        <button class="role-card team" onclick="pickRole('team')">
+          <div class="glyph">É</div>
+          <div>
+            <div class="label">Équipe</div>
+            <div class="desc">Rejoindre une chasse avec un code, résoudre les indices, prouver chaque trouvaille en photo.</div>
+          </div>
+          <div class="arrow">→</div>
+        </button>
+      </div>
+      
+      <div class="divider-stars">✦ ouvrez l'œil ✦</div>
+      <p class="help-text" style="text-align:center">Synchro temps réel via Supabase. Partagez l'URL hébergée + le code à 4 lettres à tous les téléphones.</p>
+      <p class="help-text" style="text-align:center;margin-top:10px;font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase">
+        <a href="#" onclick="event.preventDefault();if(confirm('Changer la config Supabase ?')){clearConfig();stopRealtime();render();}" style="color:var(--ink-mute)">⚙ Changer la config Supabase</a>
+      </p>
+    </div>`;
+}
+
+async function pickRole(role){
+  STATE.me = { role, id: uid() };
+  await saveMe();
+  render();
+}
+
+// ---------- ADMIN ----------
+function screenAdminSetup(){
+  app().innerHTML = `
+    <div class="screen" data-screen="admin-setup">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>Expédition</div>
+        <button class="chip" onclick="logout()">Quitter</button>
+      </div>
+      <h1 class="title">Préparer la <em>chasse</em></h1>
+      <p class="subtitle">Définissez les paramètres, ajoutez les indices puis ouvrez le lobby aux équipes.</p>
+      
+      <div class="field">
+        <label>Nom de la chasse</label>
+        <input id="g-name" class="input" placeholder="ex. Mystère sur la Loire" value="Mystère sur la Loire">
+      </div>
+      <div class="flex-row">
+        <div class="field" style="flex:1">
+          <label>Durée totale (min)</label>
+          <input id="g-duration" class="input" type="number" min="5" value="90">
+        </div>
+        <div class="field" style="flex:1">
+          <label>Limite par indice (min)</label>
+          <input id="g-perclue" class="input" type="number" min="1" value="15">
+        </div>
+      </div>
+      
+      <div class="divider-stars">✦ Indices ✦</div>
+      <div id="clue-list-edit" class="clue-list"></div>
+      <button class="btn ghost" onclick="addClue()">+ Ajouter un indice</button>
+      
+      <div class="sticky-bottom">
+        <button class="btn gold" onclick="createGame()">Créer la chasse →</button>
+      </div>
+    </div>`;
+  
+  // Init in-memory clues if not set
+  if(!STATE.draftClues) STATE.draftClues = [];
+  if(STATE.draftClues.length===0){
+    STATE.draftClues = [
+      { id:uid(), title:'Le clocher oublié', text:'Là où le temps sonne mais ne marque plus l\'heure depuis la guerre.', lat:47.2184, lng:-1.5536, points:100 }
+    ];
+  }
+  renderClueListEdit();
+}
+
+function renderClueListEdit(){
+  const list = $('#clue-list-edit'); if(!list) return;
+  if(STATE.draftClues.length===0){
+    list.innerHTML = '<div class="empty">Aucun indice. Ajoutez-en au moins un.</div>';
+    return;
+  }
+  list.innerHTML = STATE.draftClues.map((c,i)=>`
+    <div class="card">
+      <div class="flex-between" style="margin-bottom:8px">
+        <strong>Indice ${i+1}</strong>
+        <button class="btn sm ghost" onclick="removeClue('${c.id}')" style="border-color:var(--oxblood);color:var(--oxblood)">Suppr.</button>
+      </div>
+      <div class="field"><label>Titre du lieu</label>
+        <input class="input" value="${escapeHtml(c.title)}" onchange="updateClue('${c.id}','title',this.value)" placeholder="Le pont rouge"></div>
+      <div class="field"><label>Indice énigmatique</label>
+        <textarea class="input" onchange="updateClue('${c.id}','text',this.value)" placeholder="Là où les amoureux gravent leurs initiales...">${escapeHtml(c.text)}</textarea></div>
+      <div class="flex-row">
+        <div class="field" style="flex:1"><label>Points</label>
+          <input class="input" type="number" value="${c.points}" onchange="updateClue('${c.id}','points',parseInt(this.value)||0)"></div>
+        <div class="field" style="flex:2"><label>Coordonnées GPS cible</label>
+          <input class="input mono" value="${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}" readonly style="font-size:13px"></div>
+      </div>
+      <button class="btn sm ghost" onclick="pickClueLocation('${c.id}')" style="width:100%">📍 Définir l'emplacement sur la carte</button>
+    </div>
+  `).join('');
+}
+
+function addClue(){
+  STATE.draftClues.push({ id:uid(), title:'', text:'', lat:47.2184, lng:-1.5536, points:100 });
+  renderClueListEdit();
+}
+function removeClue(id){
+  STATE.draftClues = STATE.draftClues.filter(c=>c.id!==id);
+  renderClueListEdit();
+}
+function updateClue(id,field,val){
+  const c = STATE.draftClues.find(c=>c.id===id);
+  if(c){ c[field]=val; }
+}
+
+function pickClueLocation(clueId){
+  const c = STATE.draftClues.find(c=>c.id===clueId);
+  app().innerHTML = `
+    <div class="screen" data-screen="admin-pick-loc">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>Emplacement</div>
+        <button class="chip" onclick="screenAdminSetup()">Retour</button>
+      </div>
+      <h2>Position de "${escapeHtml(c.title||'Indice')}"</h2>
+      <p class="subtitle">Tapez sur la carte pour placer la cible exacte.</p>
+      <div class="map-wrap">
+        <div id="map"></div>
+        <div class="map-hint">Tapez sur la carte</div>
+      </div>
+      <div class="card mono" style="text-align:center;font-size:14px" id="coord-display">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</div>
+      <div class="sticky-bottom">
+        <button class="btn gold" onclick="confirmClueLocation('${clueId}')">Confirmer l'emplacement</button>
+      </div>
+    </div>`;
+  setTimeout(()=>{
+    const map = L.map('map').setView([c.lat,c.lng], 14);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap', maxZoom:19}).addTo(map);
+    let marker = L.marker([c.lat,c.lng], {icon: L.divIcon({className:'target-marker', iconSize:[22,22], iconAnchor:[11,11]})}).addTo(map);
+    STATE.tempLoc = {lat:c.lat,lng:c.lng};
+    map.on('click', e=>{
+      STATE.tempLoc = {lat:e.latlng.lat, lng:e.latlng.lng};
+      marker.setLatLng(e.latlng);
+      $('#coord-display').textContent = e.latlng.lat.toFixed(5)+', '+e.latlng.lng.toFixed(5);
+    });
+    STATE.mapInstance=map;
+    // Try to use geolocation to center initial view
+    if(navigator.geolocation){
+      navigator.geolocation.getCurrentPosition(pos=>{
+        if(!STATE.tempLocSet){ map.setView([pos.coords.latitude,pos.coords.longitude], 14); }
+      }, ()=>{}, {timeout:3000});
+    }
+  },50);
+}
+
+function confirmClueLocation(clueId){
+  const c = STATE.draftClues.find(c=>c.id===clueId);
+  if(STATE.tempLoc){ c.lat=STATE.tempLoc.lat; c.lng=STATE.tempLoc.lng; }
+  STATE.tempLoc=null;
+  screenAdminSetup();
+}
+
+async function createGame(){
+  const name = $('#g-name').value.trim()||'Chasse au trésor';
+  const duration = parseInt($('#g-duration').value)||90;
+  const perClue = parseInt($('#g-perclue').value)||15;
+  if(STATE.draftClues.length===0){ toast('Ajoutez au moins un indice','error'); return; }
+  if(STATE.draftClues.some(c=>!c.title.trim())){ toast('Chaque indice a besoin d\'un titre','error'); return; }
+  
+  const code = genCode();
+  const game = {
+    code, name, status:'setup',
+    durationMinutes:duration, perClueMinutes:perClue,
+    clues: STATE.draftClues, teams:[],
+    createdAt: Date.now(), startedAt:null, endedAt:null,
+    adminId: STATE.me.id
+  };
+  await saveGame(game);
+  STATE.me.gameCode = code;
+  await saveMe();
+  STATE.draftClues = null;
+  startRealtime();
+  render();
+}
+
+function screenAdminLobby(){
+  const g = STATE.game;
+  app().innerHTML = `
+    <div class="screen" data-screen="admin-lobby">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>${escapeHtml(g.name)}</div>
+        <span class="chip">Lobby</span>
+      </div>
+      <h2>Partagez le code</h2>
+      <p class="subtitle">Les équipes saisissent ce code pour rejoindre la chasse.</p>
+      <div class="code-display">
+        <div class="label">Code de chasse</div>
+        <div class="code">${g.code}</div>
+      </div>
+      
+      <div class="flex-between" style="margin:18px 0 8px">
+        <h3 style="margin:0">Équipes (${g.teams.length})</h3>
+        <span class="chip">Actualisation auto</span>
+      </div>
+      ${g.teams.length===0 
+        ? '<div class="empty">En attente d\'équipes…</div>'
+        : g.teams.map(t=>`<div class="card flex-between"><strong>${escapeHtml(t.name)}</strong><span class="mono muted" style="font-size:12px">prêt</span></div>`).join('')
+      }
+      
+      <div class="divider"></div>
+      <div class="card">
+        <h3>${g.clues.length} indice${g.clues.length>1?'s':''} · ${g.durationMinutes} min total · ${g.perClueMinutes} min/indice</h3>
+        <p class="help-text" style="margin-top:8px">${g.clues.map(c=>escapeHtml(c.title)).join(' · ')}</p>
+      </div>
+      
+      <div class="sticky-bottom">
+        <div class="btn-row">
+          <button class="btn ghost" onclick="cancelGame()">Annuler</button>
+          <button class="btn oxblood" onclick="startGame()" ${g.teams.length===0?'disabled':''}>Démarrer la chasse</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function cancelGame(){
+  if(!confirm('Annuler cette chasse ? Toutes les données seront perdues.')) return;
+  await deleteGame(STATE.game.code);
+  STATE.me.gameCode = null;
+  await saveMe();
+  STATE.game = null;
+  stopRealtime();
+  render();
+}
+async function startGame(){
+  STATE.game.status='active';
+  STATE.game.startedAt = Date.now();
+  await saveGame(STATE.game);
+  render();
+}
+
+function screenAdminLive(){
+  const g = STATE.game;
+  const elapsed = (Date.now() - g.startedAt)/1000;
+  const remaining = Math.max(0, g.durationMinutes*60 - elapsed);
+  const tab = STATE.adminTab || 'pending';
+  const subs = STATE.submissions;
+  const pending = subs.filter(s=>s.status==='pending');
+  const reviewed = subs.filter(s=>s.status!=='pending');
+  
+  app().innerHTML = `
+    <div class="screen" data-screen="admin-live">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>${escapeHtml(g.name)}</div>
+        <span class="chip live">${fmtTime(remaining)}</span>
+      </div>
+      
+      <div class="tabs">
+        <button class="${tab==='pending'?'active':''}" onclick="setAdminTab('pending')">À juger (${pending.length})</button>
+        <button class="${tab==='reviewed'?'active':''}" onclick="setAdminTab('reviewed')">Jugées (${reviewed.length})</button>
+        <button class="${tab==='board'?'active':''}" onclick="setAdminTab('board')">Classement</button>
+      </div>
+      
+      <div id="admin-tab-content"></div>
+      
+      <div class="sticky-bottom">
+        <button class="btn oxblood" onclick="endGameNow()">Terminer la chasse maintenant</button>
+      </div>
+    </div>`;
+  
+  renderAdminTab();
+}
+
+function setAdminTab(t){ STATE.adminTab=t; renderAdminTab(); }
+
+function renderAdminTab(){
+  const c = $('#admin-tab-content'); if(!c) return;
+  const tab = STATE.adminTab || 'pending';
+  const subs = STATE.submissions;
+  const g = STATE.game;
+  
+  if(tab==='pending'){
+    const pending = subs.filter(s=>s.status==='pending');
+    if(pending.length===0){ c.innerHTML='<div class="empty">Aucune soumission en attente</div>'; return; }
+    c.innerHTML = pending.map(s=>renderSubmissionCard(s,'admin')).join('');
+  } else if(tab==='reviewed'){
+    const reviewed = subs.filter(s=>s.status!=='pending');
+    if(reviewed.length===0){ c.innerHTML='<div class="empty">Aucune photo encore jugée</div>'; return; }
+    c.innerHTML = reviewed.map(s=>renderSubmissionCard(s,'admin')).join('');
+  } else {
+    c.innerHTML = renderLeaderboard(false);
+  }
+}
+
+function renderSubmissionCard(s, ctx){
+  const g = STATE.game;
+  const clue = g.clues.find(c=>c.id===s.clueId);
+  const team = g.teams.find(t=>t.id===s.teamId);
+  const target = clue ? {lat:clue.lat, lng:clue.lng} : null;
+  const team_loc = {lat:s.lat,lng:s.lng};
+  const d = target ? Math.round(distMeters(target,team_loc)) : null;
+  const status = s.status;
+  const totalPts = (s.points||0)+(s.bonusPoints||0);
+  
+  return `<div class="submission-card" data-sub="${s.id}">
+    <div class="photo"><img src="${s.photoDataUrl}" onclick="openPhoto('${s.id}')" alt=""></div>
+    <div class="meta">
+      <div class="row1">
+        <div>
+          <div class="team">${escapeHtml(team?.name||'?')}</div>
+          <div class="clue-ref">${escapeHtml(clue?.title||'?')}</div>
+        </div>
+        <span class="status-badge ${status}">${status==='pending'?'À juger':status==='approved'?'Validée':'Refusée'}</span>
+      </div>
+      <div class="stats">
+        <span>📍 ${d!==null?d+'m du lieu':'—'}</span>
+        <span>⏱ ${new Date(s.submittedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span>
+        ${status!=='pending'?`<span>★ ${totalPts} pts</span>`:''}
+      </div>
+      ${ctx==='admin' && status==='pending' ? `
+        <div class="bonus-row">
+          <label>Bonus photo</label>
+          <input class="bonus-input" id="bonus-${s.id}" type="number" value="0" min="0" max="200">
+          <span class="help-text" style="margin:0">+ points pour la beauté</span>
+        </div>
+        <div class="actions">
+          <button class="btn forest sm" onclick="judgeSubmission('${s.id}','approved')" style="flex:1">✓ Valider (${clue?.points||0} pts)</button>
+          <button class="btn ghost sm" onclick="judgeSubmission('${s.id}','rejected')" style="flex:1;border-color:var(--oxblood);color:var(--oxblood)">✗ Refuser</button>
+        </div>
+      `: status!=='pending' ? `
+        <button class="btn sm ghost" onclick="resetSubmission('${s.id}')">Re-juger</button>
+      `: ''}
+    </div>
+  </div>`;
+}
+
+async function judgeSubmission(subId, decision){
+  const s = STATE.submissions.find(x=>x.id===subId);
+  if(!s) return;
+  const clue = STATE.game.clues.find(c=>c.id===s.clueId);
+  const bonusInput = $('#bonus-'+subId);
+  const bonus = bonusInput ? parseInt(bonusInput.value)||0 : 0;
+  s.status = decision;
+  s.points = decision==='approved' ? (clue?.points||0) : 0;
+  s.bonusPoints = decision==='approved' ? bonus : 0;
+  s.judgedAt = Date.now();
+  await saveSubmission(s);
+  toast(decision==='approved'?`Validée · ${s.points+s.bonusPoints} pts`:'Refusée','success');
+  render();
+}
+async function resetSubmission(subId){
+  const s = STATE.submissions.find(x=>x.id===subId);
+  if(!s) return;
+  s.status='pending'; s.points=0; s.bonusPoints=0;
+  await saveSubmission(s);
+  render();
+}
+
+async function endGameNow(){
+  if(!confirm('Terminer la chasse pour toutes les équipes ?')) return;
+  STATE.game.status='ended';
+  STATE.game.endedAt = Date.now();
+  await saveGame(STATE.game);
+  render();
+}
+
+function screenAdminEnd(){
+  const g = STATE.game;
+  app().innerHTML = `
+    <div class="screen" data-screen="admin-end">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>${escapeHtml(g.name)}</div>
+        <span class="chip">Terminée</span>
+      </div>
+      <h1 class="title">La chasse <em>s'achève</em></h1>
+      
+      ${renderLeaderboard(true)}
+      
+      <div class="divider-stars">✦ Galerie ✦</div>
+      ${renderGalleryByClue()}
+      
+      <div class="sticky-bottom">
+        <button class="btn ghost" onclick="closeGame()">Nouvelle chasse</button>
+      </div>
+    </div>`;
+}
+
+async function closeGame(){
+  if(!confirm('Fermer cette chasse et en créer une nouvelle ?')) return;
+  await deleteGame(STATE.game.code);
+  STATE.me.gameCode = null;
+  await saveMe();
+  STATE.game=null; STATE.submissions=[];
+  stopRealtime();
+  render();
+}
+
+function renderLeaderboard(showStats){
+  const g = STATE.game;
+  const subs = STATE.submissions;
+  const board = g.teams.map(t=>{
+    const teamSubs = subs.filter(s=>s.teamId===t.id);
+    const approved = teamSubs.filter(s=>s.status==='approved');
+    const points = approved.reduce((sum,s)=>sum+(s.points||0)+(s.bonusPoints||0),0);
+    return {team:t, points, approved:approved.length, total:teamSubs.length};
+  }).sort((a,b)=>b.points-a.points);
+  
+  if(board.length===0) return '<div class="empty">Aucune équipe</div>';
+  
+  return `<div class="scoreboard">${board.map((r,i)=>`
+    <div class="row ${i===0?'first':''}">
+      <div class="rank">${i===0?'★':i+1}</div>
+      <div class="name">${escapeHtml(r.team.name)}${showStats?`<div class="mono muted" style="font-size:11px;font-weight:400">${r.approved}/${g.clues.length} indices · ${r.total-r.approved} en attente/refus</div>`:''}</div>
+      <div class="pts">${r.points}</div>
+    </div>`).join('')}</div>`;
+}
+
+function renderGalleryByClue(){
+  const g = STATE.game;
+  const subs = STATE.submissions.filter(s=>s.status==='approved');
+  return g.clues.map(c=>{
+    const csubs = subs.filter(s=>s.clueId===c.id);
+    return `<div style="margin-bottom:18px">
+      <h3>${escapeHtml(c.title)}</h3>
+      <p class="muted" style="font-size:13px;margin-bottom:10px;font-style:italic">"${escapeHtml(c.text)}"</p>
+      ${csubs.length===0 ? '<div class="empty" style="padding:20px;font-size:14px">Aucune équipe n\'a validé ce lieu</div>' : `
+        <div class="gallery">
+          ${csubs.map(s=>{
+            const team = g.teams.find(t=>t.id===s.teamId);
+            return `<div class="item" onclick="openPhoto('${s.id}')">
+              <img src="${s.photoDataUrl}" alt="">
+              ${(s.bonusPoints||0)>0?`<div class="bonus-mark">+${s.bonusPoints}</div>`:''}
+              <div class="label">${escapeHtml(team?.name||'?')} · ${(s.points||0)+(s.bonusPoints||0)}pts</div>
+            </div>`;
+          }).join('')}
+        </div>
+      `}
+    </div>`;
+  }).join('');
+}
+
+// ---------- TEAM ----------
+function screenTeamJoin(){
+  app().innerHTML = `
+    <div class="screen" data-screen="team-join">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>Rejoindre une chasse</div>
+        <button class="chip" onclick="logout()">Quitter</button>
+      </div>
+      <h1 class="title">Quel est<br>le <em>code</em> ?</h1>
+      <p class="subtitle">Demandez à votre maître du jeu le code à 4 lettres de la chasse.</p>
+      
+      <div class="field">
+        <label>Code de la chasse</label>
+        <input id="join-code" class="input code" maxlength="4" placeholder="XXXX">
+      </div>
+      <div class="field">
+        <label>Nom de votre équipe</label>
+        <input id="join-team" class="input" placeholder="Les Aventuriers">
+      </div>
+      
+      <div class="sticky-bottom">
+        <button class="btn oxblood" onclick="joinGame()">Rejoindre la chasse →</button>
+      </div>
+    </div>`;
+  $('#join-code').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
+}
+
+async function joinGame(){
+  const code = $('#join-code').value.trim().toUpperCase();
+  const teamName = $('#join-team').value.trim();
+  if(code.length!==4){ toast('Code invalide','error'); return; }
+  if(!teamName){ toast('Donnez un nom à votre équipe','error'); return; }
+  const game = await loadGame(code);
+  if(!game){ toast('Aucune chasse avec ce code','error'); return; }
+  if(game.status==='ended'){ toast('Cette chasse est terminée','error'); return; }
+  
+  const teamId = await addTeam(code, teamName);
+  if(!teamId) return;
+  STATE.me.gameCode = code;
+  STATE.me.teamId = teamId;
+  STATE.me.teamName = teamName;
+  await saveMe();
+  startRealtime();
+  render();
+}
+
+function screenTeamLobby(){
+  const g = STATE.game;
+  app().innerHTML = `
+    <div class="screen" data-screen="team-lobby">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>${escapeHtml(g.name)}</div>
+        <span class="chip">En attente</span>
+      </div>
+      <h1 class="title">Bientôt,<br>la <em>course</em>.</h1>
+      <p class="subtitle">L'aventure n'a pas encore commencé. Restez prêts.</p>
+      
+      <div class="card dark">
+        <h3 style="color:var(--gold)">Équipe ${escapeHtml(STATE.me.teamName)}</h3>
+        <p style="opacity:.8;font-size:14px;margin:6px 0 0">${g.clues.length} indice${g.clues.length>1?'s':''} à découvrir · ${g.durationMinutes} min au total · ${g.perClueMinutes} min par indice maximum</p>
+      </div>
+      
+      <div class="flex-between" style="margin:18px 0 8px">
+        <h3 style="margin:0">Autres équipes</h3>
+        <span class="chip">${g.teams.length}</span>
+      </div>
+      ${g.teams.filter(t=>t.id!==STATE.me.teamId).length===0
+        ? '<div class="empty">Vous êtes seuls pour le moment</div>'
+        : g.teams.filter(t=>t.id!==STATE.me.teamId).map(t=>`<div class="card"><strong>${escapeHtml(t.name)}</strong></div>`).join('')
+      }
+      
+      <div class="sticky-bottom">
+        <button class="btn ghost" onclick="leaveGame()">Quitter</button>
+      </div>
+    </div>`;
+}
+
+async function leaveGame(){
+  if(!confirm('Quitter la chasse ?')) return;
+  if(STATE.me.teamId){
+    await removeTeam(STATE.me.teamId);
+  }
+  await clearMe();
+  stopRealtime();
+  STATE.game=null; STATE.submissions=[];
+  render();
+}
+
+function screenTeamActive(){
+  const g = STATE.game;
+  const elapsed = (Date.now() - g.startedAt)/1000;
+  const remaining = Math.max(0, g.durationMinutes*60 - elapsed);
+  const mySubs = STATE.submissions.filter(s=>s.teamId===STATE.me.teamId);
+  
+  const myPoints = mySubs.filter(s=>s.status==='approved').reduce((p,s)=>p+(s.points||0)+(s.bonusPoints||0),0);
+  
+  app().innerHTML = `
+    <div class="screen" data-screen="team-active">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>${escapeHtml(STATE.me.teamName)}</div>
+        <span class="chip live">${fmtTime(remaining)}</span>
+      </div>
+      
+      <div class="flex-between" style="margin-bottom:18px">
+        <div>
+          <div class="mono muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.1em">Score</div>
+          <div class="display" style="font-size:34px">${myPoints}<span style="font-size:14px;color:var(--ink-mute);font-family:'Geist Mono',monospace;font-weight:400"> pts</span></div>
+        </div>
+        <div style="text-align:right">
+          <div class="mono muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.1em">Indices</div>
+          <div class="display" style="font-size:34px">${mySubs.filter(s=>s.status==='approved').length}<span style="font-size:14px;color:var(--ink-mute);font-family:'Geist Mono',monospace;font-weight:400">/${g.clues.length}</span></div>
+        </div>
+      </div>
+      
+      <h2>Les indices</h2>
+      <div class="clue-list">
+        ${g.clues.map((c,i)=>{
+          const sub = mySubs.find(s=>s.clueId===c.id);
+          const cls = sub?.status==='approved'?'done':sub?'pending':'';
+          const label = sub?.status==='approved'?`${(sub.points||0)+(sub.bonusPoints||0)} pts`:sub?.status==='pending'?'En attente':sub?.status==='rejected'?'Refusée — refaire':`${c.points} pts`;
+          return `<button class="clue-item ${cls}" onclick="openClue('${c.id}')">
+            <div class="num">${i+1}</div>
+            <div class="body">
+              <div class="title-row"><div class="name">${escapeHtml(c.title)}</div><div class="pts">${label}</div></div>
+              <div class="preview">${escapeHtml(c.text)}</div>
+            </div>
+          </button>`;
+        }).join('')}
+      </div>
+      
+      <div class="sticky-bottom">
+        <button class="btn ghost" onclick="leaveGame()">Quitter la chasse</button>
+      </div>
+    </div>`;
+}
+
+function openClue(clueId){
+  const sub = STATE.submissions.find(s=>s.clueId===clueId && s.teamId===STATE.me.teamId);
+  if(sub && sub.status==='approved'){
+    toast('Indice déjà validé','success');
+    return;
+  }
+  if(sub && sub.status==='pending'){
+    toast('Photo en attente de validation','');
+    return;
+  }
+  STATE.currentClueId = clueId;
+  STATE.capturedPhoto = null;
+  STATE.capturedLoc = null;
+  if(!STATE.perClueStartTime[clueId]) STATE.perClueStartTime[clueId] = Date.now();
+  render();
+}
+
+function screenTeamCapture(){
+  const g = STATE.game;
+  const clue = g.clues.find(c=>c.id===STATE.currentClueId);
+  const startedAt = STATE.perClueStartTime[clue.id];
+  const perClueRemaining = Math.max(0, g.perClueMinutes*60 - (Date.now()-startedAt)/1000);
+  const gameRemaining = Math.max(0, g.durationMinutes*60 - (Date.now()-g.startedAt)/1000);
+  const remaining = Math.min(perClueRemaining, gameRemaining);
+  const tClass = remaining<60?'alert':remaining<180?'warn':'';
+  
+  app().innerHTML = `
+    <div class="screen" data-screen="team-capture">
+      <div class="topbar">
+        <button class="chip" onclick="abortClue()">← Retour</button>
+        <span class="timer ${tClass}">${fmtTime(remaining)}</span>
+      </div>
+      <h2>${escapeHtml(clue.title)}</h2>
+      <div class="card" style="margin-bottom:18px">
+        <p class="italic-d" style="font-size:17px;line-height:1.5;margin:0">"${escapeHtml(clue.text)}"</p>
+      </div>
+      
+      <h3>1 · Photo de l'équipe + lieu</h3>
+      <p class="help-text" style="margin-bottom:10px">Toute l'équipe devant le lieu, bien visible en arrière-plan.</p>
+      <label class="photo-preview" for="capture-input">
+        ${STATE.capturedPhoto 
+          ? `<img src="${STATE.capturedPhoto}" alt=""><div class="retake">Refaire</div>`
+          : `<div class="icon">⊕</div><div>Prendre la photo</div>`}
+      </label>
+      <input id="capture-input" type="file" accept="image/*" capture="environment" class="hidden-input" onchange="handleCapture(event)">
+      
+      <h3 style="margin-top:18px">2 · Position sur la carte</h3>
+      <p class="help-text" style="margin-bottom:10px">Tapez sur la carte pour marquer où vous êtes.</p>
+      <div class="map-wrap">
+        <div id="capture-map" class="minimap"></div>
+        <div class="map-hint">Tapez pour marquer</div>
+      </div>
+      <div class="card mono" style="text-align:center;font-size:13px;margin-bottom:14px" id="capture-coord">${STATE.capturedLoc?STATE.capturedLoc.lat.toFixed(5)+', '+STATE.capturedLoc.lng.toFixed(5):'Aucune position'}</div>
+      
+      <div class="sticky-bottom">
+        <button class="btn oxblood" onclick="submitClue()" ${!STATE.capturedPhoto||!STATE.capturedLoc?'disabled':''}>Envoyer la preuve →</button>
+      </div>
+    </div>`;
+  
+  setTimeout(()=>{
+    const initLat = STATE.capturedLoc?.lat || clue.lat;
+    const initLng = STATE.capturedLoc?.lng || clue.lng;
+    const map = L.map('capture-map').setView([initLat,initLng], 14);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM', maxZoom:19}).addTo(map);
+    let marker = STATE.capturedLoc ? L.marker([initLat,initLng], {icon: L.divIcon({className:'team-marker', iconSize:[22,22], iconAnchor:[11,11]})}).addTo(map) : null;
+    map.on('click', e=>{
+      STATE.capturedLoc = {lat:e.latlng.lat, lng:e.latlng.lng};
+      if(marker) marker.setLatLng(e.latlng);
+      else marker = L.marker(e.latlng, {icon: L.divIcon({className:'team-marker', iconSize:[22,22], iconAnchor:[11,11]})}).addTo(map);
+      $('#capture-coord').textContent = e.latlng.lat.toFixed(5)+', '+e.latlng.lng.toFixed(5);
+    });
+    // Try geolocation
+    if(navigator.geolocation && !STATE.capturedLoc){
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const c = {lat:pos.coords.latitude, lng:pos.coords.longitude};
+        STATE.capturedLoc = c;
+        map.setView([c.lat,c.lng], 16);
+        if(marker) marker.setLatLng([c.lat,c.lng]);
+        else marker = L.marker([c.lat,c.lng], {icon: L.divIcon({className:'team-marker', iconSize:[22,22], iconAnchor:[11,11]})}).addTo(map);
+        $('#capture-coord').textContent = c.lat.toFixed(5)+', '+c.lng.toFixed(5);
+      }, ()=>{}, {enableHighAccuracy:true, timeout:5000});
+    }
+  },50);
+}
+
+async function handleCapture(e){
+  const file = e.target.files?.[0];
+  if(!file) return;
+  toast('Compression de la photo…');
+  try{
+    const dataUrl = await compressImage(file);
+    STATE.capturedPhoto = dataUrl;
+    render();
+  }catch(err){ toast('Erreur image','error'); }
+}
+
+function abortClue(){
+  STATE.currentClueId=null;
+  STATE.capturedPhoto=null;
+  STATE.capturedLoc=null;
+  render();
+}
+
+async function submitClue(){
+  const sub = {
+    id: uid(),
+    gameCode: STATE.game.code,
+    teamId: STATE.me.teamId,
+    clueId: STATE.currentClueId,
+    photoDataUrl: STATE.capturedPhoto,
+    lat: STATE.capturedLoc.lat,
+    lng: STATE.capturedLoc.lng,
+    submittedAt: Date.now(),
+    status:'pending',
+    points:0, bonusPoints:0
+  };
+  await saveSubmission(sub);
+  toast('Preuve envoyée à l\'admin','success');
+  STATE.currentClueId=null;
+  STATE.capturedPhoto=null;
+  STATE.capturedLoc=null;
+  render();
+}
+
+function screenTeamEnd(){
+  const g = STATE.game;
+  const mySubs = STATE.submissions.filter(s=>s.teamId===STATE.me.teamId);
+  const myApproved = mySubs.filter(s=>s.status==='approved');
+  const myPoints = myApproved.reduce((p,s)=>p+(s.points||0)+(s.bonusPoints||0),0);
+  
+  const board = g.teams.map(t=>{
+    const ts = STATE.submissions.filter(s=>s.teamId===t.id && s.status==='approved');
+    return {team:t, points:ts.reduce((p,s)=>p+(s.points||0)+(s.bonusPoints||0),0)};
+  }).sort((a,b)=>b.points-a.points);
+  const myRank = board.findIndex(b=>b.team.id===STATE.me.teamId)+1;
+  
+  app().innerHTML = `
+    <div class="screen" data-screen="team-end">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>${escapeHtml(g.name)}</div>
+        <span class="chip">Terminée</span>
+      </div>
+      <h1 class="title">${myRank===1?'<em>Vainqueurs</em>.':'La chasse <em>est finie</em>.'}</h1>
+      
+      <div class="card dark" style="text-align:center;padding:24px">
+        <div class="mono" style="font-size:11px;text-transform:uppercase;letter-spacing:.2em;opacity:.7;color:var(--gold)">${escapeHtml(STATE.me.teamName)} · Rang ${myRank}/${board.length}</div>
+        <div class="display" style="font-size:64px;color:var(--gold);margin:8px 0">${myPoints}</div>
+        <div class="mono" style="font-size:13px;opacity:.7">${myApproved.length} indice${myApproved.length>1?'s':''} validé${myApproved.length>1?'s':''}</div>
+      </div>
+      
+      ${renderLeaderboard(false)}
+      
+      <div class="divider-stars">✦ Galerie ✦</div>
+      ${renderGalleryByClue()}
+      
+      <div class="sticky-bottom">
+        <button class="btn ghost" onclick="logout()">Sortir</button>
+      </div>
+    </div>`;
+}
+
+function screenTeamSubmitted(){ /* not used directly, render handles */ }
+
+// ---------- MODAL ----------
+function openPhoto(subId){
+  const s = STATE.submissions.find(x=>x.id===subId);
+  if(!s) return;
+  const team = STATE.game.teams.find(t=>t.id===s.teamId);
+  const clue = STATE.game.clues.find(c=>c.id===s.clueId);
+  const target = clue?{lat:clue.lat,lng:clue.lng}:null;
+  const d = target?Math.round(distMeters(target,{lat:s.lat,lng:s.lng})):null;
+  $('#modal .modal-inner').innerHTML = `
+    <img src="${s.photoDataUrl}">
+    <div class="info">${escapeHtml(team?.name||'?')} · ${escapeHtml(clue?.title||'?')} · ${d!==null?d+'m':''} · ${(s.points||0)+(s.bonusPoints||0)} pts${(s.bonusPoints||0)>0?` (dont +${s.bonusPoints} bonus)`:''}</div>
+  `;
+  $('#modal').classList.add('open');
+}
+function closeModal(){ $('#modal').classList.remove('open'); }
+
+// ---------- UTIL ----------
+function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function logout(){ stopRealtime(); await clearMe(); STATE.game=null; STATE.submissions=[]; render(); }
+
+// ---------- TICK ----------
+// Re-render timers each second on active screens
+setInterval(()=>{
+  const cur = $('[data-screen]')?.dataset.screen;
+  if(['admin-live','team-active','team-capture'].includes(cur)){
+    // Light update: only timer chips
+    if(STATE.game?.status==='active' && STATE.game.startedAt){
+      const elapsed = (Date.now()-STATE.game.startedAt)/1000;
+      const remaining = Math.max(0, STATE.game.durationMinutes*60 - elapsed);
+      const chip = $('.chip.live');
+      if(chip) chip.textContent = fmtTime(remaining);
+      if(remaining<=0){ render(); return; }
+      
+      if(cur==='team-capture' && STATE.currentClueId){
+        const st = STATE.perClueStartTime[STATE.currentClueId];
+        if(st){
+          const pr = Math.max(0, STATE.game.perClueMinutes*60 - (Date.now()-st)/1000);
+          const r = Math.min(pr, remaining);
+          const t = $('.timer');
+          if(t){ t.textContent = fmtTime(r); t.className = 'timer ' + (r<60?'alert':r<180?'warn':''); }
+          if(r<=0){
+            toast('Temps écoulé pour cet indice', 'error');
+            STATE.currentClueId=null; STATE.capturedPhoto=null; STATE.capturedLoc=null;
+            render();
+          }
+        }
+      }
+    }
+  }
+}, 1000);
+
+// ---------- INIT ----------
+(async ()=>{
+  loadConfig();
+  await render();
+  if(sb && STATE.me?.gameCode) startRealtime();
+})();
+
+</script>
+</body>
+</html>
