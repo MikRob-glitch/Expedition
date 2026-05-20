@@ -1178,7 +1178,9 @@ function openClue(clueId){
   STATE.currentClueId = clueId;
   STATE.capturedPhoto = null;
   STATE.capturedLoc = null;
-  if(!STATE.perClueStartTime[clueId]) STATE.perClueStartTime[clueId] = Date.now();
+  // Le timer per-indice redémarre à chaque ouverture : on ne pénalise pas
+  // les équipes qui ouvrent puis ferment un indice avant d'y revenir
+  STATE.perClueStartTime[clueId] = Date.now();
   render();
 }
 
@@ -1229,12 +1231,23 @@ function screenTeamCapture(){
     const initLng = STATE.capturedLoc?.lng || clue.lng;
     const map = L.map('capture-map').setView([initLat,initLng], 14);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM', maxZoom:19}).addTo(map);
-    let marker = STATE.capturedLoc ? L.marker([initLat,initLng], {icon: L.divIcon({className:'team-marker', iconSize:[22,22], iconAnchor:[11,11]})}).addTo(map) : null;
+
+    // Helper pour gérer le marker via la map (évite les closures stales sur re-render)
+    const markerIcon = L.divIcon({className:'team-marker', iconSize:[22,22], iconAnchor:[11,11]});
+    function setMarker(lat, lng){
+      if(map._teamMarker){ map._teamMarker.setLatLng([lat,lng]); }
+      else { map._teamMarker = L.marker([lat,lng], {icon: markerIcon}).addTo(map); }
+    }
+
+    if(STATE.capturedLoc) setMarker(STATE.capturedLoc.lat, STATE.capturedLoc.lng);
+
     map.on('click', e=>{
       STATE.capturedLoc = {lat:e.latlng.lat, lng:e.latlng.lng};
-      if(marker) marker.setLatLng(e.latlng);
-      else marker = L.marker(e.latlng, {icon: L.divIcon({className:'team-marker', iconSize:[22,22], iconAnchor:[11,11]})}).addTo(map);
+      setMarker(e.latlng.lat, e.latlng.lng);
       $('#capture-coord').textContent = e.latlng.lat.toFixed(5)+', '+e.latlng.lng.toFixed(5);
+      // Active le bouton Envoyer si photo aussi prête (sans full re-render)
+      const btn = document.querySelector('[data-screen="team-capture"] .btn.oxblood');
+      if(btn && STATE.capturedPhoto) btn.disabled = false;
     });
     // Try geolocation
     if(navigator.geolocation && !STATE.capturedLoc){
@@ -1242,9 +1255,10 @@ function screenTeamCapture(){
         const c = {lat:pos.coords.latitude, lng:pos.coords.longitude};
         STATE.capturedLoc = c;
         map.setView([c.lat,c.lng], 16);
-        if(marker) marker.setLatLng([c.lat,c.lng]);
-        else marker = L.marker([c.lat,c.lng], {icon: L.divIcon({className:'team-marker', iconSize:[22,22], iconAnchor:[11,11]})}).addTo(map);
+        setMarker(c.lat, c.lng);
         $('#capture-coord').textContent = c.lat.toFixed(5)+', '+c.lng.toFixed(5);
+        const btn = document.querySelector('[data-screen="team-capture"] .btn.oxblood');
+        if(btn && STATE.capturedPhoto) btn.disabled = false;
       }, ()=>{}, {enableHighAccuracy:true, timeout:5000});
     }
   },50);
@@ -1269,6 +1283,14 @@ function abortClue(){
 }
 
 async function submitClue(){
+  // Anti-double-tap : on désactive le bouton immédiatement
+  const btn = document.querySelector('[data-screen="team-capture"] .btn.oxblood');
+  if(btn){
+    if(btn.disabled) return; // déjà en cours
+    btn.disabled = true;
+    btn.textContent = 'Envoi en cours…';
+  }
+
   const sub = {
     id: uid(),
     gameCode: STATE.game.code,
@@ -1281,12 +1303,18 @@ async function submitClue(){
     status:'pending',
     points:0, bonusPoints:0
   };
-  await saveSubmission(sub);
-  toast('Preuve envoyée à l\'admin','success');
-  STATE.currentClueId=null;
-  STATE.capturedPhoto=null;
-  STATE.capturedLoc=null;
-  render();
+  try{
+    await saveSubmission(sub);
+    toast('Preuve envoyée à l\'admin','success');
+    STATE.currentClueId=null;
+    STATE.capturedPhoto=null;
+    STATE.capturedLoc=null;
+    render();
+  }catch(err){
+    // En cas d'erreur, on réactive le bouton pour permettre une nouvelle tentative
+    if(btn){ btn.disabled = false; btn.textContent = 'Envoyer la preuve →'; }
+    toast('Erreur d\'envoi : '+(err.message||'inconnue'),'error',4500);
+  }
 }
 
 function screenTeamEnd(){
