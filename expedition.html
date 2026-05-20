@@ -491,11 +491,11 @@ async function render(){
       await clearMe();
     }
   }
-  // Update game status based on time
+  // Update game status based on time : fin de chasse → phase validation
   if(STATE.game?.status==='active' && STATE.game.startedAt){
     const elapsed = (Date.now() - STATE.game.startedAt)/1000;
     if(elapsed >= STATE.game.durationMinutes*60){
-      STATE.game.status='ended';
+      STATE.game.status='validation';
       STATE.game.endedAt = STATE.game.startedAt + STATE.game.durationMinutes*60*1000;
       if(STATE.me?.role==='admin') await saveGame(STATE.game);
     }
@@ -507,6 +507,8 @@ async function render(){
     if(!STATE.game) return screenAdminSetup();
     if(STATE.game.status==='setup') return screenAdminLobby();
     if(STATE.game.status==='active') return screenAdminLive();
+    if(STATE.game.status==='validation') return screenAdminValidation();
+    if(STATE.game.status==='judging') return screenAdminJudging();
     return screenAdminEnd();
   }
   if(STATE.me.role==='team'){
@@ -516,6 +518,8 @@ async function render(){
       if(STATE.currentClueId) return screenTeamCapture();
       return screenTeamActive();
     }
+    // Phases validation + judging : équipe attend
+    if(STATE.game.status==='validation' || STATE.game.status==='judging') return screenTeamWaiting();
     return screenTeamEnd();
   }
 }
@@ -833,11 +837,9 @@ function screenAdminLive(){
   const g = STATE.game;
   const elapsed = (Date.now() - g.startedAt)/1000;
   const remaining = Math.max(0, g.durationMinutes*60 - elapsed);
-  const tab = STATE.adminTab || 'pending';
   const subs = STATE.submissions;
-  const pending = subs.filter(s=>s.status==='pending');
-  const reviewed = subs.filter(s=>s.status!=='pending');
   
+  // Pendant la chasse : juste superviser, pas de jugement
   app().innerHTML = `
     <div class="screen" data-screen="admin-live">
       <div class="topbar">
@@ -845,41 +847,36 @@ function screenAdminLive(){
         <span class="chip live">${fmtTime(remaining)}</span>
       </div>
       
-      <div class="tabs">
-        <button class="${tab==='pending'?'active':''}" onclick="setAdminTab('pending')">À juger (${pending.length})</button>
-        <button class="${tab==='reviewed'?'active':''}" onclick="setAdminTab('reviewed')">Jugées (${reviewed.length})</button>
-        <button class="${tab==='board'?'active':''}" onclick="setAdminTab('board')">Classement</button>
+      <h1 class="title">Chasse <em>en cours</em></h1>
+      <p class="subtitle">Les équipes envoient leurs preuves. La validation se fera à la fin.</p>
+
+      <div class="flex-between" style="margin:18px 0">
+        <div>
+          <div class="mono muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.1em">Preuves reçues</div>
+          <div class="display" style="font-size:34px">${subs.length}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="mono muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.1em">Équipes</div>
+          <div class="display" style="font-size:34px">${g.teams.length}</div>
+        </div>
       </div>
-      
-      <div id="admin-tab-content"></div>
+
+      <h3>Activité par équipe</h3>
+      <div class="scoreboard" style="margin-bottom:20px">
+        ${g.teams.map(t=>{
+          const ts = subs.filter(s=>s.teamId===t.id);
+          return `<div class="row">
+            <div class="rank">·</div>
+            <div class="name">${escapeHtml(t.name)}</div>
+            <div class="pts" style="font-size:18px">${ts.length}<span style="font-size:11px;color:var(--ink-mute);font-family:'Geist Mono',monospace"> photos</span></div>
+          </div>`;
+        }).join('') || '<div class="empty">Aucune équipe</div>'}
+      </div>
       
       <div class="sticky-bottom">
-        <button class="btn oxblood" onclick="endGameNow()">Terminer la chasse maintenant</button>
+        <button class="btn oxblood" onclick="endGameNow()">Terminer la chasse →</button>
       </div>
     </div>`;
-  
-  renderAdminTab();
-}
-
-function setAdminTab(t){ STATE.adminTab=t; renderAdminTab(); }
-
-function renderAdminTab(){
-  const c = $('#admin-tab-content'); if(!c) return;
-  const tab = STATE.adminTab || 'pending';
-  const subs = STATE.submissions;
-  const g = STATE.game;
-  
-  if(tab==='pending'){
-    const pending = subs.filter(s=>s.status==='pending');
-    if(pending.length===0){ c.innerHTML='<div class="empty">Aucune soumission en attente</div>'; return; }
-    c.innerHTML = pending.map(s=>renderSubmissionCard(s,'admin')).join('');
-  } else if(tab==='reviewed'){
-    const reviewed = subs.filter(s=>s.status!=='pending');
-    if(reviewed.length===0){ c.innerHTML='<div class="empty">Aucune photo encore jugée</div>'; return; }
-    c.innerHTML = reviewed.map(s=>renderSubmissionCard(s,'admin')).join('');
-  } else {
-    c.innerHTML = renderLeaderboard(false);
-  }
 }
 
 function renderSubmissionCard(s, ctx){
@@ -892,6 +889,33 @@ function renderSubmissionCard(s, ctx){
   const status = s.status;
   const totalPts = (s.points||0)+(s.bonusPoints||0);
   
+  // ctx peut être : 'validation' (oui/non) | 'judging' (note) | 'view' (lecture seule)
+  let actionBlock = '';
+  if(ctx==='validation'){
+    actionBlock = status==='pending' ? `
+      <div class="actions">
+        <button class="btn forest sm" onclick="validateSubmission('${s.id}',true)" style="flex:1">✓ Conforme</button>
+        <button class="btn ghost sm" onclick="validateSubmission('${s.id}',false)" style="flex:1;border-color:var(--oxblood);color:var(--oxblood)">✗ Refuser</button>
+      </div>
+    ` : `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span class="status-badge ${status}">${status==='approved'?'Conforme':'Refusée'}</span>
+        <button class="btn sm ghost" onclick="resetValidation('${s.id}')">Annuler</button>
+      </div>
+    `;
+  } else if(ctx==='judging'){
+    // Photo déjà validée, on attribue uniquement les bonus qualité
+    actionBlock = `
+      <div class="bonus-row">
+        <label>Note jury</label>
+        <input class="bonus-input" id="bonus-${s.id}" type="number" value="${s.bonusPoints||0}" min="0" max="200" onchange="updateJudging('${s.id}')">
+        <span class="help-text" style="margin:0">pts beauté/originalité</span>
+      </div>
+    `;
+  } else if(ctx==='view'){
+    actionBlock = `<div class="stats"><span>★ ${totalPts} pts au total</span></div>`;
+  }
+
   return `<div class="submission-card" data-sub="${s.id}">
     <div class="photo"><img src="${s.photoDataUrl}" onclick="openPhoto('${s.id}')" alt=""></div>
     <div class="meta">
@@ -900,55 +924,194 @@ function renderSubmissionCard(s, ctx){
           <div class="team">${escapeHtml(team?.name||'?')}</div>
           <div class="clue-ref">${escapeHtml(clue?.title||'?')}</div>
         </div>
-        <span class="status-badge ${status}">${status==='pending'?'À juger':status==='approved'?'Validée':'Refusée'}</span>
+        ${ctx!=='validation' || status==='pending' ? '' : `<span class="status-badge ${status}">${status==='approved'?'Conforme':'Refusée'}</span>`}
       </div>
       <div class="stats">
         <span>📍 ${d!==null?d+'m du lieu':'—'}</span>
         <span>⏱ ${new Date(s.submittedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span>
-        ${status!=='pending'?`<span>★ ${totalPts} pts</span>`:''}
+        ${ctx==='judging' && clue ? `<span>Base: ${clue.points} pts</span>`:''}
       </div>
-      ${ctx==='admin' && status==='pending' ? `
-        <div class="bonus-row">
-          <label>Bonus photo</label>
-          <input class="bonus-input" id="bonus-${s.id}" type="number" value="0" min="0" max="200">
-          <span class="help-text" style="margin:0">+ points pour la beauté</span>
-        </div>
-        <div class="actions">
-          <button class="btn forest sm" onclick="judgeSubmission('${s.id}','approved')" style="flex:1">✓ Valider (${clue?.points||0} pts)</button>
-          <button class="btn ghost sm" onclick="judgeSubmission('${s.id}','rejected')" style="flex:1;border-color:var(--oxblood);color:var(--oxblood)">✗ Refuser</button>
-        </div>
-      `: status!=='pending' ? `
-        <button class="btn sm ghost" onclick="resetSubmission('${s.id}')">Re-juger</button>
-      `: ''}
+      ${actionBlock}
     </div>
   </div>`;
 }
 
-async function judgeSubmission(subId, decision){
+// ============ PHASE 2 : VALIDATION (admin filtre les photos conformes) ============
+function screenAdminValidation(){
+  const g = STATE.game;
+  const subs = STATE.submissions;
+  const pending = subs.filter(s=>s.status==='pending');
+  const validated = subs.filter(s=>s.status==='approved');
+  const refused = subs.filter(s=>s.status==='rejected');
+  
+  app().innerHTML = `
+    <div class="screen" data-screen="admin-validation">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>${escapeHtml(g.name)}</div>
+        <span class="chip">Validation</span>
+      </div>
+      <h1 class="title">Photos <em>conformes</em> ?</h1>
+      <p class="subtitle">Pour chaque preuve, indiquez si elle correspond bien à l'indice. Le jury notera ensuite la qualité.</p>
+
+      <div class="flex-between" style="margin:18px 0;gap:12px">
+        <div class="card" style="flex:1;text-align:center;padding:14px">
+          <div class="mono muted" style="font-size:10px;text-transform:uppercase">À traiter</div>
+          <div class="display" style="font-size:28px">${pending.length}</div>
+        </div>
+        <div class="card" style="flex:1;text-align:center;padding:14px">
+          <div class="mono muted" style="font-size:10px;text-transform:uppercase">Conformes</div>
+          <div class="display" style="font-size:28px;color:var(--forest)">${validated.length}</div>
+        </div>
+        <div class="card" style="flex:1;text-align:center;padding:14px">
+          <div class="mono muted" style="font-size:10px;text-transform:uppercase">Refusées</div>
+          <div class="display" style="font-size:28px;color:var(--oxblood)">${refused.length}</div>
+        </div>
+      </div>
+
+      <div id="validation-list">
+        ${pending.length === 0 && validated.length === 0 && refused.length === 0
+          ? '<div class="empty">Aucune photo n\'a été envoyée durant la chasse</div>'
+          : [...pending, ...validated, ...refused].map(s=>renderSubmissionCard(s,'validation')).join('')}
+      </div>
+
+      <div class="sticky-bottom">
+        <button class="btn oxblood" onclick="goToJudging()" ${pending.length>0 || validated.length===0 ? 'disabled':''}>
+          ${pending.length>0 ? `Encore ${pending.length} à traiter` : validated.length===0 ? 'Aucune photo validée' : `Passer au jugement du jury →`}
+        </button>
+      </div>
+    </div>`;
+}
+
+async function validateSubmission(subId, conforme){
   const s = STATE.submissions.find(x=>x.id===subId);
   if(!s) return;
   const clue = STATE.game.clues.find(c=>c.id===s.clueId);
-  const bonusInput = $('#bonus-'+subId);
-  const bonus = bonusInput ? parseInt(bonusInput.value)||0 : 0;
-  s.status = decision;
-  s.points = decision==='approved' ? (clue?.points||0) : 0;
-  s.bonusPoints = decision==='approved' ? bonus : 0;
+  s.status = conforme ? 'approved' : 'rejected';
+  // Points de base attribués dès la validation, bonus à 0 (sera défini en phase jury)
+  s.points = conforme ? (clue?.points||0) : 0;
+  s.bonusPoints = 0;
   s.judgedAt = Date.now();
-  await saveSubmission(s);
-  toast(decision==='approved'?`Validée · ${s.points+s.bonusPoints} pts`:'Refusée','success');
-  render();
-}
-async function resetSubmission(subId){
-  const s = STATE.submissions.find(x=>x.id===subId);
-  if(!s) return;
-  s.status='pending'; s.points=0; s.bonusPoints=0;
   await saveSubmission(s);
   render();
 }
 
-async function endGameNow(){
-  if(!confirm('Terminer la chasse pour toutes les équipes ?')) return;
+async function resetValidation(subId){
+  const s = STATE.submissions.find(x=>x.id===subId);
+  if(!s) return;
+  s.status = 'pending'; s.points = 0; s.bonusPoints = 0;
+  await saveSubmission(s);
+  render();
+}
+
+async function goToJudging(){
+  if(!confirm('Passer à la phase de jugement du jury ?\n\nLes photos refusées ne pourront plus être modifiées.')) return;
+  STATE.game.status='judging';
+  await saveGame(STATE.game);
+  render();
+}
+
+// ============ PHASE 3 : JUGEMENT JURY (notation qualitative) ============
+function screenAdminJudging(){
+  const g = STATE.game;
+  const validated = STATE.submissions.filter(s=>s.status==='approved');
+  // Tri : par indice puis par équipe pour un parcours logique
+  validated.sort((a,b)=>{
+    const ci = g.clues.findIndex(c=>c.id===a.clueId) - g.clues.findIndex(c=>c.id===b.clueId);
+    if(ci !== 0) return ci;
+    return (g.teams.find(t=>t.id===a.teamId)?.name||'').localeCompare(g.teams.find(t=>t.id===b.teamId)?.name||'');
+  });
+  const totalBonus = validated.reduce((s,sub)=>s+(sub.bonusPoints||0),0);
+  
+  app().innerHTML = `
+    <div class="screen" data-screen="admin-judging">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>${escapeHtml(g.name)}</div>
+        <span class="chip">Jury</span>
+      </div>
+      <h1 class="title">Notation du <em>jury</em></h1>
+      <p class="subtitle">Attribuez des points bonus (0–200) pour la beauté, l'originalité ou l'humour. Modifiable à tout moment.</p>
+
+      <div class="card" style="margin:18px 0;text-align:center">
+        <div class="mono muted" style="font-size:10px;text-transform:uppercase">Total bonus distribués</div>
+        <div class="display" style="font-size:32px">${totalBonus}<span style="font-size:14px;color:var(--ink-mute);font-family:'Geist Mono',monospace"> pts</span></div>
+      </div>
+
+      <div id="judging-list">
+        ${validated.length===0
+          ? '<div class="empty">Aucune photo validée</div>'
+          : validated.map(s=>renderSubmissionCard(s,'judging')).join('')}
+      </div>
+
+      <div class="sticky-bottom" style="display:flex;gap:8px">
+        <button class="btn ghost" onclick="backToValidation()" style="flex:1">← Validation</button>
+        <button class="btn oxblood" onclick="finalizeGame()" style="flex:2">Clôturer la chasse →</button>
+      </div>
+    </div>`;
+}
+
+async function updateJudging(subId){
+  const s = STATE.submissions.find(x=>x.id===subId);
+  if(!s) return;
+  const input = $('#bonus-'+subId);
+  if(!input) return;
+  let bonus = parseInt(input.value)||0;
+  bonus = Math.max(0, Math.min(200, bonus));
+  input.value = bonus;
+  s.bonusPoints = bonus;
+  await saveSubmission(s);
+  // Mise à jour du compteur total sans re-render complet
+  const validated = STATE.submissions.filter(x=>x.status==='approved');
+  const total = validated.reduce((sum,sub)=>sum+(sub.bonusPoints||0),0);
+  const totalEl = document.querySelector('[data-screen="admin-judging"] .display');
+  if(totalEl) totalEl.innerHTML = `${total}<span style="font-size:14px;color:var(--ink-mute);font-family:'Geist Mono',monospace"> pts</span>`;
+}
+
+async function backToValidation(){
+  if(!confirm('Revenir à la phase de validation ?')) return;
+  STATE.game.status='validation';
+  await saveGame(STATE.game);
+  render();
+}
+
+async function finalizeGame(){
+  if(!confirm('Clôturer la chasse ?\n\nLes scores finaux seront figés et le diaporama souvenir sera disponible.')) return;
   STATE.game.status='ended';
+  await saveGame(STATE.game);
+  render();
+}
+
+// ============ ÉCRAN ÉQUIPE EN ATTENTE (pendant validation + jury) ============
+function screenTeamWaiting(){
+  const g = STATE.game;
+  const phase = g.status==='validation' ? 'validation' : 'jury';
+  const phaseTxt = phase==='validation' ? 'Le maître du jeu vérifie les photos…' : 'Le jury attribue les points bonus…';
+  app().innerHTML = `
+    <div class="screen" data-screen="team-waiting">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>${escapeHtml(STATE.me.teamName)}</div>
+        <span class="chip">${phase==='validation'?'Validation':'Jury'}</span>
+      </div>
+      <h1 class="title">La chasse <em>est finie</em>.</h1>
+      <p class="subtitle">${phaseTxt}<br>Les résultats arrivent dans un instant.</p>
+      
+      <div style="text-align:center;margin:40px 0;font-size:48px;animation:fade 1.5s ease infinite alternate">⌛</div>
+      
+      <div class="card" style="margin-top:auto">
+        <h3 style="margin-bottom:8px">Vos preuves envoyées</h3>
+        <p class="help-text" style="margin:0">
+          ${STATE.submissions.filter(s=>s.teamId===STATE.me.teamId).length} photo(s) en cours de notation.
+        </p>
+      </div>
+      
+      <div class="sticky-bottom">
+        <button class="btn ghost" onclick="logout()">Quitter</button>
+      </div>
+    </div>`;
+}
+
+async function endGameNow(){
+  if(!confirm('Terminer la chasse ? Vous passerez ensuite à la phase de validation des photos.')) return;
+  STATE.game.status='validation';
   STATE.game.endedAt = Date.now();
   await saveGame(STATE.game);
   render();
@@ -956,6 +1119,7 @@ async function endGameNow(){
 
 function screenAdminEnd(){
   const g = STATE.game;
+  const shareUrl = `${location.origin}${location.pathname}?diapo=${g.code}`;
   app().innerHTML = `
     <div class="screen" data-screen="admin-end">
       <div class="topbar">
@@ -966,6 +1130,19 @@ function screenAdminEnd(){
       
       ${renderLeaderboard(true)}
       
+      <div class="card" style="margin-top:24px">
+        <h3 style="margin-bottom:8px">✦ Souvenir de la chasse</h3>
+        <p class="help-text" style="margin:0 0 12px">Diaporama plein écran des photos validées. Le lien est partageable pour le projeter en réunion.</p>
+        <button class="btn gold" onclick="openSlideshow()" style="width:100%;margin-bottom:10px">▶ Lancer le diaporama</button>
+        <div class="field" style="margin:0">
+          <label>Lien à partager</label>
+          <div style="display:flex;gap:6px;align-items:stretch">
+            <input id="share-url" class="input mono" value="${escapeHtml(shareUrl)}" readonly style="font-size:11px;flex:1">
+            <button class="btn sm" onclick="copyShareUrl()" style="white-space:nowrap;padding:0 14px">Copier</button>
+          </div>
+        </div>
+      </div>
+      
       <div class="divider-stars">✦ Galerie ✦</div>
       ${renderGalleryByClue()}
       
@@ -973,6 +1150,99 @@ function screenAdminEnd(){
         <button class="btn ghost" onclick="closeGame()">Nouvelle chasse</button>
       </div>
     </div>`;
+}
+
+async function copyShareUrl(){
+  const input = $('#share-url'); if(!input) return;
+  try{
+    await navigator.clipboard.writeText(input.value);
+    toast('Lien copié dans le presse-papiers','success');
+  }catch(e){
+    // Fallback sélection + copie
+    input.select();
+    document.execCommand('copy');
+    toast('Lien copié','success');
+  }
+}
+
+// ============ DIAPORAMA SOUVENIR ============
+function openSlideshow(code){
+  // Si code fourni, on est en mode public (depuis URL ?diapo=XXXX) ; sinon admin
+  const gameCode = code || STATE.game?.code;
+  if(!gameCode) return;
+  STATE.slideshowIndex = 0;
+  STATE.slideshowTimer = null;
+  STATE.slideshowGameCode = gameCode;
+  renderSlideshow();
+}
+
+async function renderSlideshow(){
+  // Chargement des données si on est en mode public (depuis URL)
+  let g = STATE.game;
+  let subs = STATE.submissions;
+  if(!g || g.code !== STATE.slideshowGameCode){
+    g = await loadGame(STATE.slideshowGameCode);
+    subs = await loadSubmissions(STATE.slideshowGameCode);
+    if(!g){ toast('Chasse introuvable','error'); return; }
+    STATE.game = g; STATE.submissions = subs;
+  }
+
+  const validated = subs.filter(s=>s.status==='approved');
+  // Tri par indice pour un parcours narratif
+  validated.sort((a,b)=>{
+    const ci = g.clues.findIndex(c=>c.id===a.clueId) - g.clues.findIndex(c=>c.id===b.clueId);
+    if(ci !== 0) return ci;
+    return (a.submittedAt||0) - (b.submittedAt||0);
+  });
+
+  if(validated.length===0){
+    app().innerHTML = `<div class="screen" data-screen="slideshow-empty">
+      <h1 class="title">Aucune photo</h1>
+      <p class="subtitle">Aucune photo n'a été validée pour cette chasse.</p>
+      <div class="sticky-bottom"><button class="btn ghost" onclick="closeSlideshow()">Retour</button></div>
+    </div>`;
+    return;
+  }
+
+  const idx = STATE.slideshowIndex % validated.length;
+  const s = validated[idx];
+  const clue = g.clues.find(c=>c.id===s.clueId);
+  const team = g.teams.find(t=>t.id===s.teamId);
+
+  // Mode plein écran, fond noir, photo centrée, overlay minimal
+  app().innerHTML = `
+    <div class="screen" data-screen="slideshow" style="padding:0;background:#000;position:fixed;inset:0;z-index:9999;justify-content:center;align-items:center;display:flex">
+      <img src="${s.photoDataUrl}" alt="" style="max-width:100%;max-height:100vh;object-fit:contain;display:block">
+      
+      <div style="position:absolute;top:0;left:0;right:0;padding:env(safe-area-inset-top,16px) 20px 16px;background:linear-gradient(180deg,rgba(0,0,0,.7),transparent);color:#fff;font-family:'Fraunces',serif">
+        <div style="font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.15em;opacity:.7">${idx+1} / ${validated.length} · ${escapeHtml(g.name)}</div>
+      </div>
+      
+      <div style="position:absolute;bottom:0;left:0;right:0;padding:20px 20px calc(env(safe-area-inset-bottom,16px) + 16px);background:linear-gradient(0deg,rgba(0,0,0,.85),transparent);color:#fff">
+        <div style="font-family:'Fraunces',serif;font-style:italic;font-size:18px;margin-bottom:4px">"${escapeHtml(clue?.title||'?')}"</div>
+        <div style="font-family:'Geist',sans-serif;font-size:14px;opacity:.85">${escapeHtml(team?.name||'?')}</div>
+      </div>
+      
+      <button onclick="closeSlideshow()" aria-label="Fermer" style="position:absolute;top:calc(env(safe-area-inset-top,16px) + 8px);right:16px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:22px;cursor:pointer;backdrop-filter:blur(8px)">×</button>
+    </div>`;
+  
+  // Auto-défilement 4s avec boucle
+  if(STATE.slideshowTimer) clearTimeout(STATE.slideshowTimer);
+  STATE.slideshowTimer = setTimeout(()=>{
+    STATE.slideshowIndex = (STATE.slideshowIndex + 1) % validated.length;
+    renderSlideshow();
+  }, 4000);
+}
+
+function closeSlideshow(){
+  if(STATE.slideshowTimer){ clearTimeout(STATE.slideshowTimer); STATE.slideshowTimer = null; }
+  STATE.slideshowIndex = 0;
+  STATE.slideshowGameCode = null;
+  // Nettoyage URL si on était en mode public
+  if(new URLSearchParams(location.search).has('diapo')){
+    history.replaceState({}, '', location.pathname);
+  }
+  render();
 }
 
 async function closeGame(){
@@ -1410,6 +1680,13 @@ setInterval(()=>{
 // ---------- INIT ----------
 (async ()=>{
   loadConfig();
+  // Mode diaporama public via URL : ?diapo=CODE
+  const params = new URLSearchParams(location.search);
+  const diapoCode = params.get('diapo');
+  if(diapoCode && sb){
+    openSlideshow(diapoCode.toUpperCase());
+    return;
+  }
   await render();
   if(sb && STATE.me?.gameCode) startRealtime();
 })();
