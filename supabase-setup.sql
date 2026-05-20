@@ -20,12 +20,16 @@ create table if not exists games (
 );
 
 create table if not exists teams (
-  id          text primary key,
-  game_code   text not null references games(code) on delete cascade,
-  name        text not null,
-  joined_at   timestamptz not null default now()
+  id            text primary key,
+  game_code     text not null references games(code) on delete cascade,
+  name          text not null,
+  start_clue_id text,            -- indice de départ imposé (dispersion) ; null = pas de verrou
+  joined_at     timestamptz not null default now()
 );
 create index if not exists teams_game_idx on teams(game_code);
+
+-- Migration pour une base déjà créée (sans risque si la colonne existe déjà) :
+alter table teams add column if not exists start_clue_id text;
 
 create table if not exists submissions (
   id            text primary key,

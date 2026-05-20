@@ -260,7 +260,7 @@ function rowToGame(row, teamsRows){
     durationMinutes: row.duration_minutes,
     perClueMinutes: row.per_clue_minutes,
     clues: row.clues || [],
-    teams: (teamsRows||[]).map(t=>({id:t.id, name:t.name, joinedAt:new Date(t.joined_at).getTime()})),
+    teams: (teamsRows||[]).map(t=>({id:t.id, name:t.name, joinedAt:new Date(t.joined_at).getTime(), startClueId:t.start_clue_id||null})),
     createdAt: new Date(row.created_at).getTime(),
     startedAt: row.started_at ? new Date(row.started_at).getTime() : null,
     endedAt: row.ended_at ? new Date(row.ended_at).getTime() : null,
@@ -373,6 +373,40 @@ async function addTeam(code, teamName){
 async function removeTeam(teamId){
   if(!sb) return;
   await sb.from('teams').delete().eq('id', teamId);
+}
+
+// ────── Indices de départ (dispersion des équipes) ──────
+// Affecte (ou retire) l'indice de départ imposé d'une équipe.
+async function setTeamStartClue(teamId, clueId){
+  if(!sb) return;
+  const { error } = await sb.from('teams').update({ start_clue_id: clueId || null }).eq('id', teamId);
+  if(error){ toast('Indice de départ : '+error.message,'error',4500); return; }
+  render();
+}
+// Répartit automatiquement un indice de départ distinct par équipe (mélange Fisher-Yates).
+async function autoAssignStartClues(){
+  const g = STATE.game; if(!g) return;
+  if(g.teams.length===0){ toast('Aucune équipe à assigner','error'); return; }
+  if(g.clues.length===0){ toast('Aucun indice disponible','error'); return; }
+  const ids = g.clues.map(c=>c.id);
+  for(let i=ids.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [ids[i],ids[j]]=[ids[j],ids[i]]; }
+  const ops = g.teams.map((t,i)=> sb.from('teams').update({ start_clue_id: ids[i % ids.length] }).eq('id', t.id));
+  const results = await Promise.all(ops);
+  const failed = results.find(r=>r && r.error);
+  if(failed){ toast('Répartition : '+failed.error.message,'error',4500); return; }
+  toast(g.teams.length>g.clues.length ? 'Réparti — trop d\'équipes, des indices sont réutilisés' : 'Indices de départ répartis','success');
+  render();
+}
+// Indice de départ de MON équipe (null = pas de verrou pour cette équipe).
+function myStartClueId(){
+  const t = STATE.game?.teams.find(t=>t.id===STATE.me?.teamId);
+  return t?.startClueId || null;
+}
+// Vrai si mon équipe a réalisé (envoyé une photo pour) son indice de départ — ou s'il n'y a pas de verrou.
+function myStartClueDone(){
+  const scid = myStartClueId();
+  if(!scid) return true;
+  return STATE.submissions.some(s=>s.teamId===STATE.me?.teamId && s.clueId===scid);
 }
 
 // ============ UTILS ============
@@ -705,6 +739,28 @@ async function createGame(){
 
 function screenAdminLobby(){
   const g = STATE.game;
+  // Section "indices de départ" : un premier indice imposé et distinct par équipe (dispersion).
+  const usage = {};
+  g.teams.forEach(t=>{ if(t.startClueId) usage[t.startClueId]=(usage[t.startClueId]||0)+1; });
+  const hasDup = Object.values(usage).some(n=>n>1);
+  const startAssignHtml = g.teams.length===0 ? '' : `
+    <div class="divider"></div>
+    <div class="flex-between" style="margin-bottom:6px">
+      <h3 style="margin:0">Indices de départ</h3>
+      <button class="btn sm ghost" onclick="autoAssignStartClues()">Répartir auto</button>
+    </div>
+    <p class="help-text" style="margin-bottom:12px">Un premier indice imposé et distinct par équipe : tant qu'elle ne l'a pas réalisé (photo envoyée), elle ne voit que celui-là, puis tous les autres se débloquent. Laissez « — Aucun — » pour ne pas verrouiller. But : disperser les équipes au départ.</p>
+    ${g.teams.map(t=>`
+      <div class="card flex-between" style="gap:10px">
+        <strong style="flex-shrink:0">${escapeHtml(t.name)}</strong>
+        <select class="input" style="width:auto;max-width:62%;padding:9px 10px;font-size:13px" onchange="setTeamStartClue('${t.id}', this.value)">
+          <option value="">— Aucun —</option>
+          ${g.clues.map(c=>`<option value="${c.id}"${t.startClueId===c.id?' selected':''}>${escapeHtml(c.title)}</option>`).join('')}
+        </select>
+      </div>`).join('')}
+    ${g.clues.length < g.teams.length ? `<p class="help-text" style="color:var(--oxblood)">⚠ Moins d'indices (${g.clues.length}) que d'équipes (${g.teams.length}) : impossible de donner un départ distinct à chacune.</p>`:''}
+    ${hasDup ? `<p class="help-text" style="color:var(--oxblood)">⚠ Deux équipes ou plus ont le même indice de départ — elles partiront au même endroit.</p>`:''}
+  `;
   app().innerHTML = `
     <div class="screen" data-screen="admin-lobby">
       <div class="topbar">
@@ -722,11 +778,11 @@ function screenAdminLobby(){
         <h3 style="margin:0">Équipes (${g.teams.length})</h3>
         <span class="chip">Actualisation auto</span>
       </div>
-      ${g.teams.length===0 
+      ${g.teams.length===0
         ? '<div class="empty">En attente d\'équipes…</div>'
-        : g.teams.map(t=>`<div class="card flex-between"><strong>${escapeHtml(t.name)}</strong><span class="mono muted" style="font-size:12px">prêt</span></div>`).join('')
+        : g.teams.map(t=>`<div class="card flex-between"><strong>${escapeHtml(t.name)}</strong><span class="mono muted" style="font-size:12px">${t.startClueId?'départ ✓':'prêt'}</span></div>`).join('')
       }
-      
+      ${startAssignHtml}
       <div class="divider"></div>
       <div class="card">
         <h3>${g.clues.length} indice${g.clues.length>1?'s':''} · ${g.durationMinutes} min total · ${g.perClueMinutes} min/indice</h3>
@@ -1316,6 +1372,34 @@ function screenTeamActive(){
   
   const myPoints = mySubs.filter(s=>s.status==='approved').reduce((p,s)=>p+(s.points||0)+(s.bonusPoints||0),0);
   
+  // Verrou "indice de départ" : tant qu'il n'est pas réalisé, l'équipe ne voit que lui.
+  const scid = myStartClueId();
+  const startClue = scid ? g.clues.find(c=>c.id===scid) : null;
+  const locked = !!startClue && !myStartClueDone();
+  const clueItemHtml = (c)=>{
+    const i = g.clues.findIndex(x=>x.id===c.id);
+    const sub = mySubs.find(s=>s.clueId===c.id);
+    const cls = sub?.status==='approved'?'done':sub?'pending':'';
+    const label = sub?.status==='approved'?`${(sub.points||0)+(sub.bonusPoints||0)} pts`:sub?.status==='pending'?'En attente':sub?.status==='rejected'?'Refusée — refaire':`${c.points} pts`;
+    const startBadge = c.id===scid ? '<span class="chip gold" style="margin-right:6px;padding:2px 7px">Départ</span>' : '';
+    return `<button class="clue-item ${cls}" onclick="openClue('${c.id}')">
+            <div class="num">${i+1}</div>
+            <div class="body">
+              <div class="title-row"><div class="name">${startBadge}${escapeHtml(c.title)}</div><div class="pts">${label}</div></div>
+              <div class="preview">${escapeHtml(c.text)}</div>
+            </div>
+          </button>`;
+  };
+  const lockedCount = g.clues.length - 1;
+  const clueListHtml = (locked && startClue) ? `
+        <div class="card dark" style="margin-bottom:12px">
+          <h3 style="color:var(--gold);margin-bottom:4px">Indice de départ imposé</h3>
+          <p style="opacity:.85;font-size:13px;margin:0">Réalisez-le (envoyez la photo) pour débloquer ${lockedCount>0?`les ${lockedCount} autre${lockedCount>1?'s':''}`:'la suite'}.</p>
+        </div>
+        <div class="clue-list">${clueItemHtml(startClue)}</div>
+        ${lockedCount>0?`<div class="card flex-row" style="gap:10px;color:var(--ink-mute)"><span style="font-size:20px">🔒</span><span style="font-size:14px">${lockedCount} indice${lockedCount>1?'s':''} verrouillé${lockedCount>1?'s':''} — débloqué${lockedCount>1?'s':''} dès votre indice de départ réalisé.</span></div>`:''}
+      ` : `<div class="clue-list">${g.clues.map(clueItemHtml).join('')}</div>`;
+
   app().innerHTML = `
     <div class="screen" data-screen="team-active">
       <div class="topbar">
@@ -1335,20 +1419,7 @@ function screenTeamActive(){
       </div>
       
       <h2>Les indices</h2>
-      <div class="clue-list">
-        ${g.clues.map((c,i)=>{
-          const sub = mySubs.find(s=>s.clueId===c.id);
-          const cls = sub?.status==='approved'?'done':sub?'pending':'';
-          const label = sub?.status==='approved'?`${(sub.points||0)+(sub.bonusPoints||0)} pts`:sub?.status==='pending'?'En attente':sub?.status==='rejected'?'Refusée — refaire':`${c.points} pts`;
-          return `<button class="clue-item ${cls}" onclick="openClue('${c.id}')">
-            <div class="num">${i+1}</div>
-            <div class="body">
-              <div class="title-row"><div class="name">${escapeHtml(c.title)}</div><div class="pts">${label}</div></div>
-              <div class="preview">${escapeHtml(c.text)}</div>
-            </div>
-          </button>`;
-        }).join('')}
-      </div>
+      ${clueListHtml}
       
       <div class="sticky-bottom">
         <button class="btn ghost" onclick="leaveGame()">Quitter la chasse</button>
@@ -1357,6 +1428,11 @@ function screenTeamActive(){
 }
 
 function openClue(clueId){
+  // Garde-fou : indice de départ pas encore réalisé → on ne peut ouvrir que lui.
+  if(myStartClueId() && !myStartClueDone() && clueId!==myStartClueId()){
+    toast('Réalisez d\'abord votre indice de départ','');
+    return;
+  }
   const sub = STATE.submissions.find(s=>s.clueId===clueId && s.teamId===STATE.me.teamId);
   if(sub && sub.status==='approved'){
     toast('Indice déjà validé','success');
