@@ -1,0 +1,28 @@
+# Dépendances (si migration Expo/Node à terme)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Secrets / environnement
+.env
+.env.*
+*.local
+secrets.json
+
+# Systèmes d'exploitation
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Éditeurs
+.vscode/
+.idea/
+*.swp
+*~
+
+# Build / divers
+dist/
+build/
+.cache/
+*.log
