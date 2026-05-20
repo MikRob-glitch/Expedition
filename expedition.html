@@ -222,11 +222,18 @@ function toast(msg, kind='', dur=2400){
 }
 
 // ────── Supabase client ──────
+// Pré-configuration auto : projet "Expedition catching" (region eu-north-1).
+// Override possible via l'écran Configuration (les valeurs saisies remplacent les defaults).
+const SUPABASE_DEFAULTS = {
+  url: 'https://rwagwbzztcehvdztkscj.supabase.co',
+  key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ3YWd3Ynp6dGNlaHZkenRrc2NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDIyODEsImV4cCI6MjA5NDc3ODI4MX0.jODIBEM1OLcRrBYk3mI5XeFR-Wp5ImLUUGiYNYkzJx8'
+};
+
 let sb = null;
 
 function loadConfig(){
-  const url = localStorage.getItem('sb_url');
-  const key = localStorage.getItem('sb_key');
+  const url = localStorage.getItem('sb_url') || SUPABASE_DEFAULTS.url;
+  const key = localStorage.getItem('sb_key') || SUPABASE_DEFAULTS.key;
   if(url && key && window.supabase){
     sb = window.supabase.createClient(url, key, {
       realtime: { params: { eventsPerSecond: 10 } }
