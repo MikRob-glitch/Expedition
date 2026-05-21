@@ -378,10 +378,19 @@ async function removeTeam(teamId){
 // ────── Indices de départ (dispersion des équipes) ──────
 // Affecte (ou retire) l'indice de départ imposé d'une équipe.
 async function setTeamStartClue(teamId, clueId){
+  // Optimiste : on mémorise le choix dans un brouillon local que render() ne réécrase pas,
+  // pour que la sélection survive au re-render déclenché par la synchro temps réel.
+  STATE.startClueDraft = STATE.startClueDraft || {};
+  STATE.startClueDraft[teamId] = clueId || '';
+  render();
   if(!sb) return;
   const { error } = await sb.from('teams').update({ start_clue_id: clueId || null }).eq('id', teamId);
-  if(error){ toast('Indice de départ : '+error.message,'error',4500); return; }
-  render();
+  if(error){
+    delete STATE.startClueDraft[teamId];
+    const miss = /start_clue_id|schema cache|column|PGRST204/i.test(error.message||'');
+    toast(miss ? '⚠ Colonne « start_clue_id » absente dans Supabase — lancez le SQL de migration' : 'Indice de départ : '+error.message, 'error', 6500);
+    render();
+  }
 }
 // Répartit automatiquement un indice de départ distinct par équipe (mélange Fisher-Yates).
 async function autoAssignStartClues(){
@@ -390,10 +399,20 @@ async function autoAssignStartClues(){
   if(g.clues.length===0){ toast('Aucun indice disponible','error'); return; }
   const ids = g.clues.map(c=>c.id);
   for(let i=ids.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [ids[i],ids[j]]=[ids[j],ids[i]]; }
+  STATE.startClueDraft = STATE.startClueDraft || {};
+  g.teams.forEach((t,i)=>{ STATE.startClueDraft[t.id] = ids[i % ids.length]; });
+  render();
   const ops = g.teams.map((t,i)=> sb.from('teams').update({ start_clue_id: ids[i % ids.length] }).eq('id', t.id));
   const results = await Promise.all(ops);
   const failed = results.find(r=>r && r.error);
-  if(failed){ toast('Répartition : '+failed.error.message,'error',4500); return; }
+  if(failed){
+    g.teams.forEach(t=>{ delete STATE.startClueDraft[t.id]; });
+    const m = failed.error.message||'';
+    const miss = /start_clue_id|schema cache|column|PGRST204/i.test(m);
+    toast(miss ? '⚠ Colonne « start_clue_id » absente dans Supabase — lancez le SQL de migration' : 'Répartition : '+m, 'error', 6500);
+    render();
+    return;
+  }
   toast(g.teams.length>g.clues.length ? 'Réparti — trop d\'équipes, des indices sont réutilisés' : 'Indices de départ répartis','success');
   render();
 }
@@ -740,8 +759,11 @@ async function createGame(){
 function screenAdminLobby(){
   const g = STATE.game;
   // Section "indices de départ" : un premier indice imposé et distinct par équipe (dispersion).
+  // Valeur effective = brouillon optimiste s'il existe, sinon valeur en base.
+  const draft = STATE.startClueDraft || {};
+  const effStart = (t)=> (t.id in draft) ? (draft[t.id] || null) : (t.startClueId || null);
   const usage = {};
-  g.teams.forEach(t=>{ if(t.startClueId) usage[t.startClueId]=(usage[t.startClueId]||0)+1; });
+  g.teams.forEach(t=>{ const v=effStart(t); if(v) usage[v]=(usage[v]||0)+1; });
   const hasDup = Object.values(usage).some(n=>n>1);
   const startAssignHtml = g.teams.length===0 ? '' : `
     <div class="divider"></div>
@@ -755,7 +777,7 @@ function screenAdminLobby(){
         <strong style="flex-shrink:0">${escapeHtml(t.name)}</strong>
         <select class="input" style="width:auto;max-width:62%;padding:9px 10px;font-size:13px" onchange="setTeamStartClue('${t.id}', this.value)">
           <option value="">— Aucun —</option>
-          ${g.clues.map(c=>`<option value="${c.id}"${t.startClueId===c.id?' selected':''}>${escapeHtml(c.title)}</option>`).join('')}
+          ${g.clues.map(c=>`<option value="${c.id}"${effStart(t)===c.id?' selected':''}>${escapeHtml(c.title)}</option>`).join('')}
         </select>
       </div>`).join('')}
     ${g.clues.length < g.teams.length ? `<p class="help-text" style="color:var(--oxblood)">⚠ Moins d'indices (${g.clues.length}) que d'équipes (${g.teams.length}) : impossible de donner un départ distinct à chacune.</p>`:''}
@@ -780,7 +802,7 @@ function screenAdminLobby(){
       </div>
       ${g.teams.length===0
         ? '<div class="empty">En attente d\'équipes…</div>'
-        : g.teams.map(t=>`<div class="card flex-between"><strong>${escapeHtml(t.name)}</strong><span class="mono muted" style="font-size:12px">${t.startClueId?'départ ✓':'prêt'}</span></div>`).join('')
+        : g.teams.map(t=>`<div class="card flex-between"><strong>${escapeHtml(t.name)}</strong><span class="mono muted" style="font-size:12px">${effStart(t)?'départ ✓':'prêt'}</span></div>`).join('')
       }
       ${startAssignHtml}
       <div class="divider"></div>
