@@ -1,199 +1,4 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<meta name="theme-color" content="#1a1815">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<title>Expédition · Chasse au Trésor Photo</title>
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;0,9..144,900;1,9..144,600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-<style>
-:root{
-  --parchment:#f4ede0;
-  --parchment-2:#ebe2cf;
-  --parchment-3:#dfd4b8;
-  --ink:#1a1815;
-  --ink-soft:#4a4438;
-  --ink-mute:#8a8068;
-  --gold:#c9a55a;
-  --gold-dark:#a0832f;
-  --oxblood:#8b2e2e;
-  --oxblood-dark:#6e2222;
-  --forest:#2d4a3a;
-  --line:#d8ccb0;
-  --line-strong:#c0b394;
-}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0;font-family:'Geist',-apple-system,sans-serif;background:var(--parchment);color:var(--ink);min-height:100vh;min-height:100dvh;overscroll-behavior-y:none;font-size:16px;line-height:1.5}
-body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(circle at 18% 22%,rgba(139,46,46,.045),transparent 45%),radial-gradient(circle at 82% 78%,rgba(45,74,58,.04),transparent 45%),radial-gradient(circle at 50% 50%,transparent 60%,rgba(0,0,0,.04) 100%);pointer-events:none;z-index:0}
-body::after{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .04 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.6}
-
-.display{font-family:'Fraunces',serif;font-variation-settings:"opsz" 144;letter-spacing:-.025em;line-height:1.05;font-weight:800}
-.mono{font-family:'Geist Mono',monospace;font-feature-settings:"ss01","cv11"}
-.italic-d{font-family:'Fraunces',serif;font-style:italic}
-
-#app{position:relative;z-index:1;max-width:520px;margin:0 auto;min-height:100vh;min-height:100dvh;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);display:flex;flex-direction:column}
-
-.screen{flex:1;display:flex;flex-direction:column;padding:24px 20px 24px;animation:fade .35s ease}
-@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:6px 0 22px;border-bottom:1px solid var(--line);margin-bottom:22px}
-.brand{display:flex;align-items:center;gap:10px;font-family:'Fraunces',serif;font-weight:600;font-size:15px;letter-spacing:.04em;text-transform:uppercase}
-.brand-icon{width:28px;height:28px;display:grid;place-items:center;border:1.5px solid var(--ink);border-radius:50%;font-size:14px}
-.chip{font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-soft);padding:5px 9px;border:1px solid var(--line-strong);border-radius:999px;background:rgba(255,255,255,.3)}
-.chip.live{color:var(--oxblood);border-color:var(--oxblood);background:rgba(139,46,46,.06)}
-.chip.live::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--oxblood);margin-right:7px;animation:pulse 1.4s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.chip.gold{color:var(--gold-dark);border-color:var(--gold-dark);background:rgba(201,165,90,.1)}
-
-h1.title{font-family:'Fraunces',serif;font-weight:800;font-size:44px;line-height:.95;letter-spacing:-.03em;margin:0 0 8px}
-h1.title em{font-style:italic;font-weight:600;color:var(--oxblood)}
-.subtitle{color:var(--ink-soft);font-size:15px;margin-bottom:28px;max-width:34ch}
-h2{font-family:'Fraunces',serif;font-weight:700;font-size:24px;letter-spacing:-.02em;margin:0 0 12px}
-h3{font-family:'Fraunces',serif;font-weight:700;font-size:18px;margin:0 0 8px;letter-spacing:-.01em}
-
-.btn{appearance:none;border:none;background:var(--ink);color:var(--parchment);font-family:'Geist',sans-serif;font-weight:600;font-size:15px;padding:16px 22px;border-radius:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;transition:transform .15s,background .2s;letter-spacing:-.01em}
-.btn:active{transform:scale(.98)}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.btn.gold{background:var(--gold-dark);color:#fff}
-.btn.oxblood{background:var(--oxblood);color:#fff}
-.btn.forest{background:var(--forest);color:#fff}
-.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--ink)}
-.btn.sm{padding:10px 14px;font-size:13px;border-radius:8px;width:auto}
-.btn-row{display:flex;gap:10px}
-.btn-row .btn{flex:1}
-
-.role-grid{display:grid;gap:14px;margin-top:auto;margin-bottom:24px}
-.role-card{border:1.5px solid var(--line-strong);background:rgba(255,255,255,.35);border-radius:16px;padding:22px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:16px;transition:all .2s;font-family:inherit;color:inherit;width:100%}
-.role-card:active{transform:scale(.99);background:rgba(255,255,255,.55)}
-.role-card .glyph{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-family:'Fraunces',serif;font-size:24px;font-weight:700;flex-shrink:0}
-.role-card.admin .glyph{background:var(--ink);color:var(--gold)}
-.role-card.team .glyph{background:var(--oxblood);color:var(--parchment)}
-.role-card .label{font-family:'Fraunces',serif;font-weight:700;font-size:20px;line-height:1.1;margin-bottom:3px}
-.role-card .desc{font-size:13px;color:var(--ink-soft);line-height:1.4}
-.role-card .arrow{margin-left:auto;font-size:20px;color:var(--ink-mute)}
-
-.field{margin-bottom:16px}
-.field label{display:block;font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-soft);margin-bottom:6px}
-.input,textarea.input{width:100%;background:rgba(255,255,255,.45);border:1.5px solid var(--line-strong);border-radius:10px;padding:13px 14px;font-family:'Geist',sans-serif;font-size:15px;color:var(--ink);outline:none;transition:border-color .15s}
-.input:focus{border-color:var(--ink)}
-textarea.input{resize:vertical;min-height:80px;font-family:inherit}
-.input.code{font-family:'Geist Mono',monospace;font-size:22px;text-align:center;letter-spacing:.3em;text-transform:uppercase;font-weight:600}
-
-.card{background:rgba(255,255,255,.4);border:1.5px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
-.card.dark{background:var(--ink);color:var(--parchment);border-color:var(--ink)}
-.card.dark h3{color:var(--parchment)}
-
-.code-display{background:var(--ink);color:var(--gold);padding:24px;border-radius:14px;text-align:center;margin:18px 0}
-.code-display .label{font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.2em;opacity:.7;margin-bottom:8px}
-.code-display .code{font-family:'Geist Mono',monospace;font-size:42px;font-weight:600;letter-spacing:.25em}
-
-.clue-list{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
-.clue-item{display:flex;align-items:flex-start;gap:12px;padding:14px;background:rgba(255,255,255,.4);border:1.5px solid var(--line);border-radius:12px;cursor:pointer;transition:all .15s;text-align:left;font-family:inherit;color:inherit;width:100%;border-style:solid}
-.clue-item:active{transform:scale(.99)}
-.clue-item .num{width:32px;height:32px;flex-shrink:0;border-radius:50%;background:var(--ink);color:var(--gold);display:grid;place-items:center;font-family:'Fraunces',serif;font-weight:700;font-size:16px}
-.clue-item.done .num{background:var(--forest);color:#fff}
-.clue-item.pending .num{background:var(--gold-dark);color:#fff}
-.clue-item .body{flex:1;min-width:0}
-.clue-item .title-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:2px}
-.clue-item .name{font-weight:600;font-size:15px}
-.clue-item .pts{font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink-mute)}
-.clue-item .preview{font-size:13px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-
-.timer{font-family:'Geist Mono',monospace;font-weight:600;font-size:13px;padding:6px 10px;background:var(--ink);color:var(--parchment);border-radius:6px;display:inline-flex;align-items:center;gap:6px}
-.timer.warn{background:var(--oxblood)}
-.timer.alert{background:var(--oxblood);animation:pulse 1s infinite}
-
-.photo-preview{width:100%;aspect-ratio:4/3;background:var(--parchment-3);border:1.5px dashed var(--line-strong);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;cursor:pointer;overflow:hidden;margin-bottom:14px;color:var(--ink-soft);font-size:14px;position:relative}
-.photo-preview img{width:100%;height:100%;object-fit:cover}
-.photo-preview .icon{font-family:'Fraunces',serif;font-size:32px}
-.photo-preview .retake{position:absolute;bottom:10px;right:10px;background:rgba(26,24,21,.92);color:var(--parchment);font-size:12px;padding:6px 10px;border-radius:6px;font-family:'Geist Mono',monospace}
-
-.divider{height:1px;background:var(--line);margin:20px 0}
-.divider.thick{height:2px;background:var(--line-strong)}
-.divider-stars{display:flex;align-items:center;gap:10px;color:var(--ink-mute);font-family:'Fraunces',serif;font-size:12px;letter-spacing:.3em;margin:24px 0;text-transform:uppercase}
-.divider-stars::before,.divider-stars::after{content:'';flex:1;height:1px;background:var(--line-strong)}
-
-.scoreboard{margin:18px 0}
-.scoreboard .row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(255,255,255,.4);border:1.5px solid var(--line);border-radius:10px;margin-bottom:8px}
-.scoreboard .row.first{background:var(--ink);color:var(--gold);border-color:var(--ink)}
-.scoreboard .row.first .pts{color:var(--gold)}
-.scoreboard .rank{font-family:'Fraunces',serif;font-weight:800;font-size:20px;width:28px;text-align:center}
-.scoreboard .name{flex:1;font-weight:600}
-.scoreboard .pts{font-family:'Geist Mono',monospace;font-weight:600;font-size:18px}
-
-.submission-card{background:rgba(255,255,255,.45);border:1.5px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:14px}
-.submission-card .photo{width:100%;aspect-ratio:4/3;background:#000;display:block}
-.submission-card .photo img{width:100%;height:100%;object-fit:cover;cursor:pointer}
-.submission-card .meta{padding:14px}
-.submission-card .meta .row1{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;gap:8px;flex-wrap:wrap}
-.submission-card .team{font-family:'Fraunces',serif;font-weight:700;font-size:17px}
-.submission-card .clue-ref{font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.1em}
-.submission-card .stats{display:flex;gap:14px;font-family:'Geist Mono',monospace;font-size:12px;color:var(--ink-soft);margin-bottom:12px}
-.submission-card .stats span{display:inline-flex;align-items:center;gap:4px}
-.submission-card .actions{display:flex;gap:8px;flex-wrap:wrap}
-.submission-card .bonus-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
-.submission-card .bonus-row label{font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft)}
-.bonus-input{width:70px;background:rgba(255,255,255,.6);border:1.5px solid var(--line-strong);border-radius:8px;padding:7px 10px;font-family:'Geist Mono',monospace;font-size:14px;text-align:center}
-
-.status-badge{font-family:'Geist Mono',monospace;font-size:10px;padding:3px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.1em;font-weight:500}
-.status-badge.pending{background:var(--gold);color:var(--ink)}
-.status-badge.approved{background:var(--forest);color:#fff}
-.status-badge.rejected{background:var(--oxblood);color:#fff}
-
-.tabs{display:flex;gap:4px;background:var(--parchment-2);padding:4px;border-radius:10px;margin-bottom:18px}
-.tabs button{flex:1;border:none;background:transparent;padding:10px;font-family:'Geist',sans-serif;font-size:13px;font-weight:600;color:var(--ink-soft);border-radius:7px;cursor:pointer;transition:all .15s}
-.tabs button.active{background:var(--ink);color:var(--parchment)}
-
-.empty{text-align:center;padding:36px 20px;color:var(--ink-mute);font-family:'Fraunces',serif;font-style:italic}
-
-.gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px}
-.gallery .item{aspect-ratio:1;background:#000;border-radius:8px;overflow:hidden;cursor:pointer;position:relative}
-.gallery .item img{width:100%;height:100%;object-fit:cover}
-.gallery .item .label{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.8));color:#fff;padding:8px 8px 6px;font-size:11px;font-family:'Geist Mono',monospace}
-.gallery .item .bonus-mark{position:absolute;top:6px;right:6px;background:var(--gold);color:var(--ink);font-family:'Geist Mono',monospace;font-size:10px;font-weight:600;padding:3px 6px;border-radius:4px}
-
-.modal{position:fixed;inset:0;background:rgba(26,24,21,.95);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
-.modal.open{display:flex;animation:fade .2s}
-.modal .modal-inner{max-width:100%;max-height:100%;text-align:center}
-.modal img{max-width:100%;max-height:80vh;border-radius:8px}
-.modal .close{position:absolute;top:env(safe-area-inset-top,16px);right:16px;background:rgba(244,237,224,.15);color:#fff;border:none;width:40px;height:40px;border-radius:50%;font-size:22px;cursor:pointer}
-.modal .info{color:var(--parchment);margin-top:12px;font-family:'Geist Mono',monospace;font-size:12px}
-
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--parchment);padding:12px 18px;border-radius:10px;font-size:14px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:toastIn .3s ease;max-width:90%}
-.toast.success{background:var(--forest)}
-.toast.error{background:var(--oxblood)}
-@keyframes toastIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
-
-.spinner{width:18px;height:18px;border:2px solid rgba(244,237,224,.3);border-top-color:var(--parchment);border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-.sticky-bottom{position:sticky;bottom:0;background:linear-gradient(transparent,var(--parchment) 30%);padding:16px 0 0;margin-top:auto}
-
-.help-text{font-size:12px;color:var(--ink-mute);margin-top:6px;line-height:1.4}
-.muted{color:var(--ink-mute)}
-.flex-row{display:flex;gap:10px;align-items:center}
-.flex-between{display:flex;justify-content:space-between;align-items:center;gap:10px}
-
-.hidden-input{position:absolute;left:-9999px}
-</style>
-
-<link rel="manifest" href="manifest.json">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Expédition">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-</head>
-<body>
-<div id="app"></div>
-<div id="modal" class="modal"><button class="close" onclick="closeModal()">×</button><div class="modal-inner"></div></div>
-
-<script>
 // ============ STATE & STORAGE ============
 const STATE = { me:null, game:null, submissions:[], teams:[], realtimeChannel:null, pollTimer:null, currentClueId:null, perClueStartTime:{}, capturedPhoto:null, draftClues:null, adminTab:null };
 
@@ -384,12 +189,11 @@ async function setTeamStartClue(teamId, clueId){
   STATE.startClueDraft[teamId] = clueId || '';
   render();
   if(!sb) return;
-  const { data, error } = await sb.from('teams').update({ start_clue_id: clueId || null }).eq('id', teamId).select('id,start_clue_id');
-  if(error || !data || data.length===0){
+  const { error } = await sb.from('teams').update({ start_clue_id: clueId || null }).eq('id', teamId);
+  if(error){
     delete STATE.startClueDraft[teamId];
-    const m = error?.message || 'aucune ligne mise à jour — équipe introuvable en base';
-    const miss = /start_clue_id|schema cache|column|PGRST204/i.test(m);
-    toast(miss ? '⚠ Colonne « start_clue_id » absente dans Supabase — lancez le SQL de migration' : 'Échec assignation : '+m, 'error', 6500);
+    const miss = /start_clue_id|schema cache|column|PGRST204/i.test(error.message||'');
+    toast(miss ? '⚠ Colonne « start_clue_id » absente dans Supabase — lancez le SQL de migration' : 'Indice de départ : '+error.message, 'error', 6500);
     render();
   }
 }
@@ -403,12 +207,12 @@ async function autoAssignStartClues(){
   STATE.startClueDraft = STATE.startClueDraft || {};
   g.teams.forEach((t,i)=>{ STATE.startClueDraft[t.id] = ids[i % ids.length]; });
   render();
-  const ops = g.teams.map((t,i)=> sb.from('teams').update({ start_clue_id: ids[i % ids.length] }).eq('id', t.id).select('id'));
+  const ops = g.teams.map((t,i)=> sb.from('teams').update({ start_clue_id: ids[i % ids.length] }).eq('id', t.id));
   const results = await Promise.all(ops);
-  const failed = results.find(r=> r && (r.error || !r.data || r.data.length===0));
+  const failed = results.find(r=>r && r.error);
   if(failed){
     g.teams.forEach(t=>{ delete STATE.startClueDraft[t.id]; });
-    const m = failed.error?.message || 'aucune ligne mise à jour — équipe introuvable en base';
+    const m = failed.error.message||'';
     const miss = /start_clue_id|schema cache|column|PGRST204/i.test(m);
     toast(miss ? '⚠ Colonne « start_clue_id » absente dans Supabase — lancez le SQL de migration' : 'Répartition : '+m, 'error', 6500);
     render();
@@ -1679,6 +1483,3 @@ setInterval(()=>{
   if(sb && STATE.me?.gameCode) startRealtime();
 })();
 
-</script>
-</body>
-</html>
