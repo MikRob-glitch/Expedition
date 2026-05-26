@@ -1744,4 +1744,77 @@ function screenTeamSubmitted(){ /* not used directly, render handles */ }
 function openPhoto(subId){
   const s = STATE.submissions.find(x=>x.id===subId);
   if(!s) return;
-  
+  const team = STATE.game.teams.find(t=>t.id===s.teamId);
+  const clue = STATE.game.clues.find(c=>c.id===s.clueId);
+  $('#modal .modal-inner').innerHTML = `
+    <img src="${s.photoDataUrl}">
+    <div class="info">${escapeHtml(team?.name||'?')} · ${escapeHtml(clue?.title||'?')} · ${(s.points||0)+(s.bonusPoints||0)} pts${(s.bonusPoints||0)>0?` (dont +${s.bonusPoints} bonus)`:''}</div>
+  `;
+  $('#modal').classList.add('open');
+}
+function closeModal(){ $('#modal').classList.remove('open'); }
+
+// ---------- UTIL ----------
+function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function logout(){ stopRealtime(); await clearMe(); STATE.game=null; STATE.submissions=[]; render(); }
+
+// ---------- TICK ----------
+// Re-render timers each second on active screens
+setInterval(()=>{
+  const cur = $('[data-screen]')?.dataset.screen;
+  if(['admin-live','team-active','team-capture'].includes(cur)){
+    // Light update: only timer chips
+    if(STATE.game?.status==='active' && STATE.game.startedAt){
+      const elapsed = (Date.now()-STATE.game.startedAt)/1000;
+      const remaining = Math.max(0, STATE.game.durationMinutes*60 - elapsed);
+      const chip = $('.chip.live');
+      if(chip) chip.textContent = fmtTime(remaining);
+      if(remaining<=0){ render(); return; }
+
+      if(cur==='team-capture' && STATE.currentClueId){
+        // Timer per-indice INDICATIF : aide l'équipe à doser son rythme.
+        // Aucun timeout brutal — le seul vrai timer est le global.
+        const st = STATE.perClueStartTime[STATE.currentClueId];
+        if(st){
+          const recommended = STATE.game.perClueMinutes*60;
+          const usedOnClue = (Date.now()-st)/1000;
+          const perClueRemaining = recommended - usedOnClue;
+          const isOverrun = perClueRemaining < 0;
+          const displaySec = isOverrun
+            ? Math.min(-perClueRemaining, remaining)
+            : Math.min(perClueRemaining, remaining);
+          const t = $('.timer');
+          if(t){
+            t.textContent = `${isOverrun ? '+' : ''}${fmtTime(displaySec)}`;
+            let cls = '';
+            if(remaining < 60) cls = 'alert';
+            else if(isOverrun) cls = 'warn';
+            else if(perClueRemaining < 180) cls = 'warn';
+            t.className = 'timer ' + cls;
+          }
+          // Mise à jour du label "Conseillé / Au-delà du conseil"
+          const lbl = document.querySelector('[data-screen="team-capture"] .topbar div > div:first-child');
+          if(lbl) lbl.textContent = isOverrun ? 'Au-delà du conseil' : 'Conseillé';
+        }
+      }
+    }
+  }
+}, 1000);
+
+// ---------- INIT ----------
+(async ()=>{
+  loadConfig();
+  // Mode diaporama public via URL : ?diapo=CODE
+  const params = new URLSearchParams(location.search);
+  const diapoCode = params.get('diapo');
+  if(diapoCode && sb){
+    openSlideshow(diapoCode.toUpperCase());
+    return;
+  }
+  await render();
+  if(sb && STATE.me?.gameCode) startRealtime();
+})();
+
+</script>
+</body>
+</html>
