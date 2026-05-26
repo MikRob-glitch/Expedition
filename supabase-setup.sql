@@ -37,8 +37,8 @@ create table if not exists submissions (
   team_id       text not null references teams(id) on delete cascade,
   clue_id       text not null,
   photo_url     text not null,
-  lat           double precision not null,
-  lng           double precision not null,
+  lat           double precision,            -- hérité (GPS retiré) : optionnel
+  lng           double precision,            -- hérité (GPS retiré) : optionnel
   status        text not null default 'pending'
                   check (status in ('pending','approved','rejected')),
   points        int not null default 0,
@@ -48,6 +48,10 @@ create table if not exists submissions (
 );
 create index if not exists submissions_game_idx on submissions(game_code);
 create index if not exists submissions_team_idx on submissions(team_id);
+
+-- Migration : GPS retiré de l'app → lat/lng deviennent optionnels (sans risque si déjà nullable)
+alter table submissions alter column lat drop not null;
+alter table submissions alter column lng drop not null;
 
 -- ───────── 2. Realtime ─────────
 -- Permet les websockets sur ces tables (Supabase Realtime)

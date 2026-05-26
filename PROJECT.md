@@ -1,6 +1,8 @@
 # Expédition · Chasse au trésor photo
 
-Prototype mobile-web d'une chasse au trésor multi-équipes. Les équipes résolvent des indices, valident chaque lieu par une photo + position GPS, l'admin juge en temps réel et distribue les points.
+Application web mobile (PWA) pour une chasse au trésor multi-équipes. Les équipes résolvent des indices, prouvent chaque trouvaille par une **photo**, l'admin **valide** la conformité, puis un **jury vote** les meilleures photos. Synchronisation temps réel entre tous les téléphones.
+
+> Mono-fichier, sans build. Dépôt : `github.com/MikRob-glitch/Expedition`.
 
 ---
 
@@ -8,20 +10,25 @@ Prototype mobile-web d'une chasse au trésor multi-équipes. Les équipes résol
 
 | Couche | Choix | Pourquoi |
 |---|---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique | Zéro build, déploiement par drag-drop, démarre instantanément |
-| Cartes | Leaflet + OpenStreetMap | Gratuit, sans clé API, performant |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~1680 lignes) | Zéro build, démarrage instantané, debug trivial |
+| Backend | Supabase (Postgres + Realtime + Storage) | Synchro websockets, photos hébergées, tier gratuit |
 | Caméra | `<input type="file" capture="environment">` | Caméra native iOS/Android sans permission custom |
-| Backend | Supabase (Postgres + Realtime + Storage) | Synchro websockets, photos hébergées, tier gratuit suffisant |
-| Hébergement | Netlify Drop / Vercel / GitHub Pages | HTTPS obligatoire (caméra + géoloc l'exigent) |
-| Typo | Fraunces (display serif) + Geist (sans) + Geist Mono | Identité "expédition vintage" |
+| PWA | `manifest.json` + icônes 192/512 + `apple-touch-icon` | « Ajouter à l'écran d'accueil » (iOS) |
+| Hébergement | Netlify / Vercel / GitHub Pages | HTTPS obligatoire (la caméra l'exige) |
+| Typo | Fraunces (serif display) + Geist + Geist Mono | Identité « expédition vintage » |
+
+> ⚠️ Changements depuis le prototype initial : **la carte (Leaflet/OpenStreetMap) et la géolocalisation GPS ont été retirées** — la preuve est désormais purement photographique.
 
 ---
 
 ## Fichiers du projet
 
 ```
-expedition.html        ← app complète, single file (~1400 lignes)
-supabase-setup.sql     ← schéma + RLS + bucket Storage, à exécuter 1x
+expedition.html        ← app complète, single-file SPA (~1680 lignes)
+supabase-setup.sql     ← schéma + RLS + bucket Storage (à exécuter 1×)
+manifest.json          ← manifeste PWA
+icons/                 ← icon-192.png, icon-512.png
+README.md              ← présentation + démarrage rapide
 PROJECT.md             ← ce fichier
 ```
 
@@ -29,79 +36,84 @@ PROJECT.md             ← ce fichier
 
 ## Démarrage rapide
 
-### 1. Supabase (5 min)
-
-1. Créer un projet sur **supabase.com** (gratuit)
-2. **SQL Editor** → coller `supabase-setup.sql` → Run
-3. **Settings → API** → noter `Project URL` et `anon public` key
-
-### 2. Hébergement (2 min)
-
-Déposer `expedition.html` sur **app.netlify.com/drop** → récupérer l'URL HTTPS.
-
-### 3. Première utilisation
-
-Ouvrir l'URL → écran Configuration → coller URL + anon key → Connecter. La config reste dans `localStorage` (par navigateur).
+1. **Supabase** : créer un projet sur supabase.com → SQL Editor → coller `supabase-setup.sql` → Run → noter `Project URL` + clé `anon public` (Settings → API).
+2. **Config** : l'app embarque des valeurs Supabase **par défaut** codées en dur (`SUPABASE_DEFAULTS`). On peut les surcharger via l'écran **Configuration** (stocké en `localStorage`, par navigateur).
+3. **Héberger** `expedition.html` (+ `manifest.json` + `icons/`) en **HTTPS**.
 
 ---
 
 ## Architecture
 
-### Flux de données
-
-```
-Téléphone admin ─┐                                  ┌─ Téléphone équipe A
-                 ├── HTTPS ──► Supabase ──► WS ────┤
-Téléphone équipe ┘   (REST)    (Postgres            └─ Téléphone équipe B
-                                + Realtime
-                                + Storage)
-```
-
-- **Lectures/écritures** : `sb.from('table').select/insert/upsert/delete`
-- **Realtime** : `sb.channel(...).on('postgres_changes', ...)` filtré par `game_code`
-- **Photos** : compression canvas (1000px, JPEG 0.7+) → `sb.storage.from('photos').upload()` → URL publique stockée dans `submissions.photo_url`
-- **Filet de sécurité** : poll DB toutes les 15 s au cas où le websocket lâche
-
 ### Modèle de données
 
 ```sql
-games          (code PK, name, status, duration_minutes, per_clue_minutes,
-                clues JSONB, admin_id, created_at, started_at, ended_at)
+games        (code PK, name, status, duration_minutes, per_clue_minutes,
+              clues JSONB, admin_id, created_at, started_at, ended_at)
 
-teams          (id PK, game_code FK, name, joined_at)
+teams        (id PK, game_code FK, name, start_clue_id, joined_at)
 
-submissions    (id PK, game_code FK, team_id FK, clue_id, photo_url,
-                lat, lng, status, points, bonus_points, submitted_at, judged_at)
+submissions  (id PK, game_code FK, team_id FK, clue_id, photo_url,
+              status, points, bonus_points, submitted_at, judged_at,
+              lat, lng  ← hérités, désormais inutilisés / optionnels)
 ```
 
-- `games.clues` est en JSONB : `[{id, title, text, lat, lng, points}, ...]` — choix volontaire, les indices ne changent jamais après création, pas besoin de table dédiée.
-- `status` : `setup` → `active` → `ended` (machine à états strict, contraint via CHECK).
-- Toutes les FK ont `on delete cascade` : supprimer un jeu nettoie tout.
+- `games.clues` (JSONB) : `[{id, title, text, points}, ...]` — **plus de lat/lng** (GPS retiré).
+- `teams.start_clue_id` : indice de départ imposé à l'équipe (dispersion). `null` = pas de verrou.
+- `submissions.bonus_points` : sert aux **points de vote du jury** (50/30/10).
+- `submissions.lat/lng` : colonnes héritées du prototype GPS, rendues **optionnelles** (l'app ne les renseigne plus).
+- Toutes les FK ont `on delete cascade`.
 
-### Identité
-
-- `me` (rôle + teamId + gameCode) → `localStorage` du navigateur, **per-device**
-- Pas d'auth Supabase : tout est anon. Le code à 4 lettres sert de "secret" partagé.
-
-### Boucles de rendu
-
-L'app est un SPA mono-fichier sans framework. Le routeur `render()` examine `STATE` et choisit l'écran :
+### Machine à états (`games.status`)
 
 ```
-render()
-├── pas de config Supabase    → screenSetup
-├── pas de "me"               → screenRoleSelect
-├── admin + pas de game       → screenAdminSetup
-├── admin + game.setup        → screenAdminLobby
-├── admin + game.active       → screenAdminLive
-├── admin + game.ended        → screenAdminEnd
-├── team + pas de game        → screenTeamJoin
-├── team + game.setup         → screenTeamLobby
-├── team + game.active        → screenTeamActive (ou screenTeamCapture si indice ouvert)
-└── team + game.ended         → screenTeamEnd
+setup → active → validation → judging → ended
 ```
 
-Chaque changement Supabase (websocket) → `refreshState()` → diff JSON → `render()` si besoin.
+| Statut | Phase | Qui agit |
+|---|---|---|
+| `setup` | Lobby : indices, équipes, **assignation des indices de départ** | Admin |
+| `active` | Les équipes capturent et envoient leurs preuves photo | Équipes |
+| `validation` | Marquer chaque photo **conforme / refusée** (→ points d'indice) | Admin |
+| `judging` | **Vote du jury** : 50/30/10 par indice (toutes photos) | Jury/Admin |
+| `ended` | Classement final + galerie | — |
+
+> La transition `active → validation` est automatique à la fin du temps imparti.
+
+### Routeur `render()`
+
+SPA mono-fichier sans framework. `render()` lit `STATE` et choisit l'écran :
+configuration Supabase, sélection de rôle, puis côté **admin** (setup → lobby → live → validation → vote jury → fin) et côté **équipe** (join → lobby → active/capture → attente → fin). Mode bonus : **diaporama public** via l'URL `?diapo=CODE`.
+
+### Identité & temps réel
+
+- `me` (rôle + teamId + gameCode) en `localStorage`, par appareil. Pas d'auth Supabase (anon).
+- Abonnement Realtime (websockets) sur `games`, `teams`, `submissions` filtré par `game_code`, + poll de sécurité toutes les 15 s.
+
+---
+
+## Fonctionnalités clés
+
+### Indices de départ (dispersion)
+
+Dans le **lobby**, l'admin assigne un **indice de départ distinct par équipe** (menu déroulant par équipe + bouton « Répartir auto » qui mélange et distribue). Au lancement, chaque équipe ne voit **que son indice de départ** ; dès qu'elle l'a **réalisé (photo envoyée)**, tous les autres indices se débloquent. But : éviter que toutes les équipes partent au même endroit. Fonctionnalité **optionnelle** (« — Aucun — » = pas de verrou). Stocké dans `teams.start_clue_id`.
+
+### Vote du jury (50 / 30 / 10)
+
+En phase `judging`, les photos sont **groupées par indice**. Pour chaque indice, le jury attribue **🥇 50 / 🥈 30 / 🥉 10** à 3 photos max, parmi **toutes** les photos de l'indice — **y compris les refusées**. Un seul de chaque rang par indice (réassigner un rang le retire automatiquement de l'ancienne photo). Stocké dans `submissions.bonus_points`.
+
+### Calcul du score
+
+```
+score équipe = Σ points d'indice (photos CONFORMES uniquement)
+             + Σ points de vote (TOUTES les photos, refusées incluses)
+```
+
+Une photo **refusée** rapporte **0 point d'indice** mais peut gagner **50/30/10** au vote. Les photos votées (même refusées) apparaissent dans la galerie finale.
+
+### PWA
+
+`manifest.json` + icônes + `apple-touch-icon` → installable en « Ajouter à l'écran d'accueil » sur iOS.
+⚠️ **Pas de service worker** : l'app n'est donc **pas pleinement installable sur Android/desktop** et **pas utilisable hors-ligne**. Ajout possible (~30 lignes).
 
 ---
 
@@ -109,109 +121,64 @@ Chaque changement Supabase (websocket) → `refreshState()` → diff JSON → `r
 
 | Fonction | Rôle |
 |---|---|
-| `loadGame(code)` | Lit `games` + `teams`, retourne objet hydraté |
-| `saveGame(game)` | UPSERT dans `games` |
-| `loadSubmissions(code)` | SELECT `submissions` triées par date desc |
-| `saveSubmission(sub)` | Upload photo si dataURL, puis UPSERT dans `submissions` |
-| `uploadPhoto(dataUrl, gameCode, subId)` | Blob → Storage bucket `photos` → URL publique |
-| `addTeam(code, name)` / `removeTeam(id)` | INSERT/DELETE dans `teams` |
-| `startRealtime()` / `stopRealtime()` | Abonnement WS aux 3 tables filtrées par game_code |
-| `compressImage(file)` | Canvas → JPEG, target max 1000px et < 1.4 Mo |
-| `render()` | Routeur principal, idempotent |
+| `loadGame` / `saveGame` | Lire / écrire la partie (+ équipes) |
+| `loadSubmissions` / `saveSubmission` | Lire / écrire les preuves (upload photo si dataURL) |
+| `uploadPhoto` | Blob → Storage bucket `photos` → URL publique |
+| `addTeam` / `removeTeam` | INSERT / DELETE équipe |
+| `setTeamStartClue` / `autoAssignStartClues` | Assigner les indices de départ (vérifie l'écriture) |
+| `myStartClueId` / `myStartClueDone` | Verrou côté équipe |
+| `validateSubmission` / `resetValidation` | Conforme / refusée (points d'indice) |
+| `setVote` | Vote jury 50/30/10, unicité par indice |
+| `renderLeaderboard` | Classement (points d'indice + vote) |
+| `render` | Routeur principal, idempotent |
 
 ---
 
-## Limitations connues (assumées)
+## Sécurité ⚠️
 
-1. **Pas d'auth.** Quiconque a la clé anon peut écrire n'importe où. Acceptable pour un jeu privé partagé par lien, **inacceptable en prod publique**.
-2. **Pas de mode offline.** Si une équipe perd le réseau au moment de soumettre, la preuve est perdue (pas de queue locale).
-3. **Compression photo destructive.** On vise < 1.4 Mo donc qualité variable selon le contenu.
-4. **Pas de tests automatisés.** Prototype.
-5. **Pas de PWA installable.** Pas de manifest ni de service worker. Ajout possible en ~30 lignes.
+- L'**URL et la clé anon Supabase** sont **codées en dur** dans `expedition.html` (`SUPABASE_DEFAULTS`), sur un **dépôt public**.
+- Les policies **RLS sont permissives** (`for all using(true) with check(true)`).
+- Conséquence : **quiconque** trouve le dépôt peut lire/écrire/supprimer toutes les données (parties, équipes, preuves) et le bucket photos.
+- Acceptable pour un **jeu privé entre amis** partagé par lien ; **inacceptable** pour un usage public.
+- Pistes : dépôt **privé**, OU config saisie par l'utilisateur (pas de clé en dur), OU (vraie solution) **Supabase Auth + RLS strictes**.
 
----
-
-## Roadmap vers la production
-
-### Étape 1 : sécuriser (~2 h)
-
-```sql
--- Supabase Auth : magic link ou anonyme
--- Remplacer les policies permissives par :
-
-create policy games_admin_write on games for insert/update/delete
-  using (auth.uid()::text = admin_id);
-
-create policy games_read on games for select using (true);
--- (le code à 4 lettres reste un secret partagé)
-
-create policy teams_member on teams for all
-  using (game_code in (select game_code from teams where id = auth.uid()::text));
-
-create policy submissions_team on submissions for insert
-  with check (team_id in (select id from teams where /* user owns team */));
-
-create policy submissions_admin_judge on submissions for update
-  using (game_code in (select code from games where admin_id = auth.uid()::text));
-```
-
-### Étape 2 : app native (~1 jour)
-
-Migrer vers **Expo (React Native)** :
-
-```bash
-npx create-expo-app expedition --template
-cd expedition
-npx expo install expo-camera expo-location react-native-maps @supabase/supabase-js
-```
-
-Mapping direct :
-- `<input capture>` → `expo-camera` (`Camera.takePictureAsync` avec compression intégrée)
-- Leaflet → `react-native-maps` (Apple Maps / Google Maps natifs)
-- `localStorage` → `expo-secure-store`
-- Le reste (Supabase client, schéma, RLS) ne change pas
-
-Build APK + IPA : `eas build --platform all`. Distribution : TestFlight / lien APK / store.
-
-### Étape 3 : nice-to-have
-
-- Notifications push à l'équipe quand l'admin juge (Supabase Edge Function + `expo-notifications`)
-- Mode offline avec queue locale (`expo-sqlite` + sync à la reconnexion)
-- Vérification GPS automatique : si distance(photo, cible) > 50 m, marquer comme suspect
-- Vote inter-équipes pour le bonus photo (au lieu de l'admin seul)
-- Replay du jeu : timeline animée des soumissions sur la carte
+> Note RLS : la mise à jour de `teams` doit être autorisée (policy `for all`), sinon l'assignation des indices de départ échoue silencieusement (0 ligne écrite).
 
 ---
 
-## Décisions de design assumées
+## Limitations connues
 
-- **Pas de framework JS.** Surcoût pour un SPA de 1400 lignes, démarrage instantané, debugging trivial.
-- **Photos en JPEG client-side.** WebP serait 20-30 % plus léger mais l'API canvas iOS ≤ 14 ne le supporte pas systématiquement.
-- **Code de chasse à 4 lettres, alphabet réduit.** Exclu `0/O`, `1/I/L`, `Z/2`, etc. → ~32^4 = 1 M combinaisons, suffisant et lisible.
-- **`clues` en JSONB**, pas une table. Les indices sont immuables après création, pas de besoin de FK, pas de jointure → écriture et lecture plus simples.
-- **Pas de migrations** dans le repo, schéma livré en `.sql` plat. Pour un prototype, surcoût injustifié.
+1. **Sécurité** : clé en dur + RLS ouvertes (voir ci-dessus).
+2. **PWA partielle** : pas de service worker (ni install Android/desktop, ni offline).
+3. **Plus de GPS** : la preuve est la photo seule, sans vérification de position.
+4. **Pas de tests automatisés**.
+5. **Compression photo destructive** (cible < 1,4 Mo).
+
+---
+
+## Roadmap
+
+- **Sécuriser** : Supabase Auth + RLS basées sur `auth.uid()`, ou dépôt privé.
+- **Service worker** : installation complète + cache offline + file d'attente des envois.
+- **App native** (Expo/React Native) : `expo-camera`, `@supabase/supabase-js` ; le schéma et la logique ne changent pas.
+- Notifications push quand le jury vote ; replay animé ; etc.
 
 ---
 
 ## Commandes utiles
 
 ```bash
-# Lancer un serveur local pour développer (HTTPS recommandé pour caméra/géoloc)
+# Serveur local (HTTPS recommandé pour la caméra)
 python3 -m http.server 8000
-# puis ouvrir https://localhost:8000/expedition.html
-# (tunnel HTTPS via ngrok / cloudflared si besoin sur mobile)
+# puis ouvrir http://localhost:8000/expedition.html
 
-# Réinitialiser une chasse côté DB
+# Réinitialiser une chasse (cascade → teams + submissions)
 psql "$SUPABASE_DB_URL" -c "delete from games where code = 'XXXX';"
-# (cascade → teams et submissions sont supprimés aussi)
-
-# Vider le bucket photos d'un jeu
-# Supabase Dashboard → Storage → photos → dossier {code} → tout sélectionner → delete
 ```
 
 ---
 
-## Contact technique
+## Historique des évolutions
 
-Stack du créateur : Supabase, déjà familier. Migration Expo recommandée à terme.
-Pour reprendre le projet : lire ce fichier, exécuter `supabase-setup.sql`, ouvrir `expedition.html`. Tout est dedans.
+- **Réécriture (autre poste)** : refonte UI, phases `validation`/`judging`, diaporama public, PWA (manifest + icônes), suppression de la carte/GPS, valeurs Supabase par défaut en dur.
+- **2026-05-20** : publication sur GitHub ; **indices de départ** (dispersion) ; **vote du jury 50/30/10** sur toutes les photos ; correctifs (RLS update `teams`, sélection optimiste, vérification d'écriture).
