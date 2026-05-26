@@ -256,6 +256,7 @@ function rowToGame(row, teamsRows){
   return {
     code: row.code,
     name: row.name,
+    huntDate: row.hunt_date || null,
     status: row.status,
     durationMinutes: row.duration_minutes,
     perClueMinutes: row.per_clue_minutes,
@@ -299,6 +300,7 @@ async function saveGame(game){
   const { error } = await sb.from('games').upsert({
     code: game.code,
     name: game.name,
+    hunt_date: game.huntDate || null,
     status: game.status,
     duration_minutes: game.durationMinutes,
     per_clue_minutes: game.perClueMinutes,
@@ -669,6 +671,10 @@ function screenAdminSetup(){
         <label>Nom de la chasse</label>
         <input id="g-name" class="input" placeholder="ex. Mystère sur la Loire" value="Mystère sur la Loire">
       </div>
+      <div class="field">
+        <label>Date de la chasse</label>
+        <input id="g-date" class="input" type="date" value="${new Date().toISOString().slice(0,10)}">
+      </div>
       <div class="flex-row">
         <div class="field" style="flex:1">
           <label>Durée totale (min)</label>
@@ -679,16 +685,27 @@ function screenAdminSetup(){
           <input id="g-perclue" class="input" type="number" min="1" value="15">
         </div>
       </div>
-      
+
       <div class="divider-stars">✦ Indices ✦</div>
       <div id="clue-list-edit" class="clue-list"></div>
       <button class="btn ghost" onclick="addClue()">+ Ajouter un indice</button>
-      
+
+      <div class="divider-stars">✦ déjà une session ? ✦</div>
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin-bottom:6px">Reprendre une session existante</h3>
+        <p class="help-text" style="margin:0 0 12px">Vous avez déjà créé une chasse hier ou ce matin ? Entrez son code pour la modifier avant de la lancer.</p>
+        <div class="field" style="margin-bottom:10px">
+          <label>Code de la session</label>
+          <input id="resume-code" class="input code" maxlength="4" placeholder="XXXX">
+        </div>
+        <button class="btn ghost" onclick="loadAndEditGame()">Charger et modifier →</button>
+      </div>
+
       <div class="sticky-bottom">
         <button class="btn gold" onclick="createGame()">Créer la chasse →</button>
       </div>
     </div>`;
-  
+
   // Init in-memory clues if not set
   if(!STATE.draftClues) STATE.draftClues = [];
   if(STATE.draftClues.length===0){
@@ -697,6 +714,8 @@ function screenAdminSetup(){
     ];
   }
   renderClueListEdit();
+  const resumeInput = $('#resume-code');
+  if(resumeInput) resumeInput.addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
 }
 
 function renderClueListEdit(){
@@ -736,14 +755,15 @@ function updateClue(id,field,val){
 
 async function createGame(){
   const name = $('#g-name').value.trim()||'Chasse au trésor';
+  const huntDate = $('#g-date').value || null;
   const duration = parseInt($('#g-duration').value)||90;
   const perClue = parseInt($('#g-perclue').value)||15;
   if(STATE.draftClues.length===0){ toast('Ajoutez au moins un indice','error'); return; }
   if(STATE.draftClues.some(c=>!c.title.trim())){ toast('Chaque indice a besoin d\'un titre','error'); return; }
-  
+
   const code = genCode();
   const game = {
-    code, name, status:'setup',
+    code, name, huntDate, status:'setup',
     durationMinutes:duration, perClueMinutes:perClue,
     clues: STATE.draftClues, teams:[],
     createdAt: Date.now(), startedAt:null, endedAt:null,
@@ -754,6 +774,80 @@ async function createGame(){
   await saveMe();
   STATE.draftClues = null;
   startRealtime();
+  render();
+}
+
+// ────── Charger une session existante pour modification ──────
+async function loadAndEditGame(){
+  const code = $('#resume-code')?.value.trim().toUpperCase();
+  if(!code || code.length!==4){ toast('Code invalide (4 caractères)','error'); return; }
+  const game = await loadGame(code);
+  if(!game){ toast('Aucune session avec ce code','error'); return; }
+  if(game.status !== 'setup'){ toast('Cette session a déjà démarré — impossible de la modifier','error'); return; }
+  STATE.game = game;
+  STATE.me.gameCode = code;
+  await saveMe();
+  startRealtime();
+  screenAdminEditGame();
+}
+
+function screenAdminEditGame(){
+  const g = STATE.game;
+  STATE.draftClues = JSON.parse(JSON.stringify(g.clues));
+  app().innerHTML = `
+    <div class="screen" data-screen="admin-edit">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>Expédition</div>
+        <button class="chip" onclick="STATE.draftClues=null;render()">← Retour</button>
+      </div>
+      <h1 class="title">Modifier la <em>chasse</em></h1>
+      <p class="subtitle">Session <strong class="mono">${escapeHtml(g.code)}</strong> · non démarrée. Modifiez librement le titre, la durée et les indices.</p>
+
+      <div class="field">
+        <label>Nom de la chasse</label>
+        <input id="g-name" class="input" value="${escapeHtml(g.name)}" placeholder="ex. Mystère sur la Loire">
+      </div>
+      <div class="field">
+        <label>Date de la chasse</label>
+        <input id="g-date" class="input" type="date" value="${g.huntDate || ''}">
+      </div>
+      <div class="flex-row">
+        <div class="field" style="flex:1">
+          <label>Durée totale (min)</label>
+          <input id="g-duration" class="input" type="number" min="5" value="${g.durationMinutes}">
+        </div>
+        <div class="field" style="flex:1">
+          <label>Limite par indice (min)</label>
+          <input id="g-perclue" class="input" type="number" min="1" value="${g.perClueMinutes}">
+        </div>
+      </div>
+
+      <div class="divider-stars">✦ Indices ✦</div>
+      <div id="clue-list-edit" class="clue-list"></div>
+      <button class="btn ghost" onclick="addClue()">+ Ajouter un indice</button>
+
+      <div class="sticky-bottom">
+        <button class="btn gold" onclick="saveEditedGame()">Sauvegarder les modifications →</button>
+      </div>
+    </div>`;
+  renderClueListEdit();
+}
+
+async function saveEditedGame(){
+  const name = $('#g-name').value.trim() || 'Chasse au trésor';
+  const huntDate = $('#g-date').value || null;
+  const duration = parseInt($('#g-duration').value) || 90;
+  const perClue = parseInt($('#g-perclue').value) || 15;
+  if(STATE.draftClues.length===0){ toast('Ajoutez au moins un indice','error'); return; }
+  if(STATE.draftClues.some(c=>!c.title.trim())){ toast('Chaque indice a besoin d\'un titre','error'); return; }
+  STATE.game.name = name;
+  STATE.game.huntDate = huntDate;
+  STATE.game.durationMinutes = duration;
+  STATE.game.perClueMinutes = perClue;
+  STATE.game.clues = STATE.draftClues;
+  await saveGame(STATE.game);
+  STATE.draftClues = null;
+  toast('Modifications sauvegardées ✓','success');
   render();
 }
 
@@ -808,14 +902,16 @@ function screenAdminLobby(){
       ${startAssignHtml}
       <div class="divider"></div>
       <div class="card">
+        ${g.huntDate ? `<div class="mono muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px">📅 ${new Date(g.huntDate+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>` : ''}
         <h3>${g.clues.length} indice${g.clues.length>1?'s':''} · ${g.durationMinutes} min total · ${g.perClueMinutes} min/indice</h3>
         <p class="help-text" style="margin-top:8px">${g.clues.map(c=>escapeHtml(c.title)).join(' · ')}</p>
       </div>
       
       <div class="sticky-bottom">
         <div class="btn-row">
-          <button class="btn ghost" onclick="cancelGame()">Annuler</button>
-          <button class="btn oxblood" onclick="startGame()" ${g.teams.length===0?'disabled':''}>Démarrer la chasse</button>
+          <button class="btn ghost" onclick="cancelGame()" style="flex:1">Annuler</button>
+          <button class="btn ghost" onclick="screenAdminEditGame()" style="flex:1">Modifier ✎</button>
+          <button class="btn oxblood" onclick="startGame()" ${g.teams.length===0?'disabled':''} style="flex:2">Démarrer la chasse</button>
         </div>
       </div>
     </div>`;
@@ -1565,7 +1661,7 @@ function screenTeamEnd(){
   const mySubs = STATE.submissions.filter(s=>s.teamId===STATE.me.teamId);
   const myApproved = mySubs.filter(s=>s.status==='approved');
   const myPoints = mySubs.reduce((p,s)=>p+(s.points||0)+(s.bonusPoints||0),0);
-  
+
   const board = g.teams.map(t=>{
     const ts = STATE.submissions.filter(s=>s.teamId===t.id);
     return {team:t, points:ts.reduce((p,s)=>p+(s.points||0)+(s.bonusPoints||0),0)};
