@@ -9,7 +9,7 @@ create table if not exists games (
   code              text primary key,
   name              text not null,
   status            text not null default 'setup'
-                      check (status in ('setup','active','ended')),
+                      check (status in ('setup','active','validation','judging','ended')),
   duration_minutes  int  not null,
   per_clue_minutes  int  not null,
   clues             jsonb not null default '[]'::jsonb,
@@ -52,6 +52,11 @@ create index if not exists submissions_team_idx on submissions(team_id);
 -- Migration : GPS retiré de l'app → lat/lng deviennent optionnels (sans risque si déjà nullable)
 alter table submissions alter column lat drop not null;
 alter table submissions alter column lng drop not null;
+
+-- Migration : l'app utilise aussi les statuts 'validation' et 'judging'
+alter table games drop constraint if exists games_status_check;
+alter table games add constraint games_status_check
+  check (status in ('setup','active','validation','judging','ended'));
 
 -- ───────── 2. Realtime ─────────
 -- Permet les websockets sur ces tables (Supabase Realtime)
