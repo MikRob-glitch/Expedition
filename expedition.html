@@ -709,7 +709,7 @@ function screenAdminSetup(){
       <h3 style="margin-bottom:4px">Reprendre une session</h3>
       <p class="help-text" style="margin:0 0 12px">Sélectionnez une chasse déjà configurée pour la modifier avant de la lancer.</p>
       <div id="session-picker" class="session-picker"><div class="empty" style="padding:20px;font-size:14px">Chargement…</div></div>
-      <button id="btn-load-session" class="btn ghost" onclick="loadAndEditGameFromPicker()" disabled style="margin-top:10px;margin-bottom:16px;opacity:.4">Modifier la session sélectionnée →</button>
+      <button id="btn-load-session" class="btn ghost" onclick="loadAndEditGameFromPicker()" disabled style="margin-top:10px;margin-bottom:16px;opacity:.4">Reprendre cette session →</button>
 
       <div class="sticky-bottom">
         <button class="btn gold" onclick="createGame()">Créer la chasse →</button>
@@ -833,7 +833,7 @@ async function loadAndEditGameFromPicker(){
   STATE.me.gameCode = code;
   await saveMe();
   startRealtime();
-  screenAdminEditGame();
+  render();
 }
 
 function screenAdminEditGame(){
