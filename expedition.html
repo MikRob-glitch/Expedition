@@ -300,12 +300,14 @@ function rowToSub(row){
 
 // ────── Lecture / écriture ──────
 async function loadGame(code){
-  if(!code || !sb) return null;
+  // Renvoie : objet jeu si trouvé · null si CONFIRMÉ absent · undefined si erreur transitoire.
+  // Distinguer les deux évite d'effacer la session sur un simple coup de réseau.
+  if(!code || !sb) return undefined;
   const [{data:g, error:e1}, {data:teams, error:e2}] = await Promise.all([
     sb.from('games').select('*').eq('code', code).maybeSingle(),
     sb.from('teams').select('*').eq('game_code', code).order('joined_at')
   ]);
-  if(e1){ toast('Lecture jeu: '+e1.message,'error',4500); return null; }
+  if(e1){ toast('Lecture jeu: '+e1.message,'error',4500); return undefined; }
   if(!g) return null;
   return rowToGame(g, teams||[]);
 }
@@ -382,8 +384,14 @@ async function uploadPhoto(dataUrl, gameCode, subId){
 }
 
 async function addTeam(code, teamName){
+  const name = (teamName||'').trim();
+  // Reconnexion / nouvel appareil : réutilise l'équipe existante du même nom
+  // au lieu d'en recréer une (évite la fragmentation des preuves).
+  const { data: existing } = await sb.from('teams')
+    .select('id').eq('game_code', code).eq('name', name).limit(1).maybeSingle();
+  if(existing) return existing.id;
   const id = uid();
-  const { error } = await sb.from('teams').insert({ id, game_code:code, name:teamName });
+  const { error } = await sb.from('teams').insert({ id, game_code:code, name });
   if(error){ toast('Ajout équipe: '+error.message,'error',4500); return null; }
   return id;
 }
@@ -512,6 +520,10 @@ function stopRealtime(){
 async function refreshState(){
   if(!STATE.me?.gameCode) return;
   const g = await loadGame(STATE.me.gameCode);
+  if(g === undefined) return;   // erreur réseau transitoire : on ignore ce cycle
+  if(g === null){               // jeu réellement supprimé : on libère la session
+    await clearMe(); STATE.game=null; stopRealtime(); render(); return;
+  }
   const subs = await loadSubmissions(STATE.me.gameCode);
   const gameChanged = JSON.stringify(g)!==JSON.stringify(STATE.game);
   const subsChanged = JSON.stringify(subs.map(s=>s.id+s.status+s.points+s.bonusPoints))!==JSON.stringify(STATE.submissions.map(s=>s.id+s.status+s.points+s.bonusPoints));
@@ -532,11 +544,14 @@ async function render(){
   }
   await loadMe();
   if(STATE.me?.gameCode){
-    STATE.game = await loadGame(STATE.me.gameCode);
-    STATE.submissions = await loadSubmissions(STATE.me.gameCode);
-    if(!STATE.game){
-      await clearMe();
+    const g = await loadGame(STATE.me.gameCode);
+    if(g === null){            // jeu réellement supprimé → on libère la session
+      await clearMe(); STATE.game = null;
+    } else if(g){              // chargé correctement
+      STATE.game = g;
+      STATE.submissions = await loadSubmissions(STATE.me.gameCode);
     }
+    // g === undefined : erreur réseau transitoire → on conserve STATE.me et l'état courant
   }
   // Update game status based on time : fin de chasse → phase validation
   if(STATE.game?.status==='active' && STATE.game.startedAt){
