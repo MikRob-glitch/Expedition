@@ -343,16 +343,20 @@ async function loadSubmissions(code){
 }
 
 async function saveSubmission(sub){
-  if(!sb) return;
-  // Upload photo si dataURL
+  // Renvoie true si la preuve est bien enregistrée en base, false sinon.
+  if(!sb) return false;
+  // 1) Upload photo si dataURL
   let photoUrl = sub.photoUrl;
+  let uploadedPath = null;
   if(sub.photoDataUrl && sub.photoDataUrl.startsWith('data:')){
     photoUrl = await uploadPhoto(sub.photoDataUrl, sub.gameCode, sub.id);
-    if(!photoUrl) return;
+    if(!photoUrl) return false;
+    uploadedPath = `${sub.gameCode}/${sub.id}.jpg`;
     sub.photoUrl = photoUrl;
     sub.photoDataUrl = photoUrl;
   }
-  const { error } = await sb.from('submissions').upsert({
+  // 2) Insert de la preuve, AVEC retry — le réseau mobile lâche souvent.
+  const row = {
     id: sub.id,
     game_code: sub.gameCode,
     team_id: sub.teamId,
@@ -362,8 +366,20 @@ async function saveSubmission(sub){
     points: sub.points||0,
     bonus_points: sub.bonusPoints||0,
     judged_at: sub.status!=='pending' ? new Date().toISOString() : null
-  });
-  if(error){ toast('Sauvegarde preuve: '+error.message,'error',4500); }
+  };
+  let lastErr = null;
+  for(let attempt=0; attempt<3; attempt++){
+    const { error } = await sb.from('submissions').upsert(row);
+    if(!error) return true;
+    lastErr = error;
+    await new Promise(r=>setTimeout(r, 600*(attempt+1)));
+  }
+  // 3) Échec définitif : on retire le fichier uploadé pour ne PAS laisser de photo
+  // orpheline (preuve invisible au jugement). La photo reste en mémoire → l'appelant
+  // peut proposer de réessayer.
+  if(uploadedPath){ try{ await sb.storage.from('photos').remove([uploadedPath]); }catch(_){} }
+  toast('Échec d\'enregistrement : '+(lastErr?.message||'réseau')+' — réessayez','error',5000);
+  return false;
 }
 
 async function uploadPhoto(dataUrl, gameCode, subId){
@@ -726,6 +742,14 @@ function screenAdminSetup(){
       <div id="session-picker" class="session-picker"><div class="empty" style="padding:20px;font-size:14px">Chargement…</div></div>
       <button id="btn-load-session" class="btn ghost" onclick="loadAndEditGameFromPicker()" disabled style="margin-top:10px;margin-bottom:16px;opacity:.4">Reprendre cette session →</button>
 
+      <div class="divider-stars">✦ partie déjà en cours ? ✦</div>
+      <h3 style="margin-bottom:4px">Reprendre par code</h3>
+      <p class="help-text" style="margin:0 0 12px">Vous avez perdu l'accès admin pendant une chasse déjà démarrée ? Entrez son code pour reprendre la main (lobby, jeu, validation ou jugement).</p>
+      <div class="flex-row" style="margin-bottom:16px">
+        <input id="resume-code" class="input code" style="flex:1" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button class="btn ghost" style="width:auto;white-space:nowrap" onclick="resumeByCode()">Reprendre →</button>
+      </div>
+
       <div class="sticky-bottom">
         <button class="btn gold" onclick="createGame()">Créer la chasse →</button>
       </div>
@@ -848,6 +872,24 @@ async function loadAndEditGameFromPicker(){
   STATE.me.gameCode = code;
   await saveMe();
   startRealtime();
+  render();
+}
+
+// Reprise admin d'une partie déjà démarrée (active / validation / judging) par son code.
+// Indispensable pour récupérer la main après une perte de session locale, sans console.
+async function resumeByCode(){
+  const code = ($('#resume-code')?.value||'').trim().toUpperCase();
+  if(code.length < 4){ toast('Entrez le code à 4 lettres','error'); return; }
+  const game = await loadGame(code);
+  if(game === undefined){ toast('Erreur réseau — réessayez','error'); return; }
+  if(!game){ toast('Aucune chasse avec ce code','error'); return; }
+  STATE.game = game;
+  STATE.me.role = 'admin';
+  STATE.me.gameCode = code;
+  STATE.me.id = game.adminId || STATE.me.id;   // s'aligner sur l'admin de la partie
+  await saveMe();
+  startRealtime();
+  toast('Session '+code+' reprise','success');
   render();
 }
 
@@ -1705,7 +1747,13 @@ async function submitClue(){
     points:0, bonusPoints:0
   };
   try{
-    await saveSubmission(sub);
+    const ok = await saveSubmission(sub);
+    if(!ok){
+      // Échec déjà signalé par saveSubmission. On garde la photo capturée en mémoire
+      // pour que l'équipe puisse réessayer immédiatement.
+      if(btn){ btn.disabled = false; btn.textContent = 'Envoyer la preuve →'; }
+      return;
+    }
     toast('Preuve envoyée à l\'admin','success');
     STATE.currentClueId=null;
     STATE.capturedPhoto=null;
