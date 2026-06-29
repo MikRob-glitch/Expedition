@@ -1,25 +1,30 @@
 # Expédition · Chasse au trésor photo
 
-Application web mobile pour organiser une **chasse au trésor multi-équipes**. Les équipes résolvent des indices, valident chaque lieu par une **photo + position GPS**, et l'admin juge en temps réel et distribue les points.
+Application web mobile (PWA) pour organiser une **chasse au trésor multi-équipes**. Les équipes résolvent des indices, prouvent chaque trouvaille par une **photo**, l'admin **valide** la conformité, puis un **jury vote** les meilleures photos. Synchronisation temps réel entre tous les téléphones.
 
-> Prototype mono-fichier, zéro build, prêt à déployer. La documentation technique complète est dans [`PROJECT.md`](PROJECT.md).
+> Prototype mono-fichier, zéro build, prêt à déployer. La documentation technique complète est dans [`PROJECT.md`](PROJECT.md) ; le guide de travail pour modifier l'app est dans [`CLAUDE.md`](CLAUDE.md).
 
 ## Aperçu
 
 - **Multi-équipes en temps réel** — synchronisation par websockets (Supabase Realtime).
-- **Preuve par photo géolocalisée** — caméra native + GPS, compression côté client.
-- **Jugement live par l'admin** — validation, points et bonus distribués en direct.
+- **Preuve par photo** — caméra native, compression côté client (pas de GPS).
+- **Jugement live par l'admin** — validation conforme/refusée, puis vote du jury 50/30/10.
+- **Indices de départ** — dispersion des équipes (un indice de départ distinct par équipe).
+- **Diaporama public** — affichage des photos en direct via l'URL `?diapo=CODE`.
+- **Export ZIP** — téléchargement de toutes les photos d'une partie en archive organisée par équipe.
 - **Aucune installation** — un seul fichier HTML, fonctionne dans le navigateur du téléphone.
 
 ## Stack
 
 | Couche | Choix |
 |---|---|
-| Frontend | HTML5 + Vanilla JS (fichier unique, zéro build) |
-| Cartes | Leaflet + OpenStreetMap |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~2040 lignes), zéro build |
 | Caméra | `<input type="file" capture="environment">` (natif iOS/Android) |
 | Backend | Supabase (Postgres + Realtime + Storage) |
-| Hébergement | Netlify Drop / Vercel / GitHub Pages (HTTPS requis) |
+| PWA | `manifest.json` + icônes 192/512 (pas de service worker → ni offline, ni install Android/desktop) |
+| Hébergement | Netlify Drop / Vercel / GitHub Pages (HTTPS requis pour la caméra) |
+
+> ⚠️ La carte (Leaflet/OpenStreetMap) et la géolocalisation GPS du prototype initial ont été **retirées** : la preuve est désormais purement photographique.
 
 ## Démarrage rapide
 
@@ -31,35 +36,14 @@ Application web mobile pour organiser une **chasse au trésor multi-équipes**. 
 
 **2. Hébergement (~2 min)**
 
-Déposer `expedition.html` sur [app.netlify.com/drop](https://app.netlify.com/drop) pour obtenir une URL HTTPS (la caméra et la géolocalisation l'exigent).
+Déposer `expedition.html` (+ `manifest.json` + `icons/`) sur [app.netlify.com/drop](https://app.netlify.com/drop), ou utiliser GitHub Pages, pour obtenir une URL HTTPS (la caméra l'exige).
 
 **3. Première utilisation**
 
-Ouvrir l'URL → écran **Configuration** → coller l'URL et la clé `anon` → **Connecter**. La config est conservée en `localStorage`, par navigateur.
+L'app embarque des valeurs Supabase **par défaut codées en dur** (`SUPABASE_DEFAULTS`) : elle se connecte donc directement. On peut les **surcharger** via l'écran **Configuration** (stocké en `localStorage` sous `sb_url` / `sb_key`, par navigateur).
 
 ## Développement local
 
 ```bash
-# Serveur local (HTTPS recommandé pour caméra/géoloc)
-python3 -m http.server 8000
-# puis ouvrir http://localhost:8000/expedition.html
-# (tunnel HTTPS via ngrok / cloudflared pour tester sur mobile)
-```
-
-## Structure
-
-```
-expedition.html       App complète, single-file SPA (~1400 lignes)
-supabase-setup.sql    Schéma + RLS + bucket Storage (à exécuter 1×)
-PROJECT.md            Documentation technique détaillée
-```
-
-## Sécurité
-
-Ce dépôt ne contient **aucun secret** : l'URL et la clé `anon` Supabase sont saisies par l'utilisateur et stockées localement dans le navigateur. La clé `anon` est publique par conception ; ne jamais committer de clé `service_role`.
-
-> ⚠️ Les policies RLS livrées sont **permissives** (jeu privé partagé par lien). Voir la section « Roadmap vers la production » de [`PROJECT.md`](PROJECT.md) pour sécuriser avant un usage public.
-
-## Licence
-
-[MIT](LICENSE).
+# Serveur local (HTTPS recommandé pour la caméra)
+python3 -m http.server

@@ -10,7 +10,7 @@ Application web mobile (PWA) pour une chasse au trésor multi-équipes. Les équ
 
 | Couche | Choix | Pourquoi |
 |---|---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique (~1680 lignes) | Zéro build, démarrage instantané, debug trivial |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~2040 lignes) | Zéro build, démarrage instantané, debug trivial |
 | Backend | Supabase (Postgres + Realtime + Storage) | Synchro websockets, photos hébergées, tier gratuit |
 | Caméra | `<input type="file" capture="environment">` | Caméra native iOS/Android sans permission custom |
 | PWA | `manifest.json` + icônes 192/512 + `apple-touch-icon` | « Ajouter à l'écran d'accueil » (iOS) |
@@ -24,7 +24,7 @@ Application web mobile (PWA) pour une chasse au trésor multi-équipes. Les équ
 ## Fichiers du projet
 
 ```
-expedition.html        ← app complète, single-file SPA (~1680 lignes)
+expedition.html        ← app complète, single-file SPA (~2040 lignes)
 supabase-setup.sql     ← schéma + RLS + bucket Storage (à exécuter 1×)
 manifest.json          ← manifeste PWA
 icons/                 ← icon-192.png, icon-512.png
@@ -110,6 +110,10 @@ score équipe = Σ points d'indice (photos CONFORMES uniquement)
 
 Une photo **refusée** rapporte **0 point d'indice** mais peut gagner **50/30/10** au vote. Les photos votées (même refusées) apparaissent dans la galerie finale.
 
+### Export ZIP des photos
+
+Depuis les écrans **Jury** et **Fin**, un modal permet de télécharger **toutes les photos d'une partie** dans une archive `{CODE}_photos.zip` (filtrable par statut). Côté client : **JSZip** (`jszip@3.10.1`), pool de 8 requêtes parallèles. Nomenclature des fichiers : `Équipe/HHhMM_statut_indice_id.jpg`.
+
 ### PWA
 
 `manifest.json` + icônes + `apple-touch-icon` → installable en « Ajouter à l'écran d'accueil » sur iOS.
@@ -180,5 +184,4 @@ psql "$SUPABASE_DB_URL" -c "delete from games where code = 'XXXX';"
 
 ## Historique des évolutions
 
-- **Réécriture (autre poste)** : refonte UI, phases `validation`/`judging`, diaporama public, PWA (manifest + icônes), suppression de la carte/GPS, valeurs Supabase par défaut en dur.
-- **2026-05-20** : publication sur GitHub ; **indices de départ** (dispersion) ; **vote du jury 50/30/10** sur toutes les photos ; correctifs (RLS update `teams`, sélection optimiste, vérification d'écriture).
+- **Réécriture (autre poste)** : refonte UI, phases `validat
