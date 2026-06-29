@@ -12,6 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;0,9..144,900;1,9..144,600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <style>
 :root{
@@ -197,6 +198,37 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 .sp-code{font-family:'Geist Mono',monospace;font-weight:600;font-size:15px;letter-spacing:.2em}
 .sp-name{font-weight:600;font-size:14px;line-height:1.2;margin-bottom:2px}
 .sp-date{font-size:12px;opacity:.6;font-family:'Geist Mono',monospace}
+
+/* ============ Export ZIP modal ============ */
+.export-overlay{position:fixed;inset:0;background:rgba(26,24,21,.65);z-index:150;display:none;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.export-overlay.open{display:flex;animation:fade .2s}
+.export-card{background:var(--parchment);border:1px solid var(--line-strong);border-radius:14px;padding:22px;max-width:560px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.export-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:6px}
+.export-head h2{margin:0;font-family:'Fraunces',serif;font-weight:600;font-size:22px;line-height:1.2}
+.export-head .close-x{appearance:none;background:transparent;border:1px solid var(--line-strong);color:var(--ink);width:34px;height:34px;border-radius:50%;font-size:16px;cursor:pointer;flex-shrink:0;display:grid;place-items:center}
+.export-head .close-x:hover{background:rgba(0,0,0,.04)}
+.export-sub{color:var(--ink-soft);font-size:13px;margin:0 0 14px}
+.export-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 14px}
+.export-stat{padding:10px 6px;text-align:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.45)}
+.export-stat .n{font-family:'Fraunces',serif;font-weight:700;font-size:22px;line-height:1;display:block}
+.export-stat .l{font-family:'Geist Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-soft);margin-top:5px;display:block}
+.export-stat.ok .n{color:var(--forest)}
+.export-stat.ko .n{color:var(--oxblood)}
+.export-stat.pending .n{color:var(--gold-dark)}
+.export-filters{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 16px;padding:12px 14px;background:rgba(255,255,255,.4);border:1px solid var(--line);border-radius:10px}
+.export-filters label{display:inline-flex;gap:8px;align-items:center;font-size:14px;cursor:pointer;color:var(--ink);user-select:none}
+.export-filters input{accent-color:var(--oxblood);width:16px;height:16px}
+.export-progress{margin-top:16px}
+.export-bar{height:6px;background:var(--parchment-3);border-radius:3px;overflow:hidden;position:relative}
+.export-bar > div{position:absolute;inset:0 auto 0 0;background:var(--gold-dark);width:0;transition:width .15s}
+.export-meta{display:flex;justify-content:space-between;font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink-soft);margin-top:8px;font-variant-numeric:tabular-nums}
+.export-log{max-height:140px;overflow:auto;font:11px/1.5 'Geist Mono',ui-monospace,monospace;color:var(--ink-soft);margin-top:10px;padding:8px 10px;background:rgba(0,0,0,.04);border-radius:8px;word-break:break-all}
+.export-log .err{color:var(--oxblood)}
+.export-log .ok{color:var(--forest)}
+@media (max-width:480px){
+  .export-stats{grid-template-columns:repeat(2,1fr)}
+  .export-card{padding:18px}
+}
 </style>
 
 <link rel="manifest" href="manifest.json">
@@ -207,6 +239,28 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <body>
 <div id="app"></div>
 <div id="modal" class="modal"><button class="close" onclick="closeModal()">×</button><div class="modal-inner"></div></div>
+
+<div id="export-overlay" class="export-overlay" role="dialog" aria-modal="true" aria-labelledby="export-title">
+  <div class="export-card">
+    <div class="export-head">
+      <h2 id="export-title">Exporter les photos</h2>
+      <button class="close-x" onclick="closeExportZip()" aria-label="Fermer">✕</button>
+    </div>
+    <p class="export-sub">Archive ZIP organisée par équipe, avec heure, statut et nom de l'indice dans chaque fichier.</p>
+    <div class="export-stats" id="export-stats"></div>
+    <div class="export-filters">
+      <label><input type="checkbox" id="export-f-ok" checked> Approuvées</label>
+      <label><input type="checkbox" id="export-f-ko" checked> Rejetées</label>
+      <label><input type="checkbox" id="export-f-pending" checked> En attente</label>
+    </div>
+    <button id="export-run" class="btn gold" onclick="runExportZip()">Télécharger le ZIP →</button>
+    <div class="export-progress" id="export-progress" hidden>
+      <div class="export-bar"><div id="export-bar-fill"></div></div>
+      <div class="export-meta"><span id="export-meta-count">0 / 0</span><span id="export-meta-time"></span></div>
+      <div class="export-log" id="export-log"></div>
+    </div>
+  </div>
+</div>
 
 <script>
 // ============ STATE & STORAGE ============
@@ -1226,6 +1280,7 @@ function screenAdminJudging(){
       <div class="card" style="margin:18px 0;text-align:center">
         <div class="mono muted" style="font-size:10px;text-transform:uppercase">Total points de vote distribués</div>
         <div class="display" style="font-size:32px">${totalVote}<span style="font-size:14px;color:var(--ink-mute);font-family:'Geist Mono',monospace"> pts</span></div>
+        <button class="btn ghost sm" onclick="openExportZip()" style="margin-top:12px;width:auto;padding:8px 14px">📦 Télécharger les photos (ZIP)</button>
       </div>
 
       ${byClue.length===0
@@ -1326,6 +1381,7 @@ function screenAdminEnd(){
         <h3 style="margin-bottom:8px">✦ Souvenir de la chasse</h3>
         <p class="help-text" style="margin:0 0 12px">Diaporama plein écran des photos validées. Le lien est partageable pour le projeter en réunion.</p>
         <button class="btn gold" onclick="openSlideshow()" style="width:100%;margin-bottom:10px">▶ Lancer le diaporama</button>
+        <button class="btn ghost" onclick="openExportZip()" style="width:100%;margin-bottom:10px">📦 Télécharger toutes les photos (ZIP)</button>
         <div class="field" style="margin:0">
           <label>Lien à partager</label>
           <div style="display:flex;gap:6px;align-items:stretch">
@@ -1816,6 +1872,104 @@ function openPhoto(subId){
   $('#modal').classList.add('open');
 }
 function closeModal(){ $('#modal').classList.remove('open'); }
+
+// ---------- EXPORT ZIP ----------
+function openExportZip(){
+  if(!STATE.game){ toast('Aucune chasse chargée','error'); return; }
+  if(typeof JSZip === 'undefined'){ toast('JSZip non chargé (réseau ?)','error',4500); return; }
+  const subs = STATE.submissions || [];
+  if(!subs.length){ toast('Aucune photo à exporter','error'); return; }
+  const ok = subs.filter(s=>s.status==='approved').length;
+  const ko = subs.filter(s=>s.status==='rejected').length;
+  const pending = subs.filter(s=>s.status==='pending').length;
+  $('#export-stats').innerHTML = `
+    <div class="export-stat"><span class="n">${subs.length}</span><span class="l">Total</span></div>
+    <div class="export-stat ok"><span class="n">${ok}</span><span class="l">Conformes</span></div>
+    <div class="export-stat ko"><span class="n">${ko}</span><span class="l">Refusées</span></div>
+    <div class="export-stat pending"><span class="n">${pending}</span><span class="l">En attente</span></div>`;
+  $('#export-progress').hidden = true;
+  $('#export-log').innerHTML = '';
+  $('#export-bar-fill').style.width = '0';
+  $('#export-meta-count').textContent = '0 / 0';
+  $('#export-meta-time').textContent = '';
+  const btn = $('#export-run');
+  btn.disabled = false; btn.textContent = 'Télécharger le ZIP →';
+  $('#export-overlay').classList.add('open');
+}
+function closeExportZip(){ $('#export-overlay').classList.remove('open'); }
+
+async function runExportZip(){
+  if(typeof JSZip === 'undefined'){ toast('JSZip non chargé','error'); return; }
+  const want = {
+    approved: $('#export-f-ok').checked,
+    rejected: $('#export-f-ko').checked,
+    pending:  $('#export-f-pending').checked,
+  };
+  const subs = (STATE.submissions || []).filter(s => want[s.status]);
+  if(!subs.length){ toast('Aucune photo sélectionnée','error'); return; }
+
+  const btn = $('#export-run');
+  btn.disabled = true;
+  $('#export-progress').hidden = false;
+  const fill = $('#export-bar-fill'), log = $('#export-log');
+  log.innerHTML = '';
+
+  const safeName = s => (s||'').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,'_').trim() || '_';
+  const hhmm = ts => { const d = new Date(ts); return `${String(d.getHours()).padStart(2,'0')}h${String(d.getMinutes()).padStart(2,'0')}`; };
+  const teamOf = id => (STATE.game.teams||[]).find(t=>t.id===id)?.name || 'inconnu';
+  const clueOf = id => (STATE.game.clues||[]).find(c=>c.id===id)?.title || id || 'indice';
+  const logLine = (msg, cls='') => { const d = document.createElement('div'); if(cls) d.className = cls; d.textContent = msg; log.appendChild(d); log.scrollTop = 1e9; };
+
+  const total = subs.length;
+  let done = 0, errors = 0;
+  const t0 = performance.now();
+  const update = () => {
+    fill.style.width = `${(done/total)*100}%`;
+    $('#export-meta-count').textContent = `${done} / ${total}`;
+    $('#export-meta-time').textContent = `${((performance.now()-t0)/1000).toFixed(1)} s`;
+  };
+
+  const zip = new JSZip();
+  const queue = subs.slice();
+  const worker = async () => {
+    while(queue.length){
+      const s = queue.shift(); if(!s) break;
+      const team = teamOf(s.teamId);
+      const clue = clueOf(s.clueId);
+      const path = `${safeName(team)}/${hhmm(s.submittedAt)}_${s.status}_${safeName(clue)}_${s.id}.jpg`;
+      try{
+        const r = await fetch(s.photoUrl);
+        if(!r.ok) throw new Error(`HTTP ${r.status}`);
+        zip.file(path, await r.blob());
+      }catch(e){
+        errors++;
+        logLine(`✗ ${team} · ${clue} — ${e.message}`, 'err');
+      }
+      done++; update();
+    }
+  };
+  await Promise.all(Array.from({length:8}, worker));
+
+  if(done - errors === 0){
+    btn.disabled = false; btn.textContent = 'Télécharger le ZIP →';
+    logLine('Aucune photo récupérée.', 'err');
+    return;
+  }
+
+  btn.textContent = 'Compression…';
+  const blob = await zip.generateAsync({type:'blob', compression:'STORE'}, m => {
+    btn.textContent = `Compression ${Math.round(m.percent)} %`;
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${STATE.game.code}_photos.zip`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 30_000);
+
+  const mb = (blob.size/1024/1024).toFixed(1);
+  logLine(`✓ ZIP prêt — ${done-errors} photo(s), ${mb} Mo${errors?` · ${errors} échec(s)`:''}`, 'ok');
+  btn.disabled = false; btn.textContent = 'Télécharger à nouveau';
+}
 
 // ---------- UTIL ----------
 function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
