@@ -330,7 +330,7 @@ function rowToGame(row, teamsRows){
     durationMinutes: row.duration_minutes,
     perClueMinutes: row.per_clue_minutes,
     clues: row.clues || [],
-    teams: (teamsRows||[]).map(t=>({id:t.id, name:t.name, joinedAt:new Date(t.joined_at).getTime(), startClueId:t.start_clue_id||null})),
+    teams: (teamsRows||[]).map(t=>({id:t.id, name:t.name, joinedAt:new Date(t.joined_at).getTime(), startClueId:t.start_clue_id||null, photoUrl:t.photo_url||null})),
     createdAt: new Date(row.created_at).getTime(),
     startedAt: row.started_at ? new Date(row.started_at).getTime() : null,
     endedAt: row.ended_at ? new Date(row.ended_at).getTime() : null,
@@ -453,6 +453,31 @@ async function uploadPhoto(dataUrl, gameCode, subId){
   }
 }
 
+// Photo d'équipe (optionnelle, prise à l'inscription). Stockée dans le bucket `photos`
+// au chemin `{game_code}/team_{team_id}.jpg`, distinct des preuves d'indices.
+async function uploadTeamPhoto(dataUrl, gameCode, teamId){
+  try{
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const path = `${gameCode}/team_${teamId}.jpg`;
+    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType:'image/jpeg', upsert:true });
+    if(error){ toast('Upload photo équipe: '+error.message,'error',4500); return null; }
+    const { data } = sb.storage.from('photos').getPublicUrl(path);
+    // cache-buster : l'URL est stable (upsert), on force le rafraîchissement
+    return data.publicUrl + '?v=' + Date.now();
+  }catch(e){ toast('Upload photo équipe: '+e.message,'error',4500); return null; }
+}
+async function setTeamPhoto(teamId, photoUrl){
+  if(!sb) return false;
+  const { error } = await sb.from('teams').update({ photo_url: photoUrl }).eq('id', teamId).select('id');
+  if(error){
+    const miss = /photo_url|schema cache|column|PGRST204/i.test(error.message||'');
+    toast(miss ? '⚠ Colonne « photo_url » absente dans Supabase — lancez le SQL de migration' : 'Photo équipe : '+error.message,'error',6000);
+    return false;
+  }
+  return true;
+}
+
 async function addTeam(code, teamName){
   const name = (teamName||'').trim();
   // Reconnexion / nouvel appareil : réutilise l'équipe existante du même nom
@@ -529,6 +554,16 @@ function uid(){ return Math.random().toString(36).slice(2,9); }
 function genCode(){
   const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return Array.from({length:4},()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+// Pastille photo d'équipe (ou initiale en repli). size = diamètre px.
+function teamAva(t, size){
+  size = size || 36;
+  const init = ((t && t.name) ? t.name.trim().charAt(0) : '?').toUpperCase();
+  const base = `display:inline-flex;flex-shrink:0;width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;align-items:center;justify-content:center;border:1.5px solid var(--gold-dark,#a8852f);background:var(--parchment,#efe6d2);font-family:'Fraunces',serif;font-weight:600;color:var(--oxblood,#6e1f1f);font-size:${Math.round(size*0.42)}px;vertical-align:middle`;
+  if(t && t.photoUrl){
+    return `<span style="${base}"><img src="${escapeHtml(t.photoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover" loading="lazy"></span>`;
+  }
+  return `<span style="${base}">${escapeHtml(init)}</span>`;
 }
 function fmtTime(secs){
   if(secs<=0) return '00:00';
@@ -1083,7 +1118,7 @@ function screenAdminLobby(){
       </div>
       ${g.teams.length===0
         ? '<div class="empty">En attente d\'équipes…</div>'
-        : g.teams.map(t=>`<div class="card flex-between"><strong>${escapeHtml(t.name)}</strong><span class="mono muted" style="font-size:12px">${effStart(t)?'départ ✓':'prêt'}</span></div>`).join('')
+        : g.teams.map(t=>`<div class="card flex-between"><span style="display:flex;align-items:center;gap:10px;min-width:0">${teamAva(t,38)}<strong style="min-width:0;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</strong></span><span class="mono muted" style="font-size:12px;flex-shrink:0">${effStart(t)?'départ ✓':'prêt'}</span></div>`).join('')
       }
       ${startAssignHtml}
       <div class="divider"></div>
@@ -1549,6 +1584,7 @@ function renderLeaderboard(showStats){
   return `<div class="scoreboard">${board.map((r,i)=>`
     <div class="row ${i===0?'first':''}">
       <div class="rank">${i===0?'★':i+1}</div>
+      ${teamAva(r.team, 40)}
       <div class="name">${escapeHtml(r.team.name)}${showStats?`<div class="mono muted" style="font-size:11px;font-weight:400">${r.approved}/${g.clues.length} indices · ${r.total-r.approved} en attente/refus</div>`:''}</div>
       <div class="pts">${r.points}</div>
     </div>`).join('')}</div>`;
@@ -1597,12 +1633,39 @@ function screenTeamJoin(){
         <label>Nom de votre équipe</label>
         <input id="join-team" class="input" placeholder="Les Aventuriers">
       </div>
-      
+
+      <div class="field">
+        <label>Photo d'équipe <span class="muted" style="font-weight:400">(optionnelle)</span></label>
+        <p class="help-text" style="margin:0 0 10px">Une photo de toute l'équipe pour personnaliser le classement. Vous pourrez la refaire.</p>
+        <label class="photo-preview" for="join-photo-input">
+          ${STATE.joinPhoto
+            ? `<img src="${STATE.joinPhoto}" alt=""><div class="retake">Refaire</div>`
+            : `<div class="icon">⊕</div><div>Prendre la photo</div>`}
+        </label>
+        <input id="join-photo-input" type="file" accept="image/*" capture="user" class="hidden-input" onchange="handleJoinCapture(event)">
+      </div>
+
       <div class="sticky-bottom">
         <button class="btn oxblood" onclick="joinGame()">Rejoindre la chasse →</button>
       </div>
     </div>`;
   $('#join-code').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
+}
+
+async function handleJoinCapture(e){
+  const file = e.target.files?.[0];
+  if(!file) return;
+  // Preserve les champs déjà saisis (render() réaffiche l'écran depuis STATE)
+  STATE.joinDraftCode = $('#join-code')?.value || '';
+  STATE.joinDraftTeam = $('#join-team')?.value || '';
+  toast('Compression de la photo…');
+  try{
+    STATE.joinPhoto = await compressImage(file);
+    render();
+    // restaure les champs après re-render
+    if($('#join-code')) $('#join-code').value = STATE.joinDraftCode;
+    if($('#join-team')) $('#join-team').value = STATE.joinDraftTeam;
+  }catch(err){ toast('Erreur image','error'); }
 }
 
 async function joinGame(){
@@ -1616,6 +1679,14 @@ async function joinGame(){
   
   const teamId = await addTeam(code, teamName);
   if(!teamId) return;
+  // Photo d'équipe optionnelle : on n'empêche pas l'inscription si l'upload échoue.
+  if(STATE.joinPhoto){
+    const url = await uploadTeamPhoto(STATE.joinPhoto, code, teamId);
+    if(url) await setTeamPhoto(teamId, url);
+  }
+  STATE.joinPhoto = null;
+  STATE.joinDraftCode = null;
+  STATE.joinDraftTeam = null;
   STATE.me.gameCode = code;
   STATE.me.teamId = teamId;
   STATE.me.teamName = teamName;
@@ -1646,7 +1717,7 @@ function screenTeamLobby(){
       </div>
       ${g.teams.filter(t=>t.id!==STATE.me.teamId).length===0
         ? '<div class="empty">Vous êtes seuls pour le moment</div>'
-        : g.teams.filter(t=>t.id!==STATE.me.teamId).map(t=>`<div class="card"><strong>${escapeHtml(t.name)}</strong></div>`).join('')
+        : g.teams.filter(t=>t.id!==STATE.me.teamId).map(t=>`<div class="card" style="display:flex;align-items:center;gap:10px">${teamAva(t,38)}<strong>${escapeHtml(t.name)}</strong></div>`).join('')
       }
       
       <div class="sticky-bottom">
