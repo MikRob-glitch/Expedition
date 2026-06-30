@@ -3,7 +3,7 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-06-29, commit `4e62310`). Les écarts connus
+> **réellement poussé sur GitHub** (HEAD = 2026-06-30, commit `4aa0813`). Les écarts connus
 > (travail local non poussé) sont signalés ⚠️.
 
 ## Vue d'ensemble
@@ -80,6 +80,12 @@ dissocier les deux.
 - **Export ZIP** : modal sur les écrans Jury et Fin, télécharge toutes les photos d'une partie
   (filtrables par statut) en archive `{CODE}_photos.zip`, organisée `Équipe/HHhMM_statut_indice_id.jpg`
   (JSZip, pool de 8 requêtes parallèles).
+- **Dupliquer une chasse passée** : dans l'écran admin de préparation, le champ « Dupliquer
+  par code » charge une chasse existante (**n'importe quel statut**, y compris `ended`) via
+  `duplicateByCode` et copie ses indices (nouveaux `id`) + réglages dans le formulaire de
+  création (`STATE.draftMeta`, nom suffixé « (copie) », date du jour). « Créer la chasse »
+  génère ensuite une **nouvelle session vierge** (nouveau code, aucune équipe ni photo). La
+  chasse source n'est jamais modifiée. Permet de rejouer une même chasse pour un autre groupe.
 
 ## Procédures de récupération (terrain)
 
@@ -118,6 +124,17 @@ dissocier les deux.
    8 requêtes parallèles, **JSZip** (`jszip@3.10.1`) côté client. Nomenclature :
    `Équipe/HHhMM_statut_indice_id.jpg`. Génère `{CODE}_photos.zip`.
 8. Boutons « 📦 Télécharger les photos » sur les écrans Jury et Fin.
+
+### Poussés sur GitHub (2026-06-30, commit `3fba57d`)
+
+9. Docs : alignement README / PROJECT / CLAUDE sur l'app (export ZIP, sécurité, retrait GPS).
+
+### Poussés sur GitHub (2026-06-30, commit `4aa0813`)
+
+10. `duplicateByCode` : duplication d'une chasse existante (toute statut) vers une nouvelle
+    session vierge. `screenAdminSetup` pré-remplit le formulaire depuis `STATE.draftMeta` ;
+    `createGame` et `screenAdminEditGame` réinitialisent `draftMeta`. Aucun changement de
+    schéma. Voir « Dupliquer une chasse passée » dans Fonctionnalités clés.
 
 ## Dette technique / points de vigilance connus
 
