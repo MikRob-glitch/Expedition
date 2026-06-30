@@ -67,22 +67,52 @@ alter publication supabase_realtime add table games;
 alter publication supabase_realtime add table teams;
 alter publication supabase_realtime add table submissions;
 
--- ───────── 3. RLS permissives (prototype "entre amis") ─────────
--- ⚠️ POUR LA PROD : remplacer par de vraies policies basées sur auth.uid()
--- Ici n'importe qui avec la clé anon peut lire/écrire. C'est OK pour un jeu
--- privé partagé par lien, pas pour une app publique.
+-- ───────── 3. RLS — Lot 1 : propriété des chasses par l'admin authentifié ─────────
+-- L'admin s'authentifie via Supabase Auth (code OTP par email) ; games.admin_id = auth.uid().
+-- → un admin ne peut créer / modifier / supprimer / juger QUE ses propres chasses.
+-- Lecture publique conservée (équipes anonymes + diaporama public ?diapo=CODE).
+-- Les écritures des équipes (teams + submissions INSERT) restent ouvertes : durcies au Lot 2.
 
 alter table games        enable row level security;
 alter table teams        enable row level security;
 alter table submissions  enable row level security;
 
+-- nettoyage d'éventuelles policies antérieures (idempotent)
 drop policy if exists games_all on games;
 drop policy if exists teams_all on teams;
 drop policy if exists submissions_all on submissions;
+drop policy if exists games_select on games;
+drop policy if exists games_insert on games;
+drop policy if exists games_update on games;
+drop policy if exists games_delete on games;
+drop policy if exists submissions_select on submissions;
+drop policy if exists submissions_insert on submissions;
+drop policy if exists submissions_update on submissions;
 
-create policy games_all        on games        for all using (true) with check (true);
-create policy teams_all        on teams        for all using (true) with check (true);
-create policy submissions_all  on submissions  for all using (true) with check (true);
+-- GAMES : lecture publique, écriture réservée au propriétaire authentifié
+create policy games_select on games for select using (true);
+create policy games_insert on games for insert to authenticated
+  with check (admin_id = (select auth.uid())::text);
+create policy games_update on games for update to authenticated
+  using (admin_id = (select auth.uid())::text)
+  with check (admin_id = (select auth.uid())::text);
+create policy games_delete on games for delete to authenticated
+  using (admin_id = (select auth.uid())::text);
+
+-- TEAMS : ouvert (équipes anonymes) — sera scopé au Lot 2
+create policy teams_all on teams for all using (true) with check (true);
+
+-- SUBMISSIONS : lecture + insertion publiques (preuves des équipes) ;
+-- mise à jour (validation + vote du jury) réservée à l'admin propriétaire de la chasse.
+create policy submissions_select on submissions for select using (true);
+create policy submissions_insert on submissions for insert with check (true);
+create policy submissions_update on submissions for update to authenticated
+  using (exists (select 1 from games g
+                 where g.code = submissions.game_code
+                   and g.admin_id = (select auth.uid())::text))
+  with check (exists (select 1 from games g
+                 where g.code = submissions.game_code
+                   and g.admin_id = (select auth.uid())::text));
 
 -- ───────── 4. Storage : bucket photos ─────────
 

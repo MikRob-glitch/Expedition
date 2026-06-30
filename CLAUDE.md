@@ -152,6 +152,28 @@ dissocier les deux.
     `joinGame` (non bloquant). Helper d'affichage `teamAva` (pastille ronde ou initiale) dans
     lobby admin, lobby équipe et `renderLeaderboard`.
 
+### Travail local — LOT 1 SÉCURITÉ : auth admin + RLS scopées ⚠️ (non poussé)
+
+12. **Auth admin par code OTP email (Supabase Auth)**. L'admin n'est plus identifié par un
+    `uid()` client mais par son `auth.uid()` (stable, lié à l'email). Nouvel écran
+    `screenAdminLogin` (saisie email → `signInWithOtp` → code 6 chiffres → `verifyOtp`).
+    `pickRole('admin')` exige une session ; `render()` (branche admin) redirige vers le login
+    si pas de session ; `currentUser()` lit `sb.auth.getSession()`. `createGame` écrit
+    `admin_id = auth.uid()`. `resumeByCode` et le picker de sessions **refusent** les chasses
+    dont `admin_id ≠ auth.uid()` (fin de l'usurpation admin). `logout()` fait `sb.auth.signOut()`.
+13. **RLS scopées** (`migration-lot1-rls.sql` + `supabase-setup.sql` §3) : `games`
+    INSERT/UPDATE/DELETE et `submissions` UPDATE réservés à l'admin propriétaire authentifié.
+    Lecture publique conservée ; `teams` + `submissions` INSERT encore ouverts (→ Lot 2).
+    `admin_id` reste `text` (reçoit `auth.uid()::text`). Anciennes chasses → lecture seule.
+
+    **⚠️ Ordre de cutover impératif** : (1) déployer le nouveau `expedition.html`,
+    (2) se connecter une fois (crée le compte admin), (3) PUIS exécuter `migration-lot1-rls.sql`.
+    Appliquer la migration avant le déploiement casse la création/gestion de chasse de l'ancien
+    client. **Pré-requis Supabase** : provider Email activé (défaut) + le template d'email doit
+    inclure le jeton `{{ .Token }}` pour que le code à 6 chiffres apparaisse (Auth → Email
+    Templates → Magic Link). SMTP custom recommandé en prod (le SMTP partagé Supabase est
+    fortement limité et peu fiable).
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code (par design : pas d'auth, RLS permissive).

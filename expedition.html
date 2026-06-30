@@ -671,6 +671,10 @@ async function render(){
   // Pick screen
   if(!STATE.me) return screenRoleSelect();
   if(STATE.me.role==='admin'){
+    // Session d'auth obligatoire : sans elle, aucune écriture n'est autorisée (RLS).
+    const u = await currentUser();
+    if(!u){ STATE.me=null; STATE.otpEmail=null; await saveMe(); return screenAdminLogin(); }
+    if(STATE.me.id !== u.id){ STATE.me.id = u.id; STATE.me.email = u.email; await saveMe(); }
     if(!STATE.game) return screenAdminSetup();
     if(STATE.game.status==='setup') return screenAdminLobby();
     if(STATE.game.status==='active') return screenAdminLive();
@@ -786,8 +790,84 @@ function screenRoleSelect(){
 }
 
 async function pickRole(role){
+  if(role==='admin'){
+    const u = await currentUser();
+    if(!u){ STATE.otpEmail = null; return screenAdminLogin(); }
+    STATE.me = { role:'admin', id:u.id, email:u.email };
+    await saveMe();
+    return render();
+  }
   STATE.me = { role, id: uid() };
   await saveMe();
+  render();
+}
+
+// ────── Auth admin : code à usage unique par email (Supabase Auth) ──────
+// L'admin est identifié par son auth.uid() (stable, lié à son email). C'est ce
+// même id qui est écrit dans games.admin_id et que les policies RLS vérifient :
+// un admin ne peut gérer/juger que SES chasses. Les équipes restent anonymes.
+async function currentUser(){
+  if(!sb) return null;
+  try{ const { data } = await sb.auth.getSession(); return data?.session?.user || null; }
+  catch(_){ return null; }
+}
+
+function screenAdminLogin(){
+  const sent = !!STATE.otpEmail;
+  app().innerHTML = `
+    <div class="screen" data-screen="admin-login">
+      <div class="topbar">
+        <div class="brand"><span class="brand-icon">✦</span>Expédition</div>
+        <span class="chip">Maître du jeu</span>
+      </div>
+      <h1 class="title">Connexion<br><em>sécurisée</em></h1>
+      <p class="subtitle">${sent
+        ? 'Entrez le code à 6 chiffres reçu par email. Il vous identifie comme seul maître de vos chasses.'
+        : 'Recevez un code par email. Vous seul pourrez créer, gérer et juger vos chasses.'}</p>
+      ${sent ? `
+      <div class="field">
+        <label>Code reçu par email</label>
+        <input id="admin-otp" class="input" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" maxlength="6" style="letter-spacing:.4em;font-family:'Geist Mono',monospace;font-size:20px;text-align:center">
+        <p class="help-text">Envoyé à ${escapeHtml(STATE.otpEmail)} · <a href="#" onclick="event.preventDefault();STATE.otpEmail=null;screenAdminLogin()" style="color:var(--ink-mute)">changer d'email</a></p>
+      </div>
+      <div class="sticky-bottom">
+        <button class="btn gold" onclick="adminVerifyCode()">Valider →</button>
+      </div>` : `
+      <div class="field">
+        <label>Votre email</label>
+        <input id="admin-email" class="input" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="vous@exemple.com">
+      </div>
+      <div class="sticky-bottom">
+        <button class="btn gold" onclick="adminRequestCode()">Recevoir le code →</button>
+      </div>`}
+      <p class="help-text" style="text-align:center;margin-top:14px">
+        <a href="#" onclick="event.preventDefault();STATE.me=null;STATE.otpEmail=null;saveMe();render()" style="color:var(--ink-mute)">← Retour</a>
+      </p>
+    </div>`;
+}
+
+async function adminRequestCode(){
+  const email = ($('#admin-email')?.value||'').trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast('Email invalide','error'); return; }
+  const { error } = await sb.auth.signInWithOtp({ email, options:{ shouldCreateUser:true } });
+  if(error){ toast('Envoi impossible : '+error.message,'error',5000); return; }
+  STATE.otpEmail = email;
+  toast('Code envoyé à '+email,'success',4000);
+  screenAdminLogin();
+}
+
+async function adminVerifyCode(){
+  const email = STATE.otpEmail;
+  if(!email) return screenAdminLogin();
+  const token = ($('#admin-otp')?.value||'').trim();
+  if(!/^\d{6}$/.test(token)){ toast('Entrez les 6 chiffres','error'); return; }
+  const { data, error } = await sb.auth.verifyOtp({ email, token, type:'email' });
+  if(error){ toast('Code invalide ou expiré : '+error.message,'error',5000); return; }
+  const u = data.user;
+  STATE.me = { role:'admin', id:u.id, email:u.email };
+  STATE.otpEmail = null;
+  await saveMe();
+  toast('Connecté','success');
   render();
 }
 
@@ -948,9 +1028,12 @@ async function duplicateByCode(){
 async function loadSessionsForPicker(){
   const picker = $('#session-picker'); if(!picker) return;
   if(!sb){ picker.innerHTML='<div class="empty" style="padding:20px;font-size:14px">Supabase non connecté</div>'; return; }
+  const u = await currentUser();
+  if(!u){ picker.innerHTML='<div class="empty" style="padding:20px;font-size:14px">Connectez-vous pour voir vos sessions</div>'; return; }
   const { data, error } = await sb.from('games')
     .select('code,name,hunt_date,status')
     .eq('status','setup')
+    .eq('admin_id', u.id)
     .order('hunt_date', { ascending:true, nullsFirst:false });
   if(error){ picker.innerHTML='<div class="empty" style="padding:20px;font-size:14px">Erreur chargement</div>'; return; }
   if(!data || data.length===0){
@@ -983,9 +1066,12 @@ function selectSession(code){
 async function loadAndEditGameFromPicker(){
   const code = STATE.selectedSessionCode;
   if(!code){ toast('Sélectionnez une session','error'); return; }
+  const u = await currentUser();
+  if(!u){ STATE.otpEmail=null; return screenAdminLogin(); }
   const game = await loadGame(code);
   if(!game){ toast('Session introuvable','error'); return; }
   if(game.status !== 'setup'){ toast('Cette session a déjà démarré','error'); return; }
+  if(game.adminId && game.adminId !== u.id){ toast('Cette chasse ne vous appartient pas','error',5000); return; }
   STATE.game = game;
   STATE.me.gameCode = code;
   await saveMe();
@@ -996,15 +1082,19 @@ async function loadAndEditGameFromPicker(){
 // Reprise admin d'une partie déjà démarrée (active / validation / judging) par son code.
 // Indispensable pour récupérer la main après une perte de session locale, sans console.
 async function resumeByCode(){
+  const u = await currentUser();
+  if(!u){ STATE.otpEmail=null; return screenAdminLogin(); }
   const code = ($('#resume-code')?.value||'').trim().toUpperCase();
   if(code.length < 4){ toast('Entrez le code à 4 lettres','error'); return; }
   const game = await loadGame(code);
   if(game === undefined){ toast('Erreur réseau — réessayez','error'); return; }
   if(!game){ toast('Aucune chasse avec ce code','error'); return; }
+  // Sécurité : on ne reprend que SES propres chasses (l'identité = auth.uid()).
+  if(game.adminId && game.adminId !== u.id){
+    toast('Vous n\'êtes pas le maître du jeu de cette chasse','error',5000); return;
+  }
   STATE.game = game;
-  STATE.me.role = 'admin';
-  STATE.me.gameCode = code;
-  STATE.me.id = game.adminId || STATE.me.id;   // s'aligner sur l'admin de la partie
+  STATE.me = { role:'admin', id:u.id, email:u.email, gameCode:code };
   await saveMe();
   startRealtime();
   toast('Session '+code+' reprise','success');
@@ -2074,7 +2164,13 @@ async function runExportZip(){
 
 // ---------- UTIL ----------
 function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-async function logout(){ stopRealtime(); await clearMe(); STATE.game=null; STATE.submissions=[]; render(); }
+async function logout(){
+  stopRealtime();
+  // Déconnexion de l'auth admin si présente (sans bloquer en cas d'erreur réseau).
+  try{ if(sb) await sb.auth.signOut(); }catch(_){}
+  await clearMe(); STATE.game=null; STATE.submissions=[]; STATE.otpEmail=null;
+  render();
+}
 
 // ---------- TICK ----------
 // Re-render timers each second on active screens
