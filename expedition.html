@@ -758,6 +758,7 @@ async function pickRole(role){
 
 // ---------- ADMIN ----------
 function screenAdminSetup(){
+  const dm = STATE.draftMeta || {};
   app().innerHTML = `
     <div class="screen" data-screen="admin-setup">
       <div class="topbar">
@@ -769,20 +770,20 @@ function screenAdminSetup(){
       
       <div class="field">
         <label>Nom de la chasse</label>
-        <input id="g-name" class="input" placeholder="ex. Mystère sur la Loire" value="Mystère sur la Loire">
+        <input id="g-name" class="input" placeholder="ex. Mystère sur la Loire" value="${escapeHtml(dm.name || 'Mystère sur la Loire')}">
       </div>
       <div class="field">
         <label>Date de la chasse</label>
-        <input id="g-date" class="input" type="date" value="${new Date().toISOString().slice(0,10)}">
+        <input id="g-date" class="input" type="date" value="${dm.date || new Date().toISOString().slice(0,10)}">
       </div>
       <div class="flex-row">
         <div class="field" style="flex:1">
           <label>Durée totale (min)</label>
-          <input id="g-duration" class="input" type="number" min="5" value="90">
+          <input id="g-duration" class="input" type="number" min="5" value="${dm.duration || 90}">
         </div>
         <div class="field" style="flex:1">
           <label>Limite par indice (min)</label>
-          <input id="g-perclue" class="input" type="number" min="1" value="15">
+          <input id="g-perclue" class="input" type="number" min="1" value="${dm.perClue || 15}">
         </div>
       </div>
 
@@ -795,6 +796,14 @@ function screenAdminSetup(){
       <p class="help-text" style="margin:0 0 12px">Sélectionnez une chasse déjà configurée pour la modifier avant de la lancer.</p>
       <div id="session-picker" class="session-picker"><div class="empty" style="padding:20px;font-size:14px">Chargement…</div></div>
       <button id="btn-load-session" class="btn ghost" onclick="loadAndEditGameFromPicker()" disabled style="margin-top:10px;margin-bottom:16px;opacity:.4">Reprendre cette session →</button>
+
+      <div class="divider-stars">✦ réutiliser une chasse ✦</div>
+      <h3 style="margin-bottom:4px">Dupliquer une chasse passée</h3>
+      <p class="help-text" style="margin:0 0 12px">Recréez une chasse déjà jouée (même terminée) pour un nouveau groupe : entrez son code. Les indices et réglages sont copiés dans une nouvelle session vierge — nouveau code, aucune équipe ni photo. La chasse d'origine n'est pas modifiée.</p>
+      <div class="flex-row" style="margin-bottom:16px">
+        <input id="dup-code" class="input code" style="flex:1" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button class="btn ghost" style="width:auto;white-space:nowrap" onclick="duplicateByCode()">Dupliquer →</button>
+      </div>
 
       <div class="divider-stars">✦ partie déjà en cours ? ✦</div>
       <h3 style="margin-bottom:4px">Reprendre par code</h3>
@@ -876,8 +885,28 @@ async function createGame(){
   STATE.me.gameCode = code;
   await saveMe();
   STATE.draftClues = null;
+  STATE.draftMeta = null;
   startRealtime();
   render();
+}
+
+// ────── Dupliquer une chasse existante (toute statut) vers une nouvelle session ──────
+async function duplicateByCode(){
+  const code = ($('#dup-code').value || '').trim().toUpperCase();
+  if(code.length !== 4){ toast('Entrez le code à 4 lettres de la chasse à dupliquer','error'); return; }
+  const src = await loadGame(code);
+  if(src === undefined){ toast('Réseau indisponible, réessayez','error'); return; }
+  if(!src){ toast('Chasse introuvable','error'); return; }
+  if(!src.clues || src.clues.length === 0){ toast('Cette chasse n\'a aucun indice à copier','error'); return; }
+  STATE.draftClues = src.clues.map(c=>({ id:uid(), title:c.title||'', text:c.text||'', points:c.points||0 }));
+  STATE.draftMeta = {
+    name: (src.name || 'Chasse') + ' (copie)',
+    date: new Date().toISOString().slice(0,10),
+    duration: src.durationMinutes || 90,
+    perClue: src.perClueMinutes || 15
+  };
+  toast(`Chasse « ${src.name} » copiée — vérifiez puis créez la nouvelle session`,'success',4000);
+  screenAdminSetup();
 }
 
 // ────── Picker de sessions existantes (status=setup) ──────
@@ -949,6 +978,7 @@ async function resumeByCode(){
 
 function screenAdminEditGame(){
   const g = STATE.game;
+  STATE.draftMeta = null;
   STATE.draftClues = JSON.parse(JSON.stringify(g.clues));
   app().innerHTML = `
     <div class="screen" data-screen="admin-edit">
