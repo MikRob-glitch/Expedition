@@ -3,7 +3,7 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-06-30, commit `4aa0813`). Les écarts connus
+> **réellement poussé sur GitHub** (HEAD = 2026-06-30, commit `728ffa0`). Les écarts connus
 > (travail local non poussé) sont signalés ⚠️.
 
 ## Vue d'ensemble
@@ -34,12 +34,14 @@ des photos comme preuves ; un maître du jeu (admin) valide puis fait juger les 
 - **`games`** — PK `code` (texte, 4 lettres). Champs : `name`, `status`, `clues` (jsonb :
   `[{id,title,text,points}]`), `duration_minutes`, `per_clue_minutes`, `admin_id`,
   `started_at`, `ended_at`.
-- **`teams`** — PK `id` (uid). FK `game_code`. Champs : `name`, `start_clue_id`, `joined_at`.
+- **`teams`** — PK `id` (uid). FK `game_code`. Champs : `name`, `start_clue_id`, `photo_url`
+  (photo d'équipe optionnelle, prise à l'inscription), `joined_at`.
 - **`submissions`** — PK `id` (uid, = nom du fichier photo). FK `team_id`
   (`on delete cascade`), `game_code`. Champs : `clue_id`, `photo_url`, `status`
   (`pending`/`approved`/`rejected`), `points`, `bonus_points`, `submitted_at`, `judged_at`.
   Colonnes `lat`/`lng` héritées du prototype GPS, désormais inutilisées.
-- **Storage** : bucket public `photos`, chemin `{game_code}/{submission_id}.jpg`.
+- **Storage** : bucket public `photos`, chemin `{game_code}/{submission_id}.jpg` pour les preuves
+  et `{game_code}/team_{team_id}.jpg` pour les photos d'équipe.
 
 ⚠️ Le **`submission.id` est réutilisé comme nom de fichier** dans le Storage. Ne jamais
 dissocier les deux.
@@ -86,6 +88,12 @@ dissocier les deux.
   création (`STATE.draftMeta`, nom suffixé « (copie) », date du jour). « Créer la chasse »
   génère ensuite une **nouvelle session vierge** (nouveau code, aucune équipe ni photo). La
   chasse source n'est jamais modifiée. Permet de rejouer une même chasse pour un autre groupe.
+- **Photo d'équipe à l'inscription** : sur l'écran « Rejoindre une chasse », champ photo
+  **optionnel** (`capture="user"`, façade selfie). Capturée via `compressImage`, uploadée par
+  `uploadTeamPhoto` dans `{game_code}/team_{team_id}.jpg`, puis `setTeamPhoto` écrit l'URL
+  (cache-bustée) dans `teams.photo_url`. N'empêche jamais l'inscription si l'upload échoue.
+  Affichée en pastille (`teamAva`, repli sur l'initiale) dans le lobby admin, le lobby équipe
+  et le classement.
 
 ## Procédures de récupération (terrain)
 
@@ -135,6 +143,14 @@ dissocier les deux.
     session vierge. `screenAdminSetup` pré-remplit le formulaire depuis `STATE.draftMeta` ;
     `createGame` et `screenAdminEditGame` réinitialisent `draftMeta`. Aucun changement de
     schéma. Voir « Dupliquer une chasse passée » dans Fonctionnalités clés.
+
+### Poussés sur GitHub (2026-06-30) — photo d'équipe
+
+11. `teams.photo_url` (migration `ALTER TABLE … ADD COLUMN IF NOT EXISTS`, appliquée en base +
+    ajoutée à `supabase-setup.sql`). Capture optionnelle sur `screenTeamJoin`
+    (`handleJoinCapture`, `STATE.joinPhoto`), upload `uploadTeamPhoto` + `setTeamPhoto` dans
+    `joinGame` (non bloquant). Helper d'affichage `teamAva` (pastille ronde ou initiale) dans
+    lobby admin, lobby équipe et `renderLeaderboard`.
 
 ## Dette technique / points de vigilance connus
 
