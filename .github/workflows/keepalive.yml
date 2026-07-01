@@ -1,0 +1,28 @@
+# Empêche la mise en pause du projet Supabase (tier gratuit = pause après ~7 j d'inactivité).
+# Ping léger de l'API REST tous les 3 jours → compte comme activité → pas de pause.
+# La clé utilisée est la clé ANON PUBLIQUE (déjà présente en clair dans expedition.html) :
+# aucun secret à configurer. Si tu passes en plan Pro, ce workflow devient inutile.
+#
+# ⚠️ GitHub désactive les workflows planifiés après 60 j SANS commit sur le dépôt.
+#    Un simple commit occasionnel (ou un "Run workflow" manuel) les réactive.
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: '17 6 */3 * *'   # à 06:17 UTC, tous les 3 jours
+  workflow_dispatch:          # permet un lancement manuel depuis l'onglet Actions
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST (SELECT léger sur games)
+        run: |
+          ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ3YWd3Ynp6dGNlaHZkenRrc2NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDIyODEsImV4cCI6MjA5NDc3ODI4MX0.jODIBEM1OLcRrBYk3mI5XeFR-Wp5ImLUUGiYNYkzJx8"
+          CODE=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "https://rwagwbzztcehvdztkscj.supabase.co/rest/v1/games?select=code&limit=1" \
+            -H "apikey: ${ANON}" \
+            -H "Authorization: Bearer ${ANON}")
+          echo "HTTP ${CODE}"
+          # 200 = OK. Tout code < 400 est considéré comme un ping réussi (activité enregistrée).
+          if [ "${CODE}" -ge 400 ]; then echo "Ping échoué"; exit 1; fi

@@ -266,6 +266,31 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 // ============ STATE & STORAGE ============
 const STATE = { me:null, game:null, submissions:[], teams:[], realtimeChannel:null, pollTimer:null, currentClueId:null, perClueStartTime:{}, capturedPhoto:null, draftClues:null, adminTab:null };
 
+// ────── Fiabilité : capture des erreurs non gérées (+ Sentry optionnel) ──────
+// But : ne plus être aveugle en cas de bug sur le terrain. Sans clé Sentry, la
+// capture reste locale (console + toast admin) et n'ajoute AUCUNE dépendance.
+// Pour activer le monitoring distant : localStorage.setItem('sentry_dsn','<votre DSN>').
+(function initSentry(){
+  try{
+    const dsn = localStorage.getItem('sentry_dsn');
+    if(!dsn) return;
+    const el = document.createElement('script');
+    el.src = 'https://browser.sentry-cdn.com/7.120.0/bundle.min.js';
+    el.crossOrigin = 'anonymous';
+    el.onload = () => { try{ Sentry.init({ dsn, tracesSampleRate: 0 }); }catch(_){} };
+    document.head.appendChild(el);
+  }catch(_){}
+})();
+function reportError(err, kind){
+  const msg = (err && err.message) || String(err);
+  console.error('[Expédition]', kind, err);
+  try{ if(window.Sentry && Sentry.captureException) Sentry.captureException(err instanceof Error ? err : new Error(msg)); }catch(_){}
+  // Alerte l'opérateur (admin) sans alarmer les joueurs ni bloquer le jeu.
+  try{ if(STATE.me && STATE.me.role==='admin' && typeof toast==='function') toast('Incident technique détecté — voir la console (F12)','error',4000); }catch(_){}
+}
+window.addEventListener('error', e => reportError(e.error || e.message, 'error'));
+window.addEventListener('unhandledrejection', e => reportError(e.reason, 'promise'));
+
 const $ = (sel,p=document)=>p.querySelector(sel);
 const $$ = (sel,p=document)=>Array.from(p.querySelectorAll(sel));
 const app = ()=>$('#app');

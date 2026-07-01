@@ -195,6 +195,21 @@ dissocier les deux.
     (gate serveur `service_role`), moins urgent car ces atteintes sont récupérables (contrairement
     à la suppression de photos).
 
+### Poussés sur GitHub (2026-06-30) — LOT FIABILITÉ : keep-alive + capture d'erreurs
+
+15. **Keep-alive anti-pause** (`.github/workflows/keepalive.yml`) : le projet Supabase est en
+    tier gratuit → pause après ~7 j d'inactivité (risque jour J pour une activité à événements
+    espacés). Un workflow GitHub Actions ping l'API REST (`SELECT` léger sur `games`) tous les
+    3 jours via la clé anon publique (aucun secret à configurer) → activité enregistrée → pas de
+    pause. ⚠️ GitHub désactive les crons après 60 j sans commit ; « Run workflow » ou un commit
+    les réactive. **Vraie solution pro : plan Supabase Pro** (pas de pause, backups quotidiens,
+    meilleures ressources) — non fait ici (facturation = action utilisateur).
+16. **Capture d'erreurs client** (`reportError` + handlers `error` / `unhandledrejection` dans
+    `expedition.html`) : erreurs non gérées → console + toast discret côté **admin** (pas les
+    joueurs), sans bloquer le jeu. Hook **Sentry** optionnel, activé uniquement si
+    `localStorage.sentry_dsn` est défini (aucune dépendance par défaut). Recommandé pour la prod :
+    créer un projet Sentry gratuit et coller le DSN.
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code (par design : pas d'auth, RLS permissive).
