@@ -152,7 +152,9 @@ dissocier les deux.
     `joinGame` (non bloquant). Helper d'affichage `teamAva` (pastille ronde ou initiale) dans
     lobby admin, lobby équipe et `renderLeaderboard`.
 
-### Travail local — LOT 1 SÉCURITÉ : auth admin + RLS scopées ⚠️ (non poussé)
+### Poussés sur GitHub (2026-06-30, commit `da27780`) — LOT 1 SÉCURITÉ : auth admin + RLS scopées
+
+**✅ Déployé et appliqué le 2026-06-30** : client poussé sur GitHub Pages, compte admin créé (`hague.mickael@gmail.com`, `auth.uid()=5d15cb3f-…`), `migration-lot1-rls.sql` appliquée en base (policies games + submissions vérifiées, advisors OK), Email OTP length ramené de 8 à **6**, templates email « Magic link or OTP » et « Confirm sign up » configurés avec `{{ .Token }}`. Création/gestion de chasse testée OK sous les nouvelles RLS.
 
 12. **Auth admin par code OTP email (Supabase Auth)**. L'admin n'est plus identifié par un
     `uid()` client mais par son `auth.uid()` (stable, lié à l'email). Nouvel écran
