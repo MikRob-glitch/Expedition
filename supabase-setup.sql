@@ -124,17 +124,13 @@ drop policy if exists "photos read"   on storage.objects;
 drop policy if exists "photos upload" on storage.objects;
 drop policy if exists "photos delete" on storage.objects;
 
-create policy "photos read"
-  on storage.objects for select
-  using (bucket_id = 'photos');
-
+-- LOT 2 : bucket public "photos" verrouillé.
+--  • Lecture : via URL publique (bucket public) — PAS de policy SELECT (empêche le listing).
+--  • Upload  : conservé (joueurs anonymes, sans auth).
+--  • Suppression : AUCUNE policy => interdite côté client (service_role only) = anti-vandalisme.
 create policy "photos upload"
   on storage.objects for insert
   with check (bucket_id = 'photos');
-
-create policy "photos delete"
-  on storage.objects for delete
-  using (bucket_id = 'photos');
 
 -- ───────── Fait ! ─────────
 -- Récupère URL + anon key dans Settings → API

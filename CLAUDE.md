@@ -176,6 +176,25 @@ dissocier les deux.
     Templates → Magic Link). SMTP custom recommandé en prod (le SMTP partagé Supabase est
     fortement limité et peu fiable).
 
+### Poussés sur GitHub (2026-06-30) — LOT 2 SÉCURITÉ : verrou du bucket photos
+
+14. **Storage `photos` verrouillé** (`migration-lot2-storage.sql` + `supabase-setup.sql` §4) :
+    suppression de la policy DELETE publique (fin du vandalisme de masse — n'importe qui avec la
+    clé anon pouvait supprimer toutes les photos) et de la policy SELECT publique (fin du listing
+    du bucket). Upload conservé (joueurs anonymes). Les URLs publiques (`getPublicUrl`) et
+    l'export ZIP continuent de fonctionner car le bucket reste `public=true` et l'app ne fait
+    jamais de `.list()`. Le seul `.remove()` (rollback d'orphelin dans `saveSubmission`) est en
+    try/catch : son échec est toléré. **Aucun changement client, applicable à chaud.** Advisor
+    « public bucket allows listing » levé.
+
+    **Décision d'archi** : l'auth anonyme des joueurs (envisagée pour scoper `teams`/`submissions`)
+    est **écartée** car (a) elle casserait la reconnexion par nom d'équipe (nouvel uid ≠
+    propriétaire d'origine → envoi de photos bloqué) et (b) Supabase limite les connexions
+    anonymes par IP → risque de blocage massif derrière le NAT d'un site. La protection des
+    écritures `teams`/`submissions` (encore ouvertes) est reportée à un lot **Edge Functions**
+    (gate serveur `service_role`), moins urgent car ces atteintes sont récupérables (contrairement
+    à la suppression de photos).
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code (par design : pas d'auth, RLS permissive).
