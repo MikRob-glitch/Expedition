@@ -225,6 +225,14 @@ dissocier les deux.
     `purge-expired-games-rgpd` quotidien (03:30 UTC) → suppression auto 90 j après création.
     Effacement à la demande : `select public.purge_game('CODE');`.
 
+### Poussés sur GitHub (2026-06-30) — RGPD : effacement in-app par l'admin
+
+20. **RPC `admin_purge_game(code)`** (migration `admin_purge_game_rpc`, `supabase-setup.sql` §5) :
+    SECURITY DEFINER, vérifie `auth.uid() = games.admin_id` puis purge storage + lignes ;
+    `grant execute` à `authenticated`. Bouton « Supprimer définitivement cette chasse + photos »
+    sur `screenAdminEnd` (`purgeCurrentGame`, double confirmation). Complète le droit à
+    l'effacement RGPD sans passer par le SQL Editor.
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code (par design : pas d'auth, RLS permissive).

@@ -1574,10 +1574,29 @@ function screenAdminEnd(){
       <div class="divider-stars">✦ Galerie ✦</div>
       ${renderGalleryByClue()}
       
+      <div class="card" style="margin-top:16px;border-color:var(--oxblood)">
+        <h3 style="margin-bottom:8px">Effacement des données (RGPD)</h3>
+        <p class="help-text" style="margin:0 0 12px">Supprime définitivement cette chasse : équipes, preuves et <strong>toutes les photos</strong>. Irréversible. (Sinon, tout est purgé automatiquement 90 jours après la création.)</p>
+        <button class="btn ghost" onclick="purgeCurrentGame()" style="width:100%">🗑 Supprimer définitivement cette chasse + photos</button>
+      </div>
+
       <div class="sticky-bottom">
         <button class="btn ghost" onclick="closeGame()">Nouvelle chasse</button>
       </div>
     </div>`;
+}
+
+async function purgeCurrentGame(){
+  const g = STATE.game; if(!g || !sb) return;
+  if(!confirm(`Supprimer DÉFINITIVEMENT la chasse « ${g.name} » (${g.code}) : équipes, preuves et toutes les photos ?\n\nAction irréversible.`)) return;
+  if(!confirm('Dernière confirmation — suppression définitive et immédiate.')) return;
+  const { error } = await sb.rpc('admin_purge_game', { p_code: g.code });
+  if(error){ toast('Suppression impossible : '+error.message,'error',5000); return; }
+  toast('Chasse et photos supprimées','success');
+  STATE.game = null; STATE.submissions = [];
+  if(STATE.me){ STATE.me.gameCode = null; await saveMe(); }
+  stopRealtime();
+  render();
 }
 
 async function copyShareUrl(){

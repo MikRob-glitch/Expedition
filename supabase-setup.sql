@@ -159,6 +159,19 @@ end; $$;
 revoke all on function public.purge_expired_games(int) from public, anon, authenticated;
 revoke all on function public.purge_game(text)         from public, anon, authenticated;
 
+-- Effacement in-app par l'admin propriétaire (bouton dans l'app), ownership vérifié :
+create or replace function public.admin_purge_game(p_code text)
+returns void language plpgsql security definer set search_path = public, storage as $$
+begin
+  if not exists (select 1 from public.games where code = p_code and admin_id = (select auth.uid())::text) then
+    raise exception 'Non autorisé : vous n''êtes pas le maître de cette chasse';
+  end if;
+  delete from storage.objects where bucket_id = 'photos' and name like p_code || '/%';
+  delete from public.games where code = p_code;   -- cascade teams + submissions
+end; $$;
+revoke all on function public.admin_purge_game(text) from public, anon;
+grant execute on function public.admin_purge_game(text) to authenticated;
+
 -- Planification quotidienne (03:30 UTC) de la purge 90 jours :
 create extension if not exists pg_cron;
 select cron.schedule('purge-expired-games-rgpd', '30 3 * * *', $$ select public.purge_expired_games(90) $$);
