@@ -132,5 +132,37 @@ create policy "photos upload"
   on storage.objects for insert
   with check (bucket_id = 'photos');
 
+-- ───────── 5. RGPD : rétention + effacement ─────────
+-- Suppression automatique des photos + données 90 jours après création d'une chasse,
+-- + fonction d'effacement à la demande. postgres a bypassrls + DELETE sur storage.objects.
+
+create or replace function public.purge_expired_games(retention_days int default 90)
+returns integer language plpgsql security definer set search_path = public, storage as $$
+declare g record; n int := 0;
+begin
+  for g in select code from public.games where created_at < now() - make_interval(days => retention_days) loop
+    delete from storage.objects where bucket_id = 'photos' and name like g.code || '/%';
+    delete from public.games where code = g.code;   -- cascade teams + submissions
+    n := n + 1;
+  end loop;
+  return n;
+end; $$;
+
+create or replace function public.purge_game(p_code text)
+returns void language plpgsql security definer set search_path = public, storage as $$
+begin
+  delete from storage.objects where bucket_id = 'photos' and name like p_code || '/%';
+  delete from public.games where code = p_code;      -- cascade teams + submissions
+end; $$;
+
+-- Jamais appelables par le client (elles ignorent la RLS) :
+revoke all on function public.purge_expired_games(int) from public, anon, authenticated;
+revoke all on function public.purge_game(text)         from public, anon, authenticated;
+
+-- Planification quotidienne (03:30 UTC) de la purge 90 jours :
+create extension if not exists pg_cron;
+select cron.schedule('purge-expired-games-rgpd', '30 3 * * *', $$ select public.purge_expired_games(90) $$);
+-- Effacement à la demande d'une chasse : select public.purge_game('CODE');
+
 -- ───────── Fait ! ─────────
 -- Récupère URL + anon key dans Settings → API

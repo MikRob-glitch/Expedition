@@ -1760,6 +1760,17 @@ function screenTeamJoin(){
         <input id="join-photo-input" type="file" accept="image/*" capture="user" class="hidden-input" onchange="handleJoinCapture(event)">
       </div>
 
+      <div class="field">
+        <label style="display:flex;gap:10px;align-items:flex-start;font-weight:400;cursor:pointer">
+          <input id="join-consent" type="checkbox" style="margin-top:3px;flex:none" ${STATE.joinConsent ? 'checked' : ''}>
+          <span class="help-text" style="margin:0">
+            J'accepte que les photos prises pendant le jeu (dont l'éventuelle photo d'équipe) soient
+            utilisées pour le déroulement de la chasse et le classement, et j'ai lu la
+            <a href="confidentialite.html" target="_blank" rel="noopener" style="color:var(--oxblood);text-decoration:underline">politique de confidentialité</a>.
+          </span>
+        </label>
+      </div>
+
       <div class="sticky-bottom">
         <button class="btn oxblood" onclick="joinGame()">Rejoindre la chasse →</button>
       </div>
@@ -1773,6 +1784,7 @@ async function handleJoinCapture(e){
   // Preserve les champs déjà saisis (render() réaffiche l'écran depuis STATE)
   STATE.joinDraftCode = $('#join-code')?.value || '';
   STATE.joinDraftTeam = $('#join-team')?.value || '';
+  STATE.joinConsent = $('#join-consent')?.checked || false;
   toast('Compression de la photo…');
   try{
     STATE.joinPhoto = await compressImage(file);
@@ -1788,6 +1800,7 @@ async function joinGame(){
   const teamName = $('#join-team').value.trim();
   if(code.length!==4){ toast('Code invalide','error'); return; }
   if(!teamName){ toast('Donnez un nom à votre équipe','error'); return; }
+  if(!$('#join-consent')?.checked){ toast('Vous devez accepter la politique de confidentialité pour rejoindre','error',4500); return; }
   const game = await loadGame(code);
   if(!game){ toast('Aucune chasse avec ce code','error'); return; }
   if(game.status==='ended'){ toast('Cette chasse est terminée','error'); return; }
@@ -1800,6 +1813,7 @@ async function joinGame(){
     if(url) await setTeamPhoto(teamId, url);
   }
   STATE.joinPhoto = null;
+  STATE.joinConsent = false;
   STATE.joinDraftCode = null;
   STATE.joinDraftTeam = null;
   STATE.me.gameCode = code;

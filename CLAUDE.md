@@ -210,6 +210,21 @@ dissocier les deux.
     `localStorage.sentry_dsn` est défini (aucune dépendance par défaut). Recommandé pour la prod :
     créer un projet Sentry gratuit et coller le DSN.
 
+### Poussés sur GitHub (2026-06-30) — LOT RGPD : consentement + conservation + politique
+
+17. **Consentement à l'inscription** : case à cocher **obligatoire** sur `screenTeamJoin`
+    (`join-consent`, préservée via `STATE.joinConsent`), bloquante dans `joinGame`, avec lien vers
+    `confidentialite.html`. Sans coche, pas d'inscription.
+18. **Politique de confidentialité** (`confidentialite.html`, servie par Pages) : modèle FR complet
+    (responsable, données, finalités, base légale = consentement, sous-traitants Supabase/GitHub,
+    conservation 90 j, droits, mineurs, CNIL). ⚠️ **Champs « À COMPLÉTER »** (identité + email de
+    l'organisateur) à remplir avant tout usage commercial.
+19. **Conservation + effacement** (migration `rgpd_retention_purge`, reprise dans
+    `supabase-setup.sql` §5) : fonctions `purge_expired_games(days)` et `purge_game(code)`
+    (SECURITY DEFINER, purgent storage + lignes ; `revoke` côté client), + job **pg_cron**
+    `purge-expired-games-rgpd` quotidien (03:30 UTC) → suppression auto 90 j après création.
+    Effacement à la demande : `select public.purge_game('CODE');`.
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code (par design : pas d'auth, RLS permissive).
