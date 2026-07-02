@@ -32,8 +32,10 @@ des photos comme preuves ; un maître du jeu (admin) valide puis fait juger les 
 ## Modèle de données (Postgres)
 
 - **`games`** — PK `code` (texte, 4 lettres). Champs : `name`, `status`, `clues` (jsonb :
-  `[{id,title,text,points}]`), `duration_minutes`, `per_clue_minutes`, `admin_id`,
-  `started_at`, `ended_at`.
+  `[{id,title,text,points,lat,lng}]` — `lat`/`lng` optionnels, `null` si l'indice n'est pas
+  géolocalisé), `duration_minutes`, `per_clue_minutes`, `admin_id`, `started_at`, `ended_at`.
+  ⚠️ **Aucune migration** pour la géoloc des indices : `clues` est du jsonb, les coords sont
+  simplement stockées dans chaque objet indice.
 - **`teams`** — PK `id` (uid). FK `game_code`. Champs : `name`, `start_clue_id`, `photo_url`
   (photo d'équipe optionnelle, prise à l'inscription), `joined_at`.
 - **`submissions`** — PK `id` (uid, = nom du fichier photo). FK `team_id`
@@ -46,8 +48,9 @@ des photos comme preuves ; un maître du jeu (admin) valide puis fait juger les 
 ⚠️ Le **`submission.id` est réutilisé comme nom de fichier** dans le Storage. Ne jamais
 dissocier les deux.
 
-> Le GPS et la carte (Leaflet) du prototype initial ont été retirés : la preuve est purement
-> photographique.
+> Le GPS/carte **des preuves** (submissions.lat/lng) du prototype initial reste retiré : la preuve
+> est purement photographique. À ne pas confondre avec la **géoloc des indices** (clues.lat/lng)
+> réintroduite ci-dessous, qui sert uniquement à afficher une carte d'orientation aux équipes.
 
 ## Cycle de vie d'une partie (`status`)
 
@@ -94,6 +97,19 @@ dissocier les deux.
   (cache-bustée) dans `teams.photo_url`. N'empêche jamais l'inscription si l'upload échoue.
   Affichée en pastille (`teamAva`, repli sur l'initiale) dans le lobby admin, le lobby équipe
   et le classement.
+- **Géolocalisation des indices + carte d'orientation (Leaflet)** : chaque indice porte des
+  coordonnées **optionnelles** (`clues[].lat`/`lng`, jsonb — aucune migration). **Admin** : dans
+  l'éditeur d'indices (`renderClueListEdit`), boutons « 📍 Placer sur la carte »
+  (`openClueMapPicker` → overlay plein écran, pose/déplace un repère draggable) et « 🎯 Ma
+  position » (`useMyPositionForClue`, `navigator.geolocation`). Coords copiées par
+  `duplicateByCode` et l'édition de chasse. **Équipe** : bouton « 🗺️ Carte » sur
+  `screenTeamActive` (affiché seulement si ≥1 indice est localisé) → `openTeamMap`. La carte
+  montre **tous** les indices localisés en repères **anonymes gris « ? »**, **sauf** l'indice de
+  départ de l'équipe (repère doré ★ nommé) et les indices **déjà réalisés** par l'équipe (repère
+  vert ✓ nommé). Position live de l'équipe (`watchPosition`, point bleu). Overlay + instance
+  Leaflet uniques (`MAPCTX`), réutilisés admin/équipe ; tuiles OpenStreetMap ; Leaflet 1.9.4 via
+  unpkg (CDN). ⚠️ Les coords voyagent dans le jsonb public (clé anon) → un joueur avisé peut les
+  lire : acceptable pour un usage convivial (même dette technique que la clé anon publique).
 
 ## Procédures de récupération (terrain)
 
@@ -232,6 +248,18 @@ dissocier les deux.
     `grant execute` à `authenticated`. Bouton « Supprimer définitivement cette chasse + photos »
     sur `screenAdminEnd` (`purgeCurrentGame`, double confirmation). Complète le droit à
     l'effacement RGPD sans passer par le SQL Editor.
+
+### Poussés sur GitHub (2026-07-02) — Géolocalisation des indices + carte d'orientation
+
+21. **Géoloc des indices + carte Leaflet**. Leaflet 1.9.4 ajouté (CDN unpkg, CSS+JS dans le
+    `<head>`). Overlay carte plein écran (`#map-overlay`) + styles pins
+    (`.pin-hidden/-start/-done/-num/-target`). Coords **optionnelles** par indice
+    (`clues[].lat/lng`, jsonb, **aucune migration**). Admin : `openClueMapPicker`,
+    `placeTargetMarker`, `useMyPositionForClue`, `clearClueCoord` ; UI dans `renderClueListEdit`.
+    Équipe : `openTeamMap` (repères anonymes sauf départ ★ + réalisés ✓, position live), bouton
+    « 🗺️ Carte » dans `screenTeamActive`. Contexte partagé `MAPCTX`, cycle de vie géré
+    (`openMapOverlay`/`closeMap`, `invalidateSize`, `watchPosition` nettoyé à la fermeture).
+    Voir « Géolocalisation des indices » dans Fonctionnalités clés.
 
 ## Dette technique / points de vigilance connus
 

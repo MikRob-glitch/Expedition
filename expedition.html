@@ -13,6 +13,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
 <style>
 :root{
@@ -167,6 +169,30 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 .modal .close{position:absolute;top:env(safe-area-inset-top,16px);right:16px;background:rgba(244,237,224,.15);color:#fff;border:none;width:40px;height:40px;border-radius:50%;font-size:22px;cursor:pointer}
 .modal .info{color:var(--parchment);margin-top:12px;font-family:'Geist Mono',monospace;font-size:12px}
 
+/* ── Carte (Leaflet) ── */
+.map-overlay{position:fixed;inset:0;z-index:150;background:var(--ink);display:none;flex-direction:column}
+.map-overlay.open{display:flex;animation:fade .2s}
+.map-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(env(safe-area-inset-top,10px) + 12px) 16px 12px;background:var(--ink);color:var(--parchment)}
+.map-head h3{font-family:'Fraunces',serif;font-size:18px;margin:0;color:var(--parchment)}
+.map-head .close-x{background:rgba(244,237,224,.15);color:#fff;border:none;width:38px;height:38px;border-radius:50%;font-size:18px;cursor:pointer;flex:none}
+#map-canvas{flex:1;width:100%;background:#ddd}
+.map-foot{padding:12px 16px calc(env(safe-area-inset-bottom,10px) + 12px);background:var(--ink);color:var(--parchment);font-size:13px;display:flex;flex-direction:column;gap:10px}
+.map-foot .hint{opacity:.85;font-size:12.5px;line-height:1.4}
+.map-foot .row{display:flex;gap:8px;flex-wrap:wrap}
+.map-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;opacity:.9;align-items:center}
+.map-legend span{display:inline-flex;align-items:center;gap:5px}
+.map-legend i{width:14px;height:14px;border-radius:50%;display:inline-block;border:2px solid rgba(255,255,255,.5)}
+/* pins */
+.pin{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.4);border:2px solid #fff;font-size:13px;font-weight:700}
+.pin>span{transform:rotate(45deg);line-height:1;color:#fff}
+.pin-hidden{background:#6b6257}
+.pin-start{background:var(--gold-dark,#b8860b)}
+.pin-done{background:var(--forest,#2f5233)}
+.pin-num{background:var(--oxblood,#7a1f1f)}
+.pin-target{background:var(--gold-dark,#b8860b);animation:pinPulse 1s infinite}
+@keyframes pinPulse{0%,100%{box-shadow:0 2px 6px rgba(0,0,0,.4)}50%{box-shadow:0 0 0 6px rgba(184,134,11,.35),0 2px 6px rgba(0,0,0,.4)}}
+.clue-coord{font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink-mute);margin-top:4px}
+
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--parchment);padding:12px 18px;border-radius:10px;font-size:14px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:toastIn .3s ease;max-width:90%}
 .toast.success{background:var(--forest)}
 .toast.error{background:var(--oxblood)}
@@ -260,6 +286,15 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
       <div class="export-log" id="export-log"></div>
     </div>
   </div>
+</div>
+
+<div id="map-overlay" class="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title">
+  <div class="map-head">
+    <h3 id="map-title">Carte</h3>
+    <button class="close-x" onclick="closeMap()" aria-label="Fermer">✕</button>
+  </div>
+  <div id="map-canvas"></div>
+  <div id="map-foot" class="map-foot"></div>
 </div>
 
 <script>
@@ -962,7 +997,7 @@ function screenAdminSetup(){
   if(!STATE.draftClues) STATE.draftClues = [];
   if(STATE.draftClues.length===0){
     STATE.draftClues = [
-      { id:uid(), title:'Le clocher oublié', text:'Là où le temps sonne mais ne marque plus l\'heure depuis la guerre.', points:100 }
+      { id:uid(), title:'Le clocher oublié', text:'Là où le temps sonne mais ne marque plus l\'heure depuis la guerre.', points:100, lat:null, lng:null }
     ];
   }
   renderClueListEdit();
@@ -988,12 +1023,21 @@ function renderClueListEdit(){
         <textarea class="input" onchange="updateClue('${c.id}','text',this.value)" placeholder="Là où les amoureux gravent leurs initiales...">${escapeHtml(c.text)}</textarea></div>
       <div class="field"><label>Points</label>
         <input class="input" type="number" value="${c.points}" onchange="updateClue('${c.id}','points',parseInt(this.value)||0)"></div>
+      <div class="field" style="margin-bottom:0">
+        <label>Emplacement sur la carte (optionnel)</label>
+        <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn sm ghost" onclick="openClueMapPicker('${c.id}')">📍 Placer sur la carte</button>
+          <button class="btn sm ghost" onclick="useMyPositionForClue('${c.id}')">🎯 Ma position</button>
+          ${(c.lat!=null&&c.lng!=null)?`<button class="btn sm ghost" onclick="clearClueCoord('${c.id}')" style="border-color:var(--oxblood);color:var(--oxblood)">Retirer</button>`:''}
+        </div>
+        <div class="clue-coord">${(c.lat!=null&&c.lng!=null)?`📌 ${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`:'Non localisé'}</div>
+      </div>
     </div>
   `).join('');
 }
 
 function addClue(){
-  STATE.draftClues.push({ id:uid(), title:'', text:'', points:100 });
+  STATE.draftClues.push({ id:uid(), title:'', text:'', points:100, lat:null, lng:null });
   renderClueListEdit();
 }
 function removeClue(id){
@@ -1003,6 +1047,159 @@ function removeClue(id){
 function updateClue(id,field,val){
   const c = STATE.draftClues.find(c=>c.id===id);
   if(c){ c[field]=val; }
+}
+
+// ══════════ Carte des indices (Leaflet) ══════════
+// Contexte carte partagé (un seul overlay réutilisé pour l'admin et les équipes).
+const MAPCTX = { map:null, markers:{}, mode:null, clueId:null, watchId:null, meMarker:null };
+
+function pinIcon(kind, label){
+  return L.divIcon({
+    className:'', html:`<div class="pin pin-${kind}"><span>${label!=null?label:''}</span></div>`,
+    iconSize:[30,30], iconAnchor:[15,30], popupAnchor:[0,-28]
+  });
+}
+
+// Ouvre l'overlay carte, (re)crée l'instance Leaflet. center=[lat,lng], zoom.
+function openMapOverlay(title, center, zoom){
+  const ov = $('#map-overlay');
+  $('#map-title').textContent = title;
+  ov.classList.add('open');
+  // Détruire une éventuelle instance précédente
+  if(MAPCTX.map){ try{ MAPCTX.map.remove(); }catch(_){} MAPCTX.map=null; }
+  MAPCTX.markers = {}; MAPCTX.meMarker = null;
+  MAPCTX.map = L.map('map-canvas', { zoomControl:true, attributionControl:true })
+                .setView(center || [46.6, 2.4], zoom || 5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19, attribution:'© OpenStreetMap'
+  }).addTo(MAPCTX.map);
+  // Le conteneur était display:none → recalcul de la taille après affichage
+  setTimeout(()=>{ if(MAPCTX.map) MAPCTX.map.invalidateSize(); }, 80);
+}
+
+function closeMap(){
+  if(MAPCTX.watchId!=null && navigator.geolocation){ navigator.geolocation.clearWatch(MAPCTX.watchId); MAPCTX.watchId=null; }
+  if(MAPCTX.map){ try{ MAPCTX.map.remove(); }catch(_){} MAPCTX.map=null; }
+  MAPCTX.markers={}; MAPCTX.meMarker=null; MAPCTX.mode=null; MAPCTX.clueId=null;
+  $('#map-overlay').classList.remove('open');
+  // Rafraîchir l'éditeur admin si on revient d'un placement
+  if($('#clue-list-edit')) renderClueListEdit();
+}
+
+// ── ADMIN : placer/déplacer un indice sur la carte ──
+function openClueMapPicker(clueId){
+  if(typeof L==='undefined'){ toast('Carte indisponible (réseau)','error'); return; }
+  const clue = STATE.draftClues.find(c=>c.id===clueId);
+  if(!clue) return;
+  MAPCTX.mode='pick'; MAPCTX.clueId=clueId;
+  const placed = STATE.draftClues.filter(c=>c.lat!=null && c.lng!=null);
+  let center=[46.6,2.4], zoom=5;
+  if(clue.lat!=null){ center=[clue.lat,clue.lng]; zoom=16; }
+  else if(placed.length){ center=[placed[0].lat,placed[0].lng]; zoom=15; }
+  const idx = STATE.draftClues.findIndex(c=>c.id===clueId)+1;
+  openMapOverlay(`Placer : ${clue.title||'Indice '+idx}`, center, zoom);
+  $('#map-foot').innerHTML = `
+    <div class="hint">Touchez la carte pour poser le repère de cet indice (déplaçable). Les autres indices déjà placés sont affichés en gris.</div>
+    <div class="row">
+      <button class="btn sm ghost" onclick="useMyPositionForClue('${clueId}')">🎯 Ma position</button>
+      <button class="btn sm gold" onclick="closeMap()">Valider</button>
+    </div>
+    <div class="clue-coord" id="map-readout"></div>`;
+  // Marqueurs des autres indices déjà placés
+  STATE.draftClues.forEach((c,i)=>{
+    if(c.lat==null || c.id===clueId) return;
+    L.marker([c.lat,c.lng], { icon:pinIcon('num', i+1) })
+      .addTo(MAPCTX.map).bindPopup(escapeHtml(c.title||('Indice '+(i+1))));
+  });
+  if(clue.lat!=null) placeTargetMarker(clue.lat, clue.lng);
+  MAPCTX.map.on('click', e=> placeTargetMarker(e.latlng.lat, e.latlng.lng));
+  updateMapReadout();
+}
+
+function placeTargetMarker(lat, lng){
+  const clue = STATE.draftClues.find(c=>c.id===MAPCTX.clueId);
+  if(!clue) return;
+  clue.lat=lat; clue.lng=lng;
+  if(MAPCTX.markers.target){ MAPCTX.markers.target.setLatLng([lat,lng]); }
+  else {
+    const m = L.marker([lat,lng], { icon:pinIcon('target','📍'), draggable:true }).addTo(MAPCTX.map);
+    m.on('dragend', ev=>{ const p=ev.target.getLatLng(); clue.lat=p.lat; clue.lng=p.lng; updateMapReadout(); });
+    MAPCTX.markers.target=m;
+  }
+  updateMapReadout();
+}
+
+function updateMapReadout(){
+  const el=$('#map-readout'); if(!el) return;
+  const clue = STATE.draftClues.find(c=>c.id===MAPCTX.clueId);
+  el.textContent = (clue && clue.lat!=null) ? `📌 ${clue.lat.toFixed(5)}, ${clue.lng.toFixed(5)}` : 'Touchez la carte…';
+}
+
+// GPS : « Ma position » pour un indice (fonctionne dans l'éditeur ou dans le picker).
+function useMyPositionForClue(clueId){
+  if(!navigator.geolocation){ toast('Géolocalisation non disponible','error'); return; }
+  toast('Localisation en cours…','');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const {latitude:lat, longitude:lng} = pos.coords;
+    const clue = STATE.draftClues.find(c=>c.id===clueId);
+    if(!clue) return;
+    if(MAPCTX.mode==='pick' && MAPCTX.clueId===clueId && MAPCTX.map){
+      placeTargetMarker(lat,lng); MAPCTX.map.setView([lat,lng],16);
+    } else {
+      clue.lat=lat; clue.lng=lng; renderClueListEdit();
+      toast('Position enregistrée','success');
+    }
+  }, err=>{
+    toast(err.code===1?'Autorisez la localisation pour utiliser votre position':'Position indisponible','error',5000);
+  }, { enableHighAccuracy:true, timeout:10000, maximumAge:0 });
+}
+
+function clearClueCoord(clueId){
+  const c = STATE.draftClues.find(x=>x.id===clueId);
+  if(c){ c.lat=null; c.lng=null; renderClueListEdit(); }
+}
+
+// ── ÉQUIPE : carte anonymisée (départ + indices réalisés révélés) ──
+function openTeamMap(){
+  if(typeof L==='undefined'){ toast('Carte indisponible (réseau)','error'); return; }
+  const g = STATE.game;
+  const placed = g.clues.filter(c=>c.lat!=null && c.lng!=null);
+  if(!placed.length){ toast('Aucun indice localisé sur la carte','',3000); return; }
+  MAPCTX.mode='team';
+  const scid = myStartClueId();
+  const mySubs = STATE.submissions.filter(s=>s.teamId===STATE.me.teamId);
+  const doneIds = new Set(mySubs.map(s=>s.clueId));
+  const first = placed[0];
+  openMapOverlay('Carte des indices', [first.lat, first.lng], 15);
+  const bounds=[];
+  g.clues.forEach((c,i)=>{
+    if(c.lat==null) return;
+    bounds.push([c.lat,c.lng]);
+    let kind='hidden', label='?', popup='Indice mystère — à vous de deviner lequel !';
+    if(c.id===scid){ kind='start'; label='★'; popup=`<strong>Indice de départ</strong><br>${escapeHtml(c.title)}`; }
+    else if(doneIds.has(c.id)){ kind='done'; label='✓'; popup=escapeHtml(c.title); }
+    L.marker([c.lat,c.lng], { icon:pinIcon(kind,label) }).addTo(MAPCTX.map).bindPopup(popup);
+  });
+  if(bounds.length>1) MAPCTX.map.fitBounds(bounds, { padding:[40,40] });
+  $('#map-foot').innerHTML = `
+    <div class="map-legend">
+      <span><i style="background:var(--gold-dark,#b8860b)"></i>Départ</span>
+      <span><i style="background:var(--forest,#2f5233)"></i>Réalisé</span>
+      <span><i style="background:#6b6257"></i>Mystère</span>
+      <span><i style="background:#1e90ff"></i>Vous</span>
+    </div>
+    <div class="hint">Les repères gris sont des indices — la carte montre où aller, à vous de deviner lequel. Votre indice de départ est en doré.</div>`;
+  // Position live de l'équipe
+  if(navigator.geolocation){
+    MAPCTX.watchId = navigator.geolocation.watchPosition(pos=>{
+      const ll=[pos.coords.latitude, pos.coords.longitude];
+      if(MAPCTX.meMarker){ MAPCTX.meMarker.setLatLng(ll); }
+      else {
+        MAPCTX.meMarker = L.circleMarker(ll, { radius:8, color:'#fff', weight:2, fillColor:'#1e90ff', fillOpacity:1 })
+          .addTo(MAPCTX.map).bindPopup('Vous');
+      }
+    }, ()=>{}, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
+  }
 }
 
 async function createGame(){
@@ -1038,7 +1235,7 @@ async function duplicateByCode(){
   if(src === undefined){ toast('Réseau indisponible, réessayez','error'); return; }
   if(!src){ toast('Chasse introuvable','error'); return; }
   if(!src.clues || src.clues.length === 0){ toast('Cette chasse n\'a aucun indice à copier','error'); return; }
-  STATE.draftClues = src.clues.map(c=>({ id:uid(), title:c.title||'', text:c.text||'', points:c.points||0 }));
+  STATE.draftClues = src.clues.map(c=>({ id:uid(), title:c.title||'', text:c.text||'', points:c.points||0, lat:(c.lat??null), lng:(c.lng??null) }));
   STATE.draftMeta = {
     name: (src.name || 'Chasse') + ' (copie)',
     date: new Date().toISOString().slice(0,10),
@@ -1939,9 +2136,12 @@ function screenTeamActive(){
         </div>
       </div>
       
-      <h2>Les indices</h2>
+      <div class="flex-between" style="margin-bottom:10px">
+        <h2 style="margin:0">Les indices</h2>
+        ${g.clues.some(c=>c.lat!=null) ? `<button class="btn sm ghost" onclick="openTeamMap()">🗺️ Carte</button>` : ''}
+      </div>
       ${clueListHtml}
-      
+
       <div class="sticky-bottom">
         <button class="btn ghost" onclick="leaveGame()">Quitter la chasse</button>
       </div>
