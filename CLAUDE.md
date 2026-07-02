@@ -276,6 +276,20 @@ dissocier les deux.
     ⚠️ Bumper la constante `CACHE` de `sw.js` à chaque déploiement changeant l'app-shell.
     **Étape 2 (non faite)** : file d'attente d'envoi photo offline (IndexedDB + flush).
 
+### Poussés sur GitHub (2026-07-02) — LOT PWA (étape 2) : file d'envoi photo offline
+
+23. **Outbox d'envoi photo (IndexedDB)**. `submitClue` écrit d'abord la preuve dans une file
+    IndexedDB (`expedition-outbox`) — la photo survit à une coupure/rechargement/fermeture — puis
+    tente l'envoi. `flushOutbox` (verrou `FLUSHING`) vide la file en séquence (upload+insert
+    `upsert` idempotent par `id` → pas de doublon ni d'orphelin), retire à chaque succès, puis
+    resynchronise (`loadSubmissions`+`render`). Déclencheurs : boot, event `online`, chaque
+    `refreshState` (poll 15 s). `saveSubmission`/`uploadPhoto` acceptent un flag `silent` (pas de
+    toast d'échec pendant les tentatives de fond). Rendu équipe : `myTeamSubs()` fusionne les items
+    en file comme preuves « en attente d'envoi » (pseudo-status `queued`) → l'indice s'affiche
+    envoyé, le verrou de départ se débloque hors-ligne, `openClue` bloque une nouvelle capture.
+    `CACHE` de `sw.js` bumpé v1→v2. ⚠️ Limite iOS : pas de Background Sync → flush appli
+    ouverte/réouverte uniquement.
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code. Historiquement « sans auth / RLS permissive »,
@@ -294,11 +308,12 @@ dissocier les deux.
 - Pas de transaction entre upload Storage et insert DB → mitigé par le retry+rollback (#4),
   mais une vraie solution serait une Edge Function ou un nettoyage périodique des orphelins.
 - `start_clue_id` : à conserver lors des fusions (l'équipe canonique la plus ancienne le porte).
-- **PWA — app-shell offline en place** (`sw.js`) : navigation HTML network-first, CDN/Leaflet +
-  polices en cache-first, tuiles OSM en cache runtime, Supabase toujours réseau. Un rechargement
-  pendant une coupure ne donne plus d'écran blanc ; appli installable. ⚠️ **Pas encore de file
-  d'attente d'envoi offline** : une photo prise hors-ligne échoue (« réessayez ») et n'est pas
-  ré-émise automatiquement → **étape 2** prévue (queue IndexedDB + flush au retour réseau).
+- **PWA — app-shell + file d'envoi offline en place** (`sw.js` + outbox IndexedDB) : navigation
+  HTML network-first, CDN/Leaflet + polices en cache-first, tuiles OSM en cache runtime, Supabase
+  toujours réseau ; appli installable. Un rechargement pendant une coupure ne donne plus d'écran
+  blanc ; une photo prise hors-ligne est mise en file (IndexedDB, survit rechargement/fermeture)
+  puis ré-émise automatiquement au retour du réseau. ⚠️ Limite iOS : pas de Background Sync
+  (Safari) → le flush se fait appli ouverte / à sa réouverture, pas « appli tuée jamais rouverte ».
   ⚠️ Bumper la constante `CACHE` de `sw.js` à chaque déploiement modifiant l'app-shell.
 
 ## Workflow attendu

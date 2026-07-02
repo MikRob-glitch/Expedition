@@ -303,7 +303,7 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 
 <script>
 // ============ STATE & STORAGE ============
-const STATE = { me:null, game:null, submissions:[], teams:[], realtimeChannel:null, pollTimer:null, currentClueId:null, perClueStartTime:{}, capturedPhoto:null, draftClues:null, adminTab:null };
+const STATE = { me:null, game:null, submissions:[], teams:[], realtimeChannel:null, pollTimer:null, currentClueId:null, perClueStartTime:{}, capturedPhoto:null, draftClues:null, adminTab:null, outbox:[] };
 
 // ────── Fiabilité : capture des erreurs non gérées (+ Sentry optionnel) ──────
 // But : ne plus être aveugle en cas de bug sur le terrain. Sans clé Sentry, la
@@ -460,14 +460,14 @@ async function loadSubmissions(code){
   return (data||[]).map(rowToSub);
 }
 
-async function saveSubmission(sub){
+async function saveSubmission(sub, silent=false){
   // Renvoie true si la preuve est bien enregistrée en base, false sinon.
   if(!sb) return false;
   // 1) Upload photo si dataURL
   let photoUrl = sub.photoUrl;
   let uploadedPath = null;
   if(sub.photoDataUrl && sub.photoDataUrl.startsWith('data:')){
-    photoUrl = await uploadPhoto(sub.photoDataUrl, sub.gameCode, sub.id);
+    photoUrl = await uploadPhoto(sub.photoDataUrl, sub.gameCode, sub.id, silent);
     if(!photoUrl) return false;
     uploadedPath = `${sub.gameCode}/${sub.id}.jpg`;
     sub.photoUrl = photoUrl;
@@ -496,11 +496,11 @@ async function saveSubmission(sub){
   // orpheline (preuve invisible au jugement). La photo reste en mémoire → l'appelant
   // peut proposer de réessayer.
   if(uploadedPath){ try{ await sb.storage.from('photos').remove([uploadedPath]); }catch(_){} }
-  toast('Échec d\'enregistrement : '+(lastErr?.message||'réseau')+' — réessayez','error',5000);
+  if(!silent) toast('Échec d\'enregistrement : '+(lastErr?.message||'réseau')+' — réessayez','error',5000);
   return false;
 }
 
-async function uploadPhoto(dataUrl, gameCode, subId){
+async function uploadPhoto(dataUrl, gameCode, subId, silent=false){
   try{
     const res = await fetch(dataUrl);
     const blob = await res.blob();
@@ -508,11 +508,11 @@ async function uploadPhoto(dataUrl, gameCode, subId){
     const { error } = await sb.storage.from('photos').upload(path, blob, {
       contentType:'image/jpeg', upsert:true
     });
-    if(error){ toast('Upload photo: '+error.message,'error',4500); return null; }
+    if(error){ if(!silent) toast('Upload photo: '+error.message,'error',4500); return null; }
     const { data } = sb.storage.from('photos').getPublicUrl(path);
     return data.publicUrl;
   }catch(e){
-    toast('Upload photo: '+e.message,'error',4500);
+    if(!silent) toast('Upload photo: '+e.message,'error',4500);
     return null;
   }
 }
@@ -610,7 +610,8 @@ function myStartClueId(){
 function myStartClueDone(){
   const scid = myStartClueId();
   if(!scid) return true;
-  return STATE.submissions.some(s=>s.teamId===STATE.me?.teamId && s.clueId===scid);
+  return STATE.submissions.some(s=>s.teamId===STATE.me?.teamId && s.clueId===scid)
+      || (STATE.outbox||[]).some(o=>o.teamId===STATE.me?.teamId && o.clueId===scid);
 }
 
 // ============ UTILS ============
@@ -687,6 +688,7 @@ function stopRealtime(){
   if(STATE.pollTimer){ clearInterval(STATE.pollTimer); STATE.pollTimer=null; }
 }
 async function refreshState(){
+  flushOutbox(); // tentative de vidage de la file d'envoi (non bloquant)
   if(!STATE.me?.gameCode) return;
   const g = await loadGame(STATE.me.gameCode);
   if(g === undefined) return;   // erreur réseau transitoire : on ignore ce cycle
@@ -2093,7 +2095,7 @@ function screenTeamActive(){
   const g = STATE.game;
   const elapsed = (Date.now() - g.startedAt)/1000;
   const remaining = Math.max(0, g.durationMinutes*60 - elapsed);
-  const mySubs = STATE.submissions.filter(s=>s.teamId===STATE.me.teamId);
+  const mySubs = myTeamSubs();
   
   const myPoints = mySubs.filter(s=>s.status==='approved').reduce((p,s)=>p+(s.points||0)+(s.bonusPoints||0),0);
   
@@ -2105,7 +2107,7 @@ function screenTeamActive(){
     const i = g.clues.findIndex(x=>x.id===c.id);
     const sub = mySubs.find(s=>s.clueId===c.id);
     const cls = sub?.status==='approved'?'done':sub?'pending':'';
-    const label = sub?.status==='approved'?`${(sub.points||0)+(sub.bonusPoints||0)} pts`:sub?.status==='pending'?'En attente':sub?.status==='rejected'?'Refusée — refaire':`${c.points} pts`;
+    const label = sub?.queued?'En attente d\'envoi':sub?.status==='approved'?`${(sub.points||0)+(sub.bonusPoints||0)} pts`:sub?.status==='pending'?'En attente':sub?.status==='rejected'?'Refusée — refaire':`${c.points} pts`;
     const startBadge = c.id===scid ? '<span class="chip gold" style="margin-right:6px;padding:2px 7px">Départ</span>' : '';
     return `<button class="clue-item ${cls}" onclick="openClue('${c.id}')">
             <div class="num">${i+1}</div>
@@ -2159,6 +2161,10 @@ function openClue(clueId){
   // Garde-fou : indice de départ pas encore réalisé → on ne peut ouvrir que lui.
   if(myStartClueId() && !myStartClueDone() && clueId!==myStartClueId()){
     toast('Réalisez d\'abord votre indice de départ','');
+    return;
+  }
+  if((STATE.outbox||[]).some(o=>o.clueId===clueId && o.teamId===STATE.me?.teamId)){
+    toast('Photo en attente d\'envoi','');
     return;
   }
   const sub = STATE.submissions.find(s=>s.clueId===clueId && s.teamId===STATE.me.teamId);
@@ -2239,40 +2245,92 @@ function abortClue(){
   render();
 }
 
-async function submitClue(){
-  // Anti-double-tap : on désactive le bouton immédiatement
-  const btn = document.querySelector('[data-screen="team-capture"] .btn.oxblood');
-  if(btn){
-    if(btn.disabled) return;
-    btn.disabled = true;
-    btn.textContent = 'Envoi en cours…';
-  }
+// ══════════ Outbox : file d'envoi photo hors-ligne (PWA étape 2) ══════════
+// Une photo prise sans réseau est stockée dans IndexedDB (survit rechargement/fermeture),
+// affichée « en attente d'envoi », puis ré-émise automatiquement au retour du réseau.
+const OUTBOX_DB='expedition-outbox', OUTBOX_STORE='queue';
+let FLUSHING=false;
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    let r; try{ r=indexedDB.open(OUTBOX_DB,1); }catch(e){ return rej(e); }
+    r.onupgradeneeded=()=>{ try{ r.result.createObjectStore(OUTBOX_STORE,{keyPath:'id'}); }catch(_){} };
+    r.onsuccess=()=>res(r.result);
+    r.onerror=()=>rej(r.error);
+  });
+}
+function idbReq(mode, fn){
+  return idbOpen().then(db=> new Promise((res,rej)=>{
+    const t=db.transaction(OUTBOX_STORE,mode), st=t.objectStore(OUTBOX_STORE); let out;
+    const rq=fn(st); if(rq) rq.onsuccess=()=>{ out=rq.result; };
+    t.oncomplete=()=>res(out); t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error);
+  }));
+}
+async function outboxLoad(){ try{ return (await idbReq('readonly',s=>s.getAll()))||[]; }catch(_){ return []; } }
+async function outboxPut(item){ try{ await idbReq('readwrite',s=>s.put(item)); }catch(_){} }
+async function outboxDel(id){ try{ await idbReq('readwrite',s=>s.delete(id)); }catch(_){} }
 
-  const sub = {
-    id: uid(),
-    gameCode: STATE.game.code,
-    teamId: STATE.me.teamId,
-    clueId: STATE.currentClueId,
-    photoDataUrl: STATE.capturedPhoto,
-    submittedAt: Date.now(),
-    status:'pending',
-    points:0, bonusPoints:0
-  };
+async function enqueueSubmission(sub){
+  const item={ id:sub.id, gameCode:sub.gameCode, teamId:sub.teamId, clueId:sub.clueId,
+               photoDataUrl:sub.photoDataUrl, submittedAt:sub.submittedAt };
+  await outboxPut(item);
+  if(!STATE.outbox.some(o=>o.id===item.id)) STATE.outbox.push(item);
+}
+
+// Preuves encore en file pour l'équipe courante, rendues comme « en attente d'envoi ».
+function outboxAsSubs(){
+  return (STATE.outbox||[])
+    .filter(o=> o.gameCode===STATE.game?.code && o.teamId===STATE.me?.teamId)
+    .map(o=>({ id:o.id, gameCode:o.gameCode, teamId:o.teamId, clueId:o.clueId,
+              photoDataUrl:o.photoDataUrl, status:'pending', points:0, bonusPoints:0,
+              submittedAt:o.submittedAt, queued:true }));
+}
+function myTeamSubs(){
+  const real = STATE.submissions.filter(s=>s.teamId===STATE.me?.teamId);
+  const ids = new Set(real.map(s=>s.id));
+  return [...real, ...outboxAsSubs().filter(o=>!ids.has(o.id))];
+}
+
+// Vide la file : upload+insert de chaque preuve en attente, retrait si succès (ordre préservé).
+async function flushOutbox(opts={}){
+  const announce = opts.announce!==false;
+  if(FLUSHING || !sb || !navigator.onLine || !(STATE.outbox||[]).length) return 0;
+  FLUSHING=true; let sent=0;
   try{
-    const ok = await saveSubmission(sub);
-    if(!ok){
-      // Échec déjà signalé par saveSubmission. On garde la photo capturée en mémoire
-      // pour que l'équipe puisse réessayer immédiatement.
-      if(btn){ btn.disabled = false; btn.textContent = 'Envoyer la preuve →'; }
-      return;
+    for(const item of [...STATE.outbox]){
+      const sub={ id:item.id, gameCode:item.gameCode, teamId:item.teamId, clueId:item.clueId,
+                  photoDataUrl:item.photoDataUrl, submittedAt:item.submittedAt,
+                  status:'pending', points:0, bonusPoints:0 };
+      let ok=false; try{ ok=await saveSubmission(sub, true); }catch(_){ ok=false; }
+      if(ok){ sent++; await outboxDel(item.id); STATE.outbox=STATE.outbox.filter(o=>o.id!==item.id); }
+      else break; // réseau encore KO : on réessaiera plus tard
     }
-    toast('Preuve envoyée à l\'admin','success');
-    STATE.currentClueId=null;
-    STATE.capturedPhoto=null;
+  } finally { FLUSHING=false; }
+  if(sent){
+    if(STATE.me?.gameCode){ try{ STATE.submissions=await loadSubmissions(STATE.me.gameCode); }catch(_){} }
     render();
-  }catch(err){
-    if(btn){ btn.disabled = false; btn.textContent = 'Envoyer la preuve →'; }
-    toast('Erreur d\'envoi : '+(err.message||'inconnue'),'error',4500);
+    if(announce) toast(sent+' photo'+(sent>1?'s':'')+' envoyée'+(sent>1?'s':'')+' ✓','success');
+  }
+  return sent;
+}
+
+async function submitClue(){
+  const btn = document.querySelector('[data-screen="team-capture"] .btn.oxblood');
+  if(btn){ if(btn.disabled) return; btn.disabled = true; btn.textContent = 'Envoi en cours…'; }
+  const sub = {
+    id: uid(), gameCode: STATE.game.code, teamId: STATE.me.teamId,
+    clueId: STATE.currentClueId, photoDataUrl: STATE.capturedPhoto,
+    submittedAt: Date.now(), status:'pending', points:0, bonusPoints:0
+  };
+  // Outbox d'abord : la photo est sécurisée (survit coupure/rechargement) avant tout envoi.
+  await enqueueSubmission(sub);
+  STATE.currentClueId=null; STATE.capturedPhoto=null;
+  render(); // l'indice s'affiche « en attente d'envoi »
+  if(navigator.onLine){
+    const n = await flushOutbox({announce:false});
+    if(n) toast('Preuve envoyée à l\'admin ✓','success');
+    else toast('Photo en attente — envoi automatique dès que le réseau revient','',5000);
+  } else {
+    toast('Hors-ligne — photo en attente, envoi automatique au retour du réseau','',5000);
   }
 }
 
@@ -2490,8 +2548,10 @@ setInterval(()=>{
     openSlideshow(diapoCode.toUpperCase());
     return;
   }
+  STATE.outbox = await outboxLoad();
   await render();
   if(sb && STATE.me?.gameCode) startRealtime();
+  flushOutbox();
 })();
 
 // ══════════ PWA : service worker + indicateur hors-ligne ══════════
@@ -2506,7 +2566,7 @@ function updateOnlineStatus(){
   const b = document.getElementById('offline-banner');
   if(b) b.classList.toggle('show', !navigator.onLine);
 }
-window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('online', ()=>{ updateOnlineStatus(); flushOutbox(); });
 window.addEventListener('offline', updateOnlineStatus);
 updateOnlineStatus();
 
