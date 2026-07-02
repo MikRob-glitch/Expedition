@@ -7,13 +7,18 @@
    - Tuiles OSM : cache-first runtime (zones déjà vues dispo hors-ligne).
    - Appels Supabase (REST/Storage) : network-only (jamais d'état de jeu périmé).
    ⚠️ Bumper CACHE à chaque déploiement qui change l'app-shell. */
-const CACHE = 'expedition-v2';
+const CACHE = 'expedition-v3';
 const CORE = [
   './expedition.html',
   './confidentialite.html',
   './manifest.json',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  './icons/icon-maskable-512.png',
+  './icons/favicon.svg',
+  './icons/favicon-32.png',
+  './icons/favicon-16.png',
+  './icons/apple-touch-icon.png'
 ];
 const CDN = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
