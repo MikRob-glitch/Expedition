@@ -3,8 +3,8 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-06-30, commit `728ffa0`). Les écarts connus
-> (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-02, commit `c02a404`). Les écarts connus
+> (travail local non poussé) sont signalés ⚠️. À ce jour, aucun écart : local et distant alignés.
 
 ## Vue d'ensemble
 
@@ -51,6 +51,7 @@ dissocier les deux.
 > Le GPS/carte **des preuves** (submissions.lat/lng) du prototype initial reste retiré : la preuve
 > est purement photographique. À ne pas confondre avec la **géoloc des indices** (clues.lat/lng)
 > réintroduite ci-dessous, qui sert uniquement à afficher une carte d'orientation aux équipes.
+
 
 ## Cycle de vie d'une partie (`status`)
 
@@ -173,7 +174,11 @@ dissocier les deux.
 
 ### Poussés sur GitHub (2026-06-30, commit `da27780`) — LOT 1 SÉCURITÉ : auth admin + RLS scopées
 
-**✅ Déployé et appliqué le 2026-06-30** : client poussé sur GitHub Pages, compte admin créé (`hague.mickael@gmail.com`, `auth.uid()=5d15cb3f-…`), `migration-lot1-rls.sql` appliquée en base (policies games + submissions vérifiées, advisors OK), Email OTP length ramené de 8 à **6**, templates email « Magic link or OTP » et « Confirm sign up » configurés avec `{{ .Token }}`. Création/gestion de chasse testée OK sous les nouvelles RLS.
+**✅ Déployé et appliqué le 2026-06-30** : client poussé sur GitHub Pages, compte admin créé
+(`hague.mickael@gmail.com`, `auth.uid()=5d15cb3f-…`), `migration-lot1-rls.sql` appliquée en base
+(policies games + submissions vérifiées, advisors OK), Email OTP length ramené de 8 à **6**,
+templates email « Magic link or OTP » et « Confirm sign up » configurés avec `{{ .Token }}`.
+Création/gestion de chasse testée OK sous les nouvelles RLS.
 
 12. **Auth admin par code OTP email (Supabase Auth)**. L'admin n'est plus identifié par un
     `uid()` client mais par son `auth.uid()` (stable, lié à l'email). Nouvel écran
@@ -195,7 +200,7 @@ dissocier les deux.
     Templates → Magic Link). SMTP custom recommandé en prod (le SMTP partagé Supabase est
     fortement limité et peu fiable).
 
-### Poussés sur GitHub (2026-06-30) — LOT 2 SÉCURITÉ : verrou du bucket photos
+### Poussés sur GitHub (2026-06-30, commit `be2e1b0`) — LOT 2 SÉCURITÉ : verrou du bucket photos
 
 14. **Storage `photos` verrouillé** (`migration-lot2-storage.sql` + `supabase-setup.sql` §4) :
     suppression de la policy DELETE publique (fin du vandalisme de masse — n'importe qui avec la
@@ -203,7 +208,7 @@ dissocier les deux.
     du bucket). Upload conservé (joueurs anonymes). Les URLs publiques (`getPublicUrl`) et
     l'export ZIP continuent de fonctionner car le bucket reste `public=true` et l'app ne fait
     jamais de `.list()`. Le seul `.remove()` (rollback d'orphelin dans `saveSubmission`) est en
-    try/catch : son échec est toléré. **Aucun changement client, applicable à chaud.** Advisor
+    try/catch : son échec est toléré. **Aucun changement client, appliqué à chaud.** Advisor
     « public bucket allows listing » levé.
 
     **Décision d'archi** : l'auth anonyme des joueurs (envisagée pour scoper `teams`/`submissions`)
@@ -214,7 +219,7 @@ dissocier les deux.
     (gate serveur `service_role`), moins urgent car ces atteintes sont récupérables (contrairement
     à la suppression de photos).
 
-### Poussés sur GitHub (2026-06-30) — LOT FIABILITÉ : keep-alive + capture d'erreurs
+### Poussés sur GitHub (2026-06-30, commit `3695b18`) — LOT FIABILITÉ : keep-alive + capture d'erreurs
 
 15. **Keep-alive anti-pause** (`.github/workflows/keepalive.yml`) : le projet Supabase est en
     tier gratuit → pause après ~7 j d'inactivité (risque jour J pour une activité à événements
@@ -229,7 +234,7 @@ dissocier les deux.
     `localStorage.sentry_dsn` est défini (aucune dépendance par défaut). Recommandé pour la prod :
     créer un projet Sentry gratuit et coller le DSN.
 
-### Poussés sur GitHub (2026-06-30) — LOT RGPD : consentement + conservation + politique
+### Poussés sur GitHub (2026-06-30, commit `37d1e81`) — LOT RGPD : consentement + conservation + politique
 
 17. **Consentement à l'inscription** : case à cocher **obligatoire** sur `screenTeamJoin`
     (`join-consent`, préservée via `STATE.joinConsent`), bloquante dans `joinGame`, avec lien vers
@@ -244,7 +249,7 @@ dissocier les deux.
     `purge-expired-games-rgpd` quotidien (03:30 UTC) → suppression auto 90 j après création.
     Effacement à la demande : `select public.purge_game('CODE');`.
 
-### Poussés sur GitHub (2026-06-30) — RGPD : effacement in-app par l'admin
+### Poussés sur GitHub (2026-06-30, commit `c09d80f`) — RGPD : effacement in-app par l'admin
 
 20. **RPC `admin_purge_game(code)`** (migration `admin_purge_game_rpc`, `supabase-setup.sql` §5) :
     SECURITY DEFINER, vérifie `auth.uid() = games.admin_id` puis purge storage + lignes ;
@@ -252,17 +257,17 @@ dissocier les deux.
     sur `screenAdminEnd` (`purgeCurrentGame`, double confirmation). Complète le droit à
     l'effacement RGPD sans passer par le SQL Editor.
 
-### Poussés sur GitHub (2026-07-02) — Géolocalisation des indices + carte d'orientation
+### Poussés sur GitHub (2026-07-01) — Géolocalisation des indices + carte d'orientation
 
-21. **Géoloc des indices + carte Leaflet**. Leaflet 1.9.4 ajouté (CDN unpkg, CSS+JS dans le
-    `<head>`). Overlay carte plein écran (`#map-overlay`) + styles pins
-    (`.pin-hidden/-start/-done/-num/-target`). Coords **optionnelles** par indice
+21. **Géoloc des indices + carte Leaflet**. Leaflet 1.9.4
+    ajouté (CDN unpkg, CSS+JS dans le `<head>`). Overlay carte plein écran (`#map-overlay`) +
+    styles pins (`.pin-hidden/-start/-done/-num/-target`). Coords **optionnelles** par indice
     (`clues[].lat/lng`, jsonb, **aucune migration**). Admin : `openClueMapPicker`,
     `placeTargetMarker`, `useMyPositionForClue`, `clearClueCoord` ; UI dans `renderClueListEdit`.
     Équipe : `openTeamMap` (repères anonymes sauf départ ★ + réalisés ✓, position live), bouton
     « 🗺️ Carte » dans `screenTeamActive`. Contexte partagé `MAPCTX`, cycle de vie géré
     (`openMapOverlay`/`closeMap`, `invalidateSize`, `watchPosition` nettoyé à la fermeture).
-    Voir « Géolocalisation des indices » dans Fonctionnalités clés.
+    Voir « Géolocalisation des indices » dans Fonctionnalités clés. Poussé et déployé (Pages).
 
 ### Poussés sur GitHub (2026-07-02) — LOT PWA (étape 1) : app-shell offline
 
@@ -301,6 +306,19 @@ dissocier les deux.
     casse/espaces) et oriente vers la reconnexion ; `screenAdminLobby` avertit si des noms
     d'équipe en double existent.
 
+### Poussés sur GitHub (2026-07-02, commit `c02a404`) — Branding / icônes PWA
+
+25. **Identité visuelle finalisée** (la boussole « rose des vents » existait déjà). Trois manques
+    comblés : (1) **favicon** dédié — `icons/favicon.svg` (motif boussole simplifié, sans les
+    fines graduations qui bavent en petit) + rasters `favicon-32.png`/`favicon-16.png`, câblés via
+    `<link rel="icon">` dans le `<head>` (l'onglet navigateur n'affiche plus l'icône générique) ;
+    (2) **icône maskable** dédiée `icons/icon-maskable-512.png` (boussole à ~72 % centrée sur carré
+    parchemin plein cadre → zone de sécurité Android, l'anneau n'est plus rogné) ; l'ancien
+    `"purpose": "any maskable"` sur les icônes 192/512 est scindé en `any` (192/512) + `maskable`
+    (512 dédiée) dans `manifest.json` ; (3) **`icons/apple-touch-icon.png`** en 180 px (iOS arrondit
+    les coins lui-même), remplace le pointage sur `icon-192.png`. `sw.js` : nouveaux assets ajoutés
+    à `CORE`, `CACHE` bumpé **v2→v3**. Les icônes d'origine `icon-192/512.png` sont conservées.
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code. Historiquement « sans auth / RLS permissive »,
@@ -333,4 +351,4 @@ dissocier les deux.
 
 Implémentation directe, sans recap de questions. Corriger préventivement ce qui n'a pas
 encore été testé en conditions réelles plutôt que demander confirmation. Vérifier la syntaxe
-JS avant livraison 
+JS avant livraison
