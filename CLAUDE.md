@@ -264,6 +264,18 @@ dissocier les deux.
     (`openMapOverlay`/`closeMap`, `invalidateSize`, `watchPosition` nettoyé à la fermeture).
     Voir « Géolocalisation des indices » dans Fonctionnalités clés.
 
+### Poussés sur GitHub (2026-07-02) — LOT PWA (étape 1) : app-shell offline
+
+22. **Service worker `sw.js` (app-shell offline)**. Enregistré depuis `expedition.html` (non
+    bloquant, un échec ne casse pas le jeu). Stratégies : navigation HTML **network-first**
+    (hotfixes en ligne toujours servis ; hors-ligne → dernière version cachée) ; CDN versionnés
+    (supabase-js, jszip, Leaflet) + polices en **cache-first** ; tuiles OSM en cache-first runtime
+    (cache `expedition-tiles`) ; appels **Supabase toujours réseau** (jamais d'état de jeu périmé).
+    Résout le trou majeur : un rechargement pendant une coupure ne donne plus d'écran blanc.
+    Bandeau `#offline-banner` piloté par `navigator.onLine` + events `online`/`offline`.
+    ⚠️ Bumper la constante `CACHE` de `sw.js` à chaque déploiement changeant l'app-shell.
+    **Étape 2 (non faite)** : file d'attente d'envoi photo offline (IndexedDB + flush).
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code. Historiquement « sans auth / RLS permissive »,
@@ -282,7 +294,12 @@ dissocier les deux.
 - Pas de transaction entre upload Storage et insert DB → mitigé par le retry+rollback (#4),
   mais une vraie solution serait une Edge Function ou un nettoyage périodique des orphelins.
 - `start_clue_id` : à conserver lors des fusions (l'équipe canonique la plus ancienne le porte).
-- **PWA partielle** : pas de service worker (ni install Android/desktop, ni offline).
+- **PWA — app-shell offline en place** (`sw.js`) : navigation HTML network-first, CDN/Leaflet +
+  polices en cache-first, tuiles OSM en cache runtime, Supabase toujours réseau. Un rechargement
+  pendant une coupure ne donne plus d'écran blanc ; appli installable. ⚠️ **Pas encore de file
+  d'attente d'envoi offline** : une photo prise hors-ligne échoue (« réessayez ») et n'est pas
+  ré-émise automatiquement → **étape 2** prévue (queue IndexedDB + flush au retour réseau).
+  ⚠️ Bumper la constante `CACHE` de `sw.js` à chaque déploiement modifiant l'app-shell.
 
 ## Workflow attendu
 
