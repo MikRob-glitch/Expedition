@@ -290,13 +290,26 @@ dissocier les deux.
     `CACHE` de `sw.js` bumpé v1→v2. ⚠️ Limite iOS : pas de Background Sync → flush appli
     ouverte/réouverte uniquement.
 
+### Poussés sur GitHub (2026-07-02) — Reconnexion équipe fiabilisée (anti-doublon)
+
+24. **Reconnexion sans doublon**. (1) « Quitter la chasse » ne supprime plus l'équipe une fois la
+    chasse démarrée (`leaveGame` : `removeTeam` réservé au lobby `setup`) → simple détachement de
+    l'appareil, preuves conservées ; bouton renommé « Se déconnecter ». (2) Reconnexion par
+    **choix dans la liste** des équipes (`showReconnectTeams`/`reconnectToTeam` sur
+    `screenTeamJoin`) au lieu de retaper le nom → plus de doublon par faute de frappe (les noms
+    sont déjà publics). (3) `joinGame` **bloque un nom déjà pris** (comparaison insensible
+    casse/espaces) et oriente vers la reconnexion ; `screenAdminLobby` avertit si des noms
+    d'équipe en double existent.
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code. Historiquement « sans auth / RLS permissive »,
   désormais durcie (Lots 1–2 : auth admin + RLS scopées + storage verrouillé). Reste à traiter
   avant usage grand public / commercial : un tiers peut toujours scrapper les codes de chasse et
   rejoindre (écritures `teams`/`submissions` encore ouvertes → Lot Edge Functions). La fusion par
-  nom d'équipe peut fusionner à tort deux vraies équipes homonymes.
+  nom d'équipe (reconnexion) est désormais atténuée : `joinGame` bloque un nom déjà pris et la
+  reconnexion se fait par choix dans la liste des équipes (voir #24). Reste un cas de course rare
+  (deux appareils inscrivant le même nom exactement au même instant → `addTeam` réutilise l'id).
 - **[SÉCURITÉ — identifié 2026-07-02, non implémenté] Anonymisation carte + secret des indices
   côté client uniquement** : `games.clues` (titres, textes, points, `lat`/`lng`) est en lecture
   publique via la clé `anon`. Les repères « anonymes » de la carte équipe **et** le verrou

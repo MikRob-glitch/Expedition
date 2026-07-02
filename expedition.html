@@ -1441,6 +1441,7 @@ function screenAdminLobby(){
         ? '<div class="empty">En attente d\'équipes…</div>'
         : g.teams.map(t=>`<div class="card flex-between"><span style="display:flex;align-items:center;gap:10px;min-width:0">${teamAva(t,38)}<strong style="min-width:0;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</strong></span><span class="mono muted" style="font-size:12px;flex-shrink:0">${effStart(t)?'départ ✓':'prêt'}</span></div>`).join('')
       }
+      ${(()=>{ const seen={}, dups=new Set(); g.teams.forEach(t=>{ const n=(t.name||'').trim().toLowerCase().replace(/\s+/g,' '); if(seen[n]) dups.add(t.name); seen[n]=true; }); return dups.size?`<p class="help-text" style="color:var(--oxblood)">⚠ Noms d'équipe en double (${[...dups].map(escapeHtml).join(', ')}) — risque de fusion des preuves. Demandez à l'une de se renommer.</p>`:''; })()}
       ${startAssignHtml}
       <div class="divider"></div>
       <div class="card">
@@ -1955,6 +1956,40 @@ function renderGalleryByClue(){
 }
 
 // ---------- TEAM ----------
+// ── Reconnexion à une équipe existante (nouvel appareil / appli réinitialisée) ──
+// On liste les équipes de la chasse et l'utilisateur choisit la sienne → aucun doublon par
+// faute de frappe. (Les noms d'équipe sont déjà publics : classement, lobby, diaporama.)
+async function showReconnectTeams(){
+  const code = ($('#join-code').value||'').trim().toUpperCase();
+  const box = $('#reconnect-list');
+  if(code.length!==4){ toast('Entrez d\'abord le code à 4 lettres ci-dessus','error'); return; }
+  if(box) box.innerHTML = '<div class="help-text">Chargement…</div>';
+  const game = await loadGame(code);
+  if(game===undefined){ if(box) box.innerHTML=''; toast('Réseau indisponible, réessayez','error'); return; }
+  if(!game){ if(box) box.innerHTML=''; toast('Aucune chasse avec ce code','error'); return; }
+  if(game.status==='ended'){ if(box) box.innerHTML=''; toast('Cette chasse est terminée','error'); return; }
+  const teams = game.teams||[];
+  if(!teams.length){ if(box) box.innerHTML='<div class="help-text">Aucune équipe inscrite pour ce code.</div>'; return; }
+  if(box) box.innerHTML = teams.map(t=>`
+    <button class="card flex-between" style="width:100%;text-align:left;cursor:pointer;margin-bottom:6px" onclick="reconnectToTeam('${code}','${t.id}')">
+      <span style="display:flex;align-items:center;gap:10px;min-width:0">${teamAva(t,34)}<strong style="min-width:0;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</strong></span>
+      <span class="mono muted" style="font-size:12px;flex-shrink:0">Reprendre →</span>
+    </button>`).join('');
+}
+async function reconnectToTeam(code, teamId){
+  const game = await loadGame(code);
+  if(!game){ toast('Chasse introuvable','error'); return; }
+  if(game.status==='ended'){ toast('Cette chasse est terminée','error'); return; }
+  const t = (game.teams||[]).find(x=>x.id===teamId);
+  if(!t){ toast('Équipe introuvable','error'); return; }
+  STATE.me = { role:'team', id: STATE.me?.id||uid(), gameCode:code, teamId:t.id, teamName:t.name };
+  await saveMe();
+  STATE.joinPhoto=null; STATE.joinConsent=false;
+  startRealtime();
+  toast('Reconnecté à « '+t.name+' »','success');
+  render();
+}
+
 function screenTeamJoin(){
   app().innerHTML = `
     <div class="screen" data-screen="team-join">
@@ -1996,6 +2031,13 @@ function screenTeamJoin(){
         </label>
       </div>
 
+      <div class="card" style="margin-top:4px">
+        <strong style="display:block;margin-bottom:4px">Déjà inscrit ?</strong>
+        <p class="help-text" style="margin:0 0 10px">Changement de téléphone ou appli réinitialisée ? Entrez le code ci-dessus, puis retrouvez votre équipe dans la liste (ni photo ni case à cocher requise).</p>
+        <button class="btn ghost" onclick="showReconnectTeams()">Retrouver mon équipe</button>
+        <div id="reconnect-list" style="margin-top:10px"></div>
+      </div>
+
       <div class="sticky-bottom">
         <button class="btn oxblood" onclick="joinGame()">Rejoindre la chasse →</button>
       </div>
@@ -2030,6 +2072,12 @@ async function joinGame(){
   if(!game){ toast('Aucune chasse avec ce code','error'); return; }
   if(game.status==='ended'){ toast('Cette chasse est terminée','error'); return; }
   
+  // Anti-doublon : nom déjà pris (insensible casse/espaces) → on oriente vers la reconnexion par liste.
+  const _norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ');
+  if((game.teams||[]).some(t=>_norm(t.name)===_norm(teamName))){
+    toast('Ce nom d\'équipe est déjà pris. Si c\'est votre équipe, utilisez « Retrouver mon équipe » ci-dessous ; sinon choisissez un autre nom.','error',6500);
+    return;
+  }
   const teamId = await addTeam(code, teamName);
   if(!teamId) return;
   // Photo d'équipe optionnelle : on n'empêche pas l'inscription si l'upload échoue.
@@ -2081,8 +2129,13 @@ function screenTeamLobby(){
 }
 
 async function leaveGame(){
-  if(!confirm('Quitter la chasse ?')) return;
-  if(STATE.me.teamId){
+  const started = STATE.game && STATE.game.status!=='setup';
+  const msg = started
+    ? 'Se déconnecter de cet appareil ?\n\nVotre équipe et vos photos sont conservées. Vous pourrez vous reconnecter avec le code de la chasse (« Retrouver mon équipe »).'
+    : 'Quitter la chasse ? Votre équipe sera retirée.';
+  if(!confirm(msg)) return;
+  // Après le départ : on ne supprime PLUS l'équipe (préserve preuves + reconnexion). Avant : retrait propre.
+  if(!started && STATE.me.teamId){
     await removeTeam(STATE.me.teamId);
   }
   await clearMe();
@@ -2152,7 +2205,7 @@ function screenTeamActive(){
       ${clueListHtml}
 
       <div class="sticky-bottom">
-        <button class="btn ghost" onclick="leaveGame()">Quitter la chasse</button>
+        <button class="btn ghost" onclick="leaveGame()">Se déconnecter</button>
       </div>
     </div>`;
 }
