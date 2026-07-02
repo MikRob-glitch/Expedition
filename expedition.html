@@ -1050,6 +1050,9 @@ function updateClue(id,field,val){
 }
 
 // ══════════ Carte des indices (Leaflet) ══════════
+// ⚠️ SÉCURITÉ (dette identifiée, non résolue) : les coords vivent dans games.clues (jsonb) lu
+// par la clé anon → l'anonymisation des repères équipe est CÔTÉ CLIENT UNIQUEMENT (contournable
+// via l'onglet réseau). Correctif prévu = gating serveur (Lot Edge Functions). Voir CLAUDE.md.
 // Contexte carte partagé (un seul overlay réutilisé pour l'admin et les équipes).
 const MAPCTX = { map:null, markers:{}, mode:null, clueId:null, watchId:null, meMarker:null };
 

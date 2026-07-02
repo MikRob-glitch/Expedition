@@ -108,8 +108,11 @@ dissocier les deux.
   départ de l'équipe (repère doré ★ nommé) et les indices **déjà réalisés** par l'équipe (repère
   vert ✓ nommé). Position live de l'équipe (`watchPosition`, point bleu). Overlay + instance
   Leaflet uniques (`MAPCTX`), réutilisés admin/équipe ; tuiles OpenStreetMap ; Leaflet 1.9.4 via
-  unpkg (CDN). ⚠️ Les coords voyagent dans le jsonb public (clé anon) → un joueur avisé peut les
-  lire : acceptable pour un usage convivial (même dette technique que la clé anon publique).
+  unpkg (CDN). ⚠️ **Limite de sécurité (non résolue)** : les coords — comme tout le payload
+  `clues` (titres, textes) — transitent dans le jsonb public lu par la clé `anon`.
+  L'anonymisation des repères est donc **cosmétique (côté client uniquement)** : un joueur avisé
+  lit le mapping indice→GPS via l'onglet réseau. À corriger par le gating serveur — voir la dette
+  « Anonymisation carte + secret des indices » ci-dessous (Lot Edge Functions).
 
 ## Procédures de récupération (terrain)
 
@@ -263,10 +266,19 @@ dissocier les deux.
 
 ## Dette technique / points de vigilance connus
 
-- **Clé `anon` publique en clair** dans le code (par design : pas d'auth, RLS permissive).
-  Acceptable pour un usage convivial ; à revoir avant tout usage grand public (un tiers peut
-  scrapper les codes de chasse et rejoindre). La fusion par nom d'équipe peut fusionner à tort
-  deux vraies équipes homonymes.
+- **Clé `anon` publique en clair** dans le code. Historiquement « sans auth / RLS permissive »,
+  désormais durcie (Lots 1–2 : auth admin + RLS scopées + storage verrouillé). Reste à traiter
+  avant usage grand public / commercial : un tiers peut toujours scrapper les codes de chasse et
+  rejoindre (écritures `teams`/`submissions` encore ouvertes → Lot Edge Functions). La fusion par
+  nom d'équipe peut fusionner à tort deux vraies équipes homonymes.
+- **[SÉCURITÉ — identifié 2026-07-02, non implémenté] Anonymisation carte + secret des indices
+  côté client uniquement** : `games.clues` (titres, textes, points, `lat`/`lng`) est en lecture
+  publique via la clé `anon`. Les repères « anonymes » de la carte équipe **et** le verrou
+  d'indice de départ sont donc contournables par lecture réseau (un tricheur obtient le mapping
+  indice→texte→GPS). Correctif = **Lot Edge Functions** : fonction `service_role` renvoyant à
+  chaque équipe seulement ses indices autorisés (départ + réalisés) + les autres en points
+  anonymes sans `clue_id`, et verrouillage de la lecture publique de `games.clues`. Ferme aussi
+  la fuite pré-existante des textes d'indices.
 - Pas de transaction entre upload Storage et insert DB → mitigé par le retry+rollback (#4),
   mais une vraie solution serait une Edge Function ou un nettoyage périodique des orphelins.
 - `start_clue_id` : à conserver lors des fusions (l'équipe canonique la plus ancienne le porte).
