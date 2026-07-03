@@ -1,49 +1,61 @@
 # Expédition · Chasse au trésor photo
 
-Application web mobile (PWA) pour organiser une **chasse au trésor multi-équipes**. Les équipes résolvent des indices, prouvent chaque trouvaille par une **photo**, l'admin **valide** la conformité, puis un **jury vote** les meilleures photos. Synchronisation temps réel entre tous les téléphones.
+Application web mobile (**PWA installable, capable hors-ligne**) pour organiser une **chasse au trésor multi-équipes**. Les équipes résolvent des indices, prouvent chaque trouvaille par une **photo**, l'admin **valide** la conformité, puis un **jury vote** les meilleures photos. Synchronisation temps réel entre tous les téléphones.
 
-> Prototype mono-fichier, zéro build, prêt à déployer. La documentation technique complète est dans [`PROJECT.md`](PROJECT.md) ; le guide de travail pour modifier l'app est dans [`CLAUDE.md`](CLAUDE.md).
+> Application mono-fichier (`expedition.html`, ~2770 lignes), zéro build, prête à déployer. Documentation technique complète : [`PROJECT.md`](PROJECT.md) ; guide de travail pour modifier l'app : [`CLAUDE.md`](CLAUDE.md).
 
 ## Aperçu
 
-- **Multi-équipes en temps réel** — synchronisation par websockets (Supabase Realtime).
-- **Preuve par photo** — caméra native, compression côté client (pas de GPS).
-- **Jugement live par l'admin** — validation conforme/refusée, puis vote du jury 50/30/10.
+- **Multi-équipes en temps réel** — websockets (Supabase Realtime) + poll de sécurité (~15 s).
+- **Preuve par photo** — caméra native, compression côté client.
+- **Accès joueurs par QR code** — l'admin affiche un QR ; au scan, l'appli s'ouvre sur l'inscription avec le code **pré-rempli** (`?join=CODE`).
+- **Jugement live** — validation conforme/refusée par l'admin, puis vote du jury 50/30/10.
+- **Zoom sur les photos** — pincer / molette / double-clic / glisser pour juger les détails.
 - **Indices de départ** — dispersion des équipes (un indice de départ distinct par équipe).
-- **Diaporama public** — affichage des photos en direct via l'URL `?diapo=CODE`.
-- **Export ZIP** — téléchargement de toutes les photos d'une partie en archive organisée par équipe.
-- **Aucune installation** — un seul fichier HTML, fonctionne dans le navigateur du téléphone.
+- **Carte d'orientation** — indices géolocalisables (optionnel) sur une carte Leaflet côté équipe (repères anonymes sauf départ + indices déjà réalisés).
+- **Photo d'équipe** — selfie optionnel à l'inscription, affiché au lobby et au classement.
+- **Diaporama public** — photos en direct via l'URL `?diapo=CODE`.
+- **Export ZIP** — toutes les photos d'une partie, archive organisée par équipe.
+- **PWA offline** — service worker (app-shell en cache) + **file d'envoi photo hors-ligne** (IndexedDB) : un rechargement en coupure ne casse plus rien, une photo prise sans réseau part automatiquement au retour du réseau.
+- **Sécurité & RGPD** — auth admin par **code email** (Supabase Auth), **RLS scopées**, bucket photos verrouillé, consentement + politique de confidentialité + purge automatique à 90 j.
 
 ## Stack
 
 | Couche | Choix |
 |---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique (~2040 lignes), zéro build |
-| Caméra | `<input type="file" capture="environment">` (natif iOS/Android) |
-| Backend | Supabase (Postgres + Realtime + Storage) |
-| PWA | `manifest.json` + icônes 192/512 (pas de service worker → ni offline, ni install Android/desktop) |
-| Hébergement | Netlify Drop / Vercel / GitHub Pages (HTTPS requis pour la caméra) |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~2770 lignes), zéro build |
+| Caméra | `<input type="file" capture>` (natif iOS/Android) |
+| Backend | Supabase (Postgres + Realtime + Storage + **Auth**) |
+| Carte | Leaflet 1.9.4 + tuiles OpenStreetMap (orientation des indices) |
+| PWA | `manifest.json` + `sw.js` (app-shell offline) + outbox IndexedDB + icônes any/maskable |
+| CDN | supabase-js@2, jszip@3.10.1, qrcode-generator@1.4.4, Leaflet 1.9.4 |
+| Hébergement | GitHub Pages (`.nojekyll`) — HTTPS requis pour la caméra |
 
-> ⚠️ La carte (Leaflet/OpenStreetMap) et la géolocalisation GPS du prototype initial ont été **retirées** : la preuve est désormais purement photographique.
+> ℹ️ Le **GPS des preuves** du prototype initial reste retiré (la preuve est purement photographique). À ne pas confondre avec la **géoloc optionnelle des indices** (carte d'orientation), réintroduite depuis.
 
 ## Démarrage rapide
 
 **1. Supabase (~5 min)**
 
 1. Créer un projet gratuit sur [supabase.com](https://supabase.com).
-2. Ouvrir **SQL Editor**, coller le contenu de [`supabase-setup.sql`](supabase-setup.sql) et lancer **Run**.
-3. Dans **Settings → API**, noter le `Project URL` et la clé `anon public`.
+2. **SQL Editor** → coller [`supabase-setup.sql`](supabase-setup.sql) → **Run** (schéma + RLS scopées + bucket verrouillé + fonctions RGPD).
+3. **Auth** : activer le provider **Email** et inclure le jeton `{{ .Token }}` dans le template « Magic Link / OTP » (code admin à 6 chiffres). SMTP custom recommandé en prod.
+4. **Settings → API** → noter le `Project URL` + la clé `anon public`.
 
-**2. Hébergement (~2 min)**
+**2. Hébergement**
 
-Déposer `expedition.html` (+ `manifest.json` + `icons/`) sur [app.netlify.com/drop](https://app.netlify.com/drop), ou utiliser GitHub Pages, pour obtenir une URL HTTPS (la caméra l'exige).
+Le dépôt se déploie sur **GitHub Pages** (le fichier `.nojekyll` à la racine désactive Jekyll et évite l'échec de build sur les `{{ }}` des docs). Prod : `https://mikrob-glitch.github.io/Expedition/expedition.html`. Alternatives : Netlify Drop / Vercel (HTTPS obligatoire pour la caméra).
 
 **3. Première utilisation**
 
-L'app embarque des valeurs Supabase **par défaut codées en dur** (`SUPABASE_DEFAULTS`) : elle se connecte donc directement. On peut les **surcharger** via l'écran **Configuration** (stocké en `localStorage` sous `sb_url` / `sb_key`, par navigateur).
+L'app embarque des valeurs Supabase **par défaut** codées en dur (`SUPABASE_DEFAULTS`), surchargables via l'écran **Configuration** (`localStorage` : `sb_url` / `sb_key`, par navigateur). L'**admin** se connecte par **code email** ; les **équipes** rejoignent par **code de chasse** (saisi ou via **QR code**).
 
 ## Développement local
 
 ```bash
 # Serveur local (HTTPS recommandé pour la caméra)
-python3 -m http.server
+python3 -m http.server 8000
+# puis ouvrir http://localhost:8000/expedition.html
+```
+
+> ⚠️ En modifiant `sw.js`, **bumper la constante `CACHE`** à chaque changement d'app-shell, sinon les appareils gardent l'ancienne version en cache. Le déploiement se fait par commit + push GitHub (procédure dans [`CLAUDE.md`](CLAUDE.md)).
