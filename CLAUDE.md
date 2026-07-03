@@ -3,7 +3,7 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-02, commit `c02a404`). Les écarts connus
+> **réellement poussé sur GitHub** (HEAD = 2026-07-03, commit `2c20328`). Les écarts connus
 > (travail local non poussé) sont signalés ⚠️. À ce jour, aucun écart : local et distant alignés.
 
 ## Vue d'ensemble
@@ -114,6 +114,16 @@ dissocier les deux.
   L'anonymisation des repères est donc **cosmétique (côté client uniquement)** : un joueur avisé
   lit le mapping indice→GPS via l'onglet réseau. À corriger par le gating serveur — voir la dette
   « Anonymisation carte + secret des indices » ci-dessous (Lot Edge Functions).
+
+- **QR code d'accès joueurs (deep-link)** : sur l'écran maître du jeu (lobby + live), bouton
+  « 📱 QR code d'accès » → overlay `#qr-overlay` affichant un QR qui encode `…?join=CODE`. Au scan,
+  le joueur arrive **directement sur l'inscription équipe, code pré-rempli** (géré au boot :
+  `params.get('join')` → `STATE.joinDraftCode` → `render` crée une session équipe si aucune,
+  `screenTeamJoin` pré-remplit `#join-code`). Lib `qrcode-generator@1.4.4` (CDN, cachée par le SW).
+  Voir #28.
+- **Zoom des photos** : le modal photo (vote / validation / galerie) est zoomable — pincer,
+  molette, double-clic (1×↔2,5×), glisser pour déplacer, boutons +/−/⟲ (`initPhotoZoom`,
+  Pointer Events, zoom 1–6×). Voir #27.
 
 ## Procédures de récupération (terrain)
 
@@ -319,6 +329,49 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     les coins lui-même), remplace le pointage sur `icon-192.png`. `sw.js` : nouveaux assets ajoutés
     à `CORE`, `CACHE` bumpé **v2→v3**. Les icônes d'origine `icon-192/512.png` sont conservées.
 
+### Poussés sur GitHub (2026-07-03) — Envoi photo idempotent (correctif file bloquée)
+
+26. **Envoi photo idempotent par insert** (`saveSubmission` param `idempotentInsert`,
+    `uploadPhoto` en `upsert:false`). Symptôme : une photo restait « en attente d'envoi » même
+    réseau revenu. Cause : le flush outbox faisait `.upsert()` (DB) et `upload({upsert:true})`
+    (storage) ; sur un **retry** frappant une ligne/un fichier déjà créés (réponse réseau perdue),
+    l'`ON CONFLICT DO UPDATE` déclenchait la policy **UPDATE réservée à l'admin** (Lot 1) et le
+    bucket sans policy UPDATE (Lot 2) → refus RLS **silencieux** → file bloquée à jamais alors que
+    la preuve était déjà en base. Correctif : chemin équipe en `.insert()` sec traitant `23505`
+    (doublon DB) comme **succès**, upload `upsert:false` traitant `409/Duplicate` comme **succès**.
+    Les équipes anon n'ont que le droit INSERT ; **ne jamais `upsert` côté équipe** (l'admin
+    authentifié garde `.upsert()` pour le jugement). Les photos déjà coincées se débloquent seules
+    au flush suivant. `CACHE` `sw.js` bumpé **v3→v4**.
+
+### Poussés sur GitHub (2026-07-03) — Zoom sur les photos
+
+27. **Zoom/pan sur le modal photo** (`initPhotoZoom`) : sur toute photo ouverte (vote, validation,
+    galerie), zoom au **pincer** (tactile), à la **molette** (desktop), **double-clic** pour
+    basculer 1×↔2,5×, **glisser** pour déplacer quand zoomé, + boutons **+/−/⟲**. Pointer Events
+    unifiés, sans dépendance ; borne 1–6×, panoramique clampé aux bords. `openPhoto` enveloppe
+    l'image dans `.zoomv` et instancie le contrôleur au chargement ; `closeModal` libère
+    `window.PZOOM`. `CACHE` `sw.js` bumpé **v4→v5**. But : mieux juger les détails au vote.
+
+### Poussés sur GitHub (2026-07-03) — QR code d'accès joueurs + deep-link
+
+28. **QR code d'accès (écran maître du jeu)**. Bouton « 📱 Afficher le QR code d'accès » dans le
+    lobby admin (sous le code) et « 📱 QR d'accès » sur l'écran live. `showQR`/`closeQR` ouvrent un
+    overlay plein écran (`#qr-overlay`) avec un grand QR + le code + l'URL. Le QR encode un
+    **deep-link** `…/expedition.html?join=CODE` : au scan, l'appli s'ouvre **directement sur
+    l'inscription équipe, code pré-rempli** (boot `params.get('join')` → `STATE.joinDraftCode` ;
+    `render` crée une session équipe si aucune ; `screenTeamJoin` pré-remplit `#join-code`). Lib
+    **`qrcode-generator@1.4.4`** via CDN (jsdelivr), ajoutée au `<head>` et au cache SW (offline
+    après 1er chargement) ; repli affichant le code si le QR ne peut être généré. `CACHE` `sw.js`
+    bumpé **v5→v6**.
+
+### Poussés sur GitHub (2026-07-03, commit `2c20328`) — CI : fix build GitHub Pages
+
+29. **`.nojekyll` à la racine**. Le build « pages build and deployment » échouait : en « deploy
+    from branch », Pages passe les `.md` par Jekyll/Liquid, qui plante sur les `{{ .Token }}` de
+    `CLAUDE.md` (jetons de template email Supabase — `.Token` = variable Liquid invalide, non
+    protégée par les backticks car Liquid lit le markdown brut). `.nojekyll` désactive Jekyll →
+    Pages sert les fichiers statiques tels quels. Aucun changement applicatif.
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code. Historiquement « sans auth / RLS permissive »,
@@ -336,8 +389,11 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
   chaque équipe seulement ses indices autorisés (départ + réalisés) + les autres en points
   anonymes sans `clue_id`, et verrouillage de la lecture publique de `games.clues`. Ferme aussi
   la fuite pré-existante des textes d'indices.
-- Pas de transaction entre upload Storage et insert DB → mitigé par le retry+rollback (#4),
-  mais une vraie solution serait une Edge Function ou un nettoyage périodique des orphelins.
+- Pas de transaction entre upload Storage et insert DB → mitigé par le retry+rollback (#4) et
+  l'**idempotence** du chemin équipe (#26 : insert traitant `23505` et upload `409` comme succès) ;
+  une vraie solution resterait une Edge Function ou un nettoyage périodique des orphelins.
+  ⚠️ **Règle : écritures équipe = INSERT seul, jamais `upsert`** (RLS UPDATE réservée à l'admin,
+  bucket sans policy UPDATE) — sinon le moindre retry se bloque en `42501`.
 - `start_clue_id` : à conserver lors des fusions (l'équipe canonique la plus ancienne le porte).
 - **PWA — app-shell + file d'envoi offline en place** (`sw.js` + outbox IndexedDB) : navigation
   HTML network-first, CDN/Leaflet + polices en cache-first, tuiles OSM en cache runtime, Supabase
