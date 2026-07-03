@@ -166,6 +166,11 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 .modal.open{display:flex;animation:fade .2s}
 .modal .modal-inner{max-width:100%;max-height:100%;text-align:center}
 .modal img{max-width:100%;max-height:80vh;border-radius:8px}
+.modal .zoomv{display:inline-block;max-width:100%;max-height:80vh;overflow:hidden;border-radius:8px;touch-action:none;cursor:zoom-in;line-height:0}
+.modal .zoomv.zoomed{cursor:move}
+.modal .zoomv img{transform-origin:0 0;will-change:transform;user-select:none;-webkit-user-drag:none}
+.modal .zoom-ctrl{display:flex;gap:8px;justify-content:center;margin-top:10px}
+.modal .zoom-ctrl button{background:rgba(244,237,224,.15);color:#fff;border:none;width:38px;height:38px;border-radius:50%;font-size:18px;line-height:1;cursor:pointer}
 .modal .close{position:absolute;top:env(safe-area-inset-top,16px);right:16px;background:rgba(244,237,224,.15);color:#fff;border:none;width:40px;height:40px;border-radius:50%;font-size:22px;cursor:pointer}
 .modal .info{color:var(--parchment);margin-top:12px;font-family:'Geist Mono',monospace;font-size:12px}
 
@@ -2452,18 +2457,73 @@ function screenTeamEnd(){
 function screenTeamSubmitted(){ /* not used directly, render handles */ }
 
 // ---------- MODAL ----------
+// Zoom/pan tactile + desktop sur une image (pincer, molette, double-clic, glisser).
+// Pointer Events unifiés, sans dépendance. Renvoie une poignée pour les boutons +/−/reset.
+function initPhotoZoom(box, img){
+  let scale=1, tx=0, ty=0;
+  const pts=new Map(); let startDist=0, startScale=1, panning=false, lastX=0, lastY=0;
+  const MIN=1, MAX=6;
+  function apply(){
+    if(scale<=MIN){ scale=MIN; tx=0; ty=0; }
+    const cw=box.clientWidth, ch=box.clientHeight;
+    tx=Math.min(0, Math.max(cw*(1-scale), tx)); // bornes de déplacement (bords collés)
+    ty=Math.min(0, Math.max(ch*(1-scale), ty));
+    img.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;
+    box.classList.toggle('zoomed', scale>MIN);
+  }
+  function zoomAt(fx, fy, ns){ // zoom focalisé (le point sous le doigt/curseur reste fixe)
+    ns=Math.min(MAX, Math.max(MIN, ns));
+    tx=fx-(fx-tx)*(ns/scale); ty=fy-(fy-ty)*(ns/scale); scale=ns; apply();
+  }
+  const rel=e=>{ const r=box.getBoundingClientRect(); return [e.clientX-r.left, e.clientY-r.top]; };
+  box.addEventListener('wheel', e=>{ e.preventDefault(); const [fx,fy]=rel(e); zoomAt(fx,fy, scale*(e.deltaY<0?1.2:0.83)); }, {passive:false});
+  box.addEventListener('dblclick', e=>{ e.preventDefault(); const [fx,fy]=rel(e); zoomAt(fx,fy, scale>MIN?MIN:2.5); });
+  box.addEventListener('pointerdown', e=>{
+    box.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pts.size===1){ panning=true; lastX=e.clientX; lastY=e.clientY; }
+    else if(pts.size===2){ panning=false; const p=[...pts.values()]; startDist=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y); startScale=scale; }
+  });
+  box.addEventListener('pointermove', e=>{
+    if(!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pts.size>=2){
+      const p=[...pts.values()], d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
+      if(startDist>0){ const r=box.getBoundingClientRect(); zoomAt((p[0].x+p[1].x)/2-r.left, (p[0].y+p[1].y)/2-r.top, startScale*(d/startDist)); }
+    } else if(panning && scale>MIN){
+      tx+=e.clientX-lastX; ty+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; apply();
+    }
+  });
+  function up(e){
+    pts.delete(e.pointerId);
+    if(pts.size<2) startDist=0;
+    if(pts.size===0){ panning=false; }
+    else { const p=[...pts.values()][0]; lastX=p.x; lastY=p.y; panning=true; }
+  }
+  box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
+  return { btn:f=>{ zoomAt(box.clientWidth/2, box.clientHeight/2, f==='reset'?MIN: scale*(f==='in'?1.4:0.7)); } };
+}
+
 function openPhoto(subId){
   const s = STATE.submissions.find(x=>x.id===subId);
   if(!s) return;
   const team = STATE.game.teams.find(t=>t.id===s.teamId);
   const clue = STATE.game.clues.find(c=>c.id===s.clueId);
   $('#modal .modal-inner').innerHTML = `
-    <img src="${s.photoDataUrl}">
+    <div class="zoomv"><img src="${s.photoDataUrl}" draggable="false" alt=""></div>
+    <div class="zoom-ctrl">
+      <button type="button" onclick="PZOOM&&PZOOM.btn('out')" aria-label="Dézoomer">−</button>
+      <button type="button" onclick="PZOOM&&PZOOM.btn('reset')" aria-label="Réinitialiser">⟲</button>
+      <button type="button" onclick="PZOOM&&PZOOM.btn('in')" aria-label="Zoomer">+</button>
+    </div>
     <div class="info">${escapeHtml(team?.name||'?')} · ${escapeHtml(clue?.title||'?')} · ${(s.points||0)+(s.bonusPoints||0)} pts${(s.bonusPoints||0)>0?` (dont +${s.bonusPoints} bonus)`:''}</div>
   `;
   $('#modal').classList.add('open');
+  const box=$('#modal .zoomv'), img=box.querySelector('img');
+  const start=()=>{ window.PZOOM=initPhotoZoom(box,img); };
+  if(img.complete && img.naturalWidth) start(); else img.onload=start;
 }
-function closeModal(){ $('#modal').classList.remove('open'); }
+function closeModal(){ $('#modal').classList.remove('open'); window.PZOOM=null; }
 
 // ---------- EXPORT ZIP ----------
 function openExportZip(){
@@ -2559,95 +2619,4 @@ async function runExportZip(){
   setTimeout(()=>URL.revokeObjectURL(a.href), 30_000);
 
   const mb = (blob.size/1024/1024).toFixed(1);
-  logLine(`✓ ZIP prêt — ${done-errors} photo(s), ${mb} Mo${errors?` · ${errors} échec(s)`:''}`, 'ok');
-  btn.disabled = false; btn.textContent = 'Télécharger à nouveau';
-}
-
-// ---------- UTIL ----------
-function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-async function logout(){
-  stopRealtime();
-  // Déconnexion de l'auth admin si présente (sans bloquer en cas d'erreur réseau).
-  try{ if(sb) await sb.auth.signOut(); }catch(_){}
-  await clearMe(); STATE.game=null; STATE.submissions=[]; STATE.otpEmail=null;
-  render();
-}
-
-// ---------- TICK ----------
-// Re-render timers each second on active screens
-setInterval(()=>{
-  const cur = $('[data-screen]')?.dataset.screen;
-  if(['admin-live','team-active','team-capture'].includes(cur)){
-    // Light update: only timer chips
-    if(STATE.game?.status==='active' && STATE.game.startedAt){
-      const elapsed = (Date.now()-STATE.game.startedAt)/1000;
-      const remaining = Math.max(0, STATE.game.durationMinutes*60 - elapsed);
-      const chip = $('.chip.live');
-      if(chip) chip.textContent = fmtTime(remaining);
-      if(remaining<=0){ render(); return; }
-
-      if(cur==='team-capture' && STATE.currentClueId){
-        // Timer per-indice INDICATIF : aide l'équipe à doser son rythme.
-        // Aucun timeout brutal — le seul vrai timer est le global.
-        const st = STATE.perClueStartTime[STATE.currentClueId];
-        if(st){
-          const recommended = STATE.game.perClueMinutes*60;
-          const usedOnClue = (Date.now()-st)/1000;
-          const perClueRemaining = recommended - usedOnClue;
-          const isOverrun = perClueRemaining < 0;
-          const displaySec = isOverrun
-            ? Math.min(-perClueRemaining, remaining)
-            : Math.min(perClueRemaining, remaining);
-          const t = $('.timer');
-          if(t){
-            t.textContent = `${isOverrun ? '+' : ''}${fmtTime(displaySec)}`;
-            let cls = '';
-            if(remaining < 60) cls = 'alert';
-            else if(isOverrun) cls = 'warn';
-            else if(perClueRemaining < 180) cls = 'warn';
-            t.className = 'timer ' + cls;
-          }
-          // Mise à jour du label "Conseillé / Au-delà du conseil"
-          const lbl = document.querySelector('[data-screen="team-capture"] .topbar div > div:first-child');
-          if(lbl) lbl.textContent = isOverrun ? 'Au-delà du conseil' : 'Conseillé';
-        }
-      }
-    }
-  }
-}, 1000);
-
-// ---------- INIT ----------
-(async ()=>{
-  loadConfig();
-  // Mode diaporama public via URL : ?diapo=CODE
-  const params = new URLSearchParams(location.search);
-  const diapoCode = params.get('diapo');
-  if(diapoCode && sb){
-    openSlideshow(diapoCode.toUpperCase());
-    return;
-  }
-  STATE.outbox = await outboxLoad();
-  await render();
-  if(sb && STATE.me?.gameCode) startRealtime();
-  flushOutbox();
-})();
-
-// ══════════ PWA : service worker + indicateur hors-ligne ══════════
-// L'app-shell est mis en cache par sw.js → l'appli survit à un rechargement en coupure réseau.
-// Enregistrement non bloquant : un échec ne casse jamais le jeu.
-if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW non enregistré :', err));
-  });
-}
-function updateOnlineStatus(){
-  const b = document.getElementById('offline-banner');
-  if(b) b.classList.toggle('show', !navigator.onLine);
-}
-window.addEventListener('online', ()=>{ updateOnlineStatus(); flushOutbox(); });
-window.addEventListener('offline', updateOnlineStatus);
-updateOnlineStatus();
-
-</script>
-</body>
-</html>
+  logLine(`✓ ZIP prêt — ${done-err
