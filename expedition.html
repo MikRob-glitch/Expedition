@@ -2619,4 +2619,95 @@ async function runExportZip(){
   setTimeout(()=>URL.revokeObjectURL(a.href), 30_000);
 
   const mb = (blob.size/1024/1024).toFixed(1);
-  logLine(`✓ ZIP prêt — ${done-err
+  logLine(`✓ ZIP prêt — ${done-errors} photo(s), ${mb} Mo${errors?` · ${errors} échec(s)`:''}`, 'ok');
+  btn.disabled = false; btn.textContent = 'Télécharger à nouveau';
+}
+
+// ---------- UTIL ----------
+function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function logout(){
+  stopRealtime();
+  // Déconnexion de l'auth admin si présente (sans bloquer en cas d'erreur réseau).
+  try{ if(sb) await sb.auth.signOut(); }catch(_){}
+  await clearMe(); STATE.game=null; STATE.submissions=[]; STATE.otpEmail=null;
+  render();
+}
+
+// ---------- TICK ----------
+// Re-render timers each second on active screens
+setInterval(()=>{
+  const cur = $('[data-screen]')?.dataset.screen;
+  if(['admin-live','team-active','team-capture'].includes(cur)){
+    // Light update: only timer chips
+    if(STATE.game?.status==='active' && STATE.game.startedAt){
+      const elapsed = (Date.now()-STATE.game.startedAt)/1000;
+      const remaining = Math.max(0, STATE.game.durationMinutes*60 - elapsed);
+      const chip = $('.chip.live');
+      if(chip) chip.textContent = fmtTime(remaining);
+      if(remaining<=0){ render(); return; }
+
+      if(cur==='team-capture' && STATE.currentClueId){
+        // Timer per-indice INDICATIF : aide l'équipe à doser son rythme.
+        // Aucun timeout brutal — le seul vrai timer est le global.
+        const st = STATE.perClueStartTime[STATE.currentClueId];
+        if(st){
+          const recommended = STATE.game.perClueMinutes*60;
+          const usedOnClue = (Date.now()-st)/1000;
+          const perClueRemaining = recommended - usedOnClue;
+          const isOverrun = perClueRemaining < 0;
+          const displaySec = isOverrun
+            ? Math.min(-perClueRemaining, remaining)
+            : Math.min(perClueRemaining, remaining);
+          const t = $('.timer');
+          if(t){
+            t.textContent = `${isOverrun ? '+' : ''}${fmtTime(displaySec)}`;
+            let cls = '';
+            if(remaining < 60) cls = 'alert';
+            else if(isOverrun) cls = 'warn';
+            else if(perClueRemaining < 180) cls = 'warn';
+            t.className = 'timer ' + cls;
+          }
+          // Mise à jour du label "Conseillé / Au-delà du conseil"
+          const lbl = document.querySelector('[data-screen="team-capture"] .topbar div > div:first-child');
+          if(lbl) lbl.textContent = isOverrun ? 'Au-delà du conseil' : 'Conseillé';
+        }
+      }
+    }
+  }
+}, 1000);
+
+// ---------- INIT ----------
+(async ()=>{
+  loadConfig();
+  // Mode diaporama public via URL : ?diapo=CODE
+  const params = new URLSearchParams(location.search);
+  const diapoCode = params.get('diapo');
+  if(diapoCode && sb){
+    openSlideshow(diapoCode.toUpperCase());
+    return;
+  }
+  STATE.outbox = await outboxLoad();
+  await render();
+  if(sb && STATE.me?.gameCode) startRealtime();
+  flushOutbox();
+})();
+
+// ══════════ PWA : service worker + indicateur hors-ligne ══════════
+// L'app-shell est mis en cache par sw.js → l'appli survit à un rechargement en coupure réseau.
+// Enregistrement non bloquant : un échec ne casse jamais le jeu.
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW non enregistré :', err));
+  });
+}
+function updateOnlineStatus(){
+  const b = document.getElementById('offline-banner');
+  if(b) b.classList.toggle('show', !navigator.onLine);
+}
+window.addEventListener('online', ()=>{ updateOnlineStatus(); flushOutbox(); });
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
+
+</script>
+</body>
+</html>
