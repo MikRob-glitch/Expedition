@@ -13,6 +13,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
@@ -174,6 +175,19 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 .modal .close{position:absolute;top:env(safe-area-inset-top,16px);right:16px;background:rgba(244,237,224,.15);color:#fff;border:none;width:40px;height:40px;border-radius:50%;font-size:22px;cursor:pointer}
 .modal .info{color:var(--parchment);margin-top:12px;font-family:'Geist Mono',monospace;font-size:12px}
 
+/* ── QR code d'accès joueurs ── */
+.qr-overlay{position:fixed;inset:0;background:rgba(26,24,21,.97);z-index:160;display:none;align-items:center;justify-content:center;padding:24px}
+.qr-overlay.open{display:flex;animation:fade .2s}
+.qr-overlay .close{position:absolute;top:env(safe-area-inset-top,16px);right:16px;background:rgba(244,237,224,.15);color:#fff;border:none;width:40px;height:40px;border-radius:50%;font-size:22px;cursor:pointer}
+.qr-inner{text-align:center;max-width:420px;width:100%}
+.qr-inner h3{font-family:'Fraunces',serif;color:var(--parchment);font-size:22px;margin:0 0 18px}
+#qr-canvas{display:flex;justify-content:center}
+#qr-canvas img{width:min(74vw,320px);height:auto;background:#fff;padding:14px;border-radius:14px;image-rendering:pixelated}
+.qr-hint{color:var(--parchment);opacity:.75;font-size:13px;margin:18px 0 14px;line-height:1.4}
+.qr-code-line{color:var(--parchment);font-size:15px}
+.qr-code-line strong{font-family:'Geist Mono',monospace;font-size:26px;letter-spacing:.22em;color:var(--gold)}
+.qr-url{color:var(--parchment);opacity:.5;font-family:'Geist Mono',monospace;font-size:10px;margin-top:10px;word-break:break-all}
+
 /* ── Carte (Leaflet) ── */
 .map-overlay{position:fixed;inset:0;z-index:150;background:var(--ink);display:none;flex-direction:column}
 .map-overlay.open{display:flex;animation:fade .2s}
@@ -277,6 +291,16 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <div id="app"></div>
 <div id="offline-banner" role="status" aria-live="polite">⚠ Hors-ligne — l'appli reste utilisable ; l'envoi de photo attend le retour du réseau</div>
 <div id="modal" class="modal"><button class="close" onclick="closeModal()">×</button><div class="modal-inner"></div></div>
+<div id="qr-overlay" class="qr-overlay">
+  <button class="close" onclick="closeQR()" aria-label="Fermer">×</button>
+  <div class="qr-inner">
+    <h3>Rejoindre la chasse</h3>
+    <div id="qr-canvas"></div>
+    <p class="qr-hint">Les joueurs scannent ce QR code : l'appli s'ouvre avec le code déjà rempli.</p>
+    <div class="qr-code-line">Code&nbsp;: <strong id="qr-code-text"></strong></div>
+    <div id="qr-url-text" class="qr-url"></div>
+  </div>
+</div>
 
 <div id="export-overlay" class="export-overlay" role="dialog" aria-modal="true" aria-labelledby="export-title">
   <div class="export-card">
@@ -765,7 +789,11 @@ async function render(){
   }
 
   // Pick screen
-  if(!STATE.me) return screenRoleSelect();
+  if(!STATE.me){
+    // Arrivée par QR joueur (?join=CODE) : on entre directement dans le parcours équipe.
+    if(STATE.joinDraftCode){ STATE.me = { role:'team', id: uid() }; await saveMe(); }
+    else return screenRoleSelect();
+  }
   if(STATE.me.role==='admin'){
     // Session d'auth obligatoire : sans elle, aucune écriture n'est autorisée (RLS).
     const u = await currentUser();
@@ -1462,6 +1490,7 @@ function screenAdminLobby(){
         <div class="label">Code de chasse</div>
         <div class="code">${g.code}</div>
       </div>
+      <button class="btn ghost" style="width:100%;margin-top:12px" onclick="showQR()">📱 Afficher le QR code d'accès</button>
       
       <div class="flex-between" style="margin:18px 0 8px">
         <h3 style="margin:0">Équipes (${g.teams.length})</h3>
@@ -1522,6 +1551,7 @@ function screenAdminLive(){
       
       <h1 class="title">Chasse <em>en cours</em></h1>
       <p class="subtitle">Les équipes envoient leurs preuves. La validation se fera à la fin.</p>
+      <button class="btn ghost sm" style="width:auto;padding:8px 14px" onclick="showQR()">📱 QR d'accès · code ${g.code}</button>
 
       <div class="flex-between" style="margin:18px 0">
         <div>
@@ -2032,7 +2062,7 @@ function screenTeamJoin(){
       
       <div class="field">
         <label>Code de la chasse</label>
-        <input id="join-code" class="input code" maxlength="4" placeholder="XXXX">
+        <input id="join-code" class="input code" maxlength="4" placeholder="XXXX" value="${escapeHtml(STATE.joinDraftCode||'')}">
       </div>
       <div class="field">
         <label>Nom de votre équipe</label>
@@ -2525,6 +2555,27 @@ function openPhoto(subId){
 }
 function closeModal(){ $('#modal').classList.remove('open'); window.PZOOM=null; }
 
+// QR code d'accès joueurs (écran maître du jeu). Encode l'URL de l'appli avec le code
+// pré-rempli (?join=CODE) → le joueur scanne, l'appli s'ouvre directement sur l'inscription.
+function joinUrl(code){ return `${location.origin}${location.pathname}?join=${code}`; }
+function showQR(){
+  const g = STATE.game; if(!g) return;
+  const url = joinUrl(g.code);
+  const canvas = document.getElementById('qr-canvas');
+  try{
+    if(typeof qrcode === 'undefined') throw new Error('lib QR non chargée');
+    const qr = qrcode(0, 'M');            // type auto, correction M
+    qr.addData(url); qr.make();
+    canvas.innerHTML = qr.createDataURL ? `<img alt="QR ${escapeHtml(g.code)}" src="${qr.createDataURL(8,4)}">` : qr.createSvgTag({cellSize:8,margin:4});
+  }catch(e){
+    canvas.innerHTML = `<p style="color:var(--parchment);opacity:.8;font-size:13px">QR indisponible (réseau requis au 1er chargement). Communiquez le code&nbsp;: <strong>${escapeHtml(g.code)}</strong></p>`;
+  }
+  document.getElementById('qr-code-text').textContent = g.code;
+  document.getElementById('qr-url-text').textContent = url;
+  document.getElementById('qr-overlay').classList.add('open');
+}
+function closeQR(){ document.getElementById('qr-overlay').classList.remove('open'); }
+
 // ---------- EXPORT ZIP ----------
 function openExportZip(){
   if(!STATE.game){ toast('Aucune chasse chargée','error'); return; }
@@ -2686,6 +2737,9 @@ setInterval(()=>{
     openSlideshow(diapoCode.toUpperCase());
     return;
   }
+  // Accès joueur par QR code : ?join=CODE → écran d'inscription équipe, code pré-rempli.
+  const joinCode = params.get('join');
+  if(joinCode){ STATE.joinDraftCode = joinCode.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,4); }
   STATE.outbox = await outboxLoad();
   await render();
   if(sb && STATE.me?.gameCode) startRealtime();
