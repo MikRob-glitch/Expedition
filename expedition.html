@@ -463,8 +463,15 @@ async function loadSubmissions(code){
   return (data||[]).map(rowToSub);
 }
 
-async function saveSubmission(sub, silent=false){
+async function saveSubmission(sub, silent=false, idempotentInsert=false){
   // Renvoie true si la preuve est bien enregistrée en base, false sinon.
+  // `idempotentInsert` (chemin équipe / flush outbox) : les équipes anonymes n'ont que
+  // le droit INSERT sous les RLS (UPDATE réservé à l'admin). On utilise donc un INSERT sec
+  // et on considère un doublon de clé (23505) comme un SUCCÈS — la preuve avait été insérée
+  // lors d'une tentative précédente dont la réponse réseau s'était perdue. Sans ça, un
+  // `.upsert()` déclenchait `ON CONFLICT DO UPDATE` → policy UPDATE admin-only → RLS 42501 →
+  // la photo restait bloquée « en attente d'envoi » à jamais. L'admin authentifié (jugement)
+  // garde le `.upsert()` (il possède le droit UPDATE).
   if(!sb) return false;
   // 1) Upload photo si dataURL
   let photoUrl = sub.photoUrl;
@@ -490,8 +497,12 @@ async function saveSubmission(sub, silent=false){
   };
   let lastErr = null;
   for(let attempt=0; attempt<3; attempt++){
-    const { error } = await sb.from('submissions').upsert(row);
+    const { error } = idempotentInsert
+      ? await sb.from('submissions').insert(row)
+      : await sb.from('submissions').upsert(row);
     if(!error) return true;
+    // Retry idempotent : un doublon de clé = preuve déjà en base = succès (pas d'orphelin).
+    if(idempotentInsert && error.code==='23505') return true;
     lastErr = error;
     await new Promise(r=>setTimeout(r, 600*(attempt+1)));
   }
@@ -504,14 +515,25 @@ async function saveSubmission(sub, silent=false){
 }
 
 async function uploadPhoto(dataUrl, gameCode, subId, silent=false){
+  const path = `${gameCode}/${subId}.jpg`;
   try{
     const res = await fetch(dataUrl);
     const blob = await res.blob();
-    const path = `${gameCode}/${subId}.jpg`;
+    // upsert:false volontaire. Le bucket n'a qu'une policy INSERT (Lot 2) : un `upsert:true`
+    // sur un fichier déjà présent (retry après réponse perdue) tenterait un UPDATE de
+    // storage.objects → aucune policy → refusé → la photo restait bloquée en file. Ici un
+    // doublon (409 / « Duplicate ») signifie que notre upload précédent a réussi : on
+    // considère l'opération réussie et on renvoie l'URL publique. Le nom de fichier = subId
+    // (uid unique par preuve) → aucun risque d'écraser la photo d'une autre équipe.
     const { error } = await sb.storage.from('photos').upload(path, blob, {
-      contentType:'image/jpeg', upsert:true
+      contentType:'image/jpeg', upsert:false
     });
-    if(error){ if(!silent) toast('Upload photo: '+error.message,'error',4500); return null; }
+    if(error){
+      const already = String(error.statusCode)==='409'
+        || error.error==='Duplicate'
+        || /exist|duplicate/i.test(error.message||'');
+      if(!already){ if(!silent) toast('Upload photo: '+error.message,'error',4500); return null; }
+    }
     const { data } = sb.storage.from('photos').getPublicUrl(path);
     return data.publicUrl;
   }catch(e){
@@ -2356,7 +2378,7 @@ async function flushOutbox(opts={}){
       const sub={ id:item.id, gameCode:item.gameCode, teamId:item.teamId, clueId:item.clueId,
                   photoDataUrl:item.photoDataUrl, submittedAt:item.submittedAt,
                   status:'pending', points:0, bonusPoints:0 };
-      let ok=false; try{ ok=await saveSubmission(sub, true); }catch(_){ ok=false; }
+      let ok=false; try{ ok=await saveSubmission(sub, true, true); }catch(_){ ok=false; }
       if(ok){ sent++; await outboxDel(item.id); STATE.outbox=STATE.outbox.filter(o=>o.id!==item.id); }
       else break; // réseau encore KO : on réessaiera plus tard
     }
