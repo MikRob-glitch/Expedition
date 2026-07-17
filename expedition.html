@@ -755,7 +755,7 @@ async function refreshState(){
   if(gameChanged || subsChanged){
     STATE.game=g; STATE.submissions=subs;
     const cur = $('[data-screen]')?.dataset.screen;
-    if(['admin-lobby','admin-live','admin-end','team-lobby','team-active','team-end','team-submitted'].includes(cur)){
+    if(['admin-lobby','admin-live','admin-validation','admin-judging','admin-end','team-lobby','team-active','team-waiting','team-end','team-submitted'].includes(cur)){
       render();
     }
   }
