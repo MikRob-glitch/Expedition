@@ -3,13 +3,9 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `14af4ec`, `BUILD` `2026-07-26.5`,
-> `CACHE` `expedition-v9`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
->
-> ⚠️ **Écart en cours** : le **tirage souvenir** (#39) et le **relèvement de la définition
-> des photos** (#40) — `BUILD` `2026-07-26.7`, `CACHE` `expedition-v11`,
-> `migration-print-choice.sql` — sont **écrits en local mais pas encore poussés**
-> (pas de jeton GitHub dans l'environnement de travail). À pousser, puis re-cloner et comparer.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `9e05921`, `BUILD` `2026-07-26.7`,
+> `CACHE` `expedition-v11`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> À ce jour, aucun écart : local et distant alignés (vérifié par re-clonage + `diff`).
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
 > § « État des migrations SQL » si une migration est ajoutée, et une entrée dans le journal.
@@ -181,7 +177,7 @@ dissocier les deux.
 
 Ordre d'application sur une base neuve : `supabase-setup.sql`, puis les migrations dans
 l'ordre chronologique ci-dessous. Sur la base de production, seules les lignes « à exécuter »
-restent à passer — **à ce jour : `migration-print-choice.sql`**.
+restent à passer — **à ce jour, aucune : la base est à jour**.
 
 | Fichier / migration | Objet | État |
 |---|---|---|
@@ -193,7 +189,7 @@ restent à passer — **à ce jour : `migration-print-choice.sql`**.
 | `alter table games add column location` | Lieu de la chasse (#31) | appliqué 2026-07-26 |
 | `migration-legacy-admin.sql` | Réattribution des `admin_id` legacy (#34) | appliqué 2026-07-26 |
 | `migration-storage-purge.sql` | Purge sans DELETE sur `storage.objects` (#38) | appliqué 2026-07-26 |
-| `migration-print-choice.sql` | `teams.print_submission_id` — tirage souvenir (#39) | ⚠️ **à exécuter** |
+| `migration-print-choice.sql` | `teams.print_submission_id` — tirage souvenir (#39) | appliqué 2026-07-26 |
 
 ⚠️ `supabase-setup.sql` §5 est **obsolète** depuis #38 : ses trois fonctions de purge y
 suppriment encore des lignes de `storage.objects`, ce que Supabase refuse. C'est
@@ -562,7 +558,7 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     `service_role`** appelant l'API Storage, planifiée quotidiennement. En attendant, purger les
     vieilles chasses à la main depuis l'app **avant** que le cron n'en efface les lignes.
 
-### En local, non poussé (2026-07-26) — Tirage souvenir choisi par l'équipe
+### Poussés sur GitHub (2026-07-26, commit `9e05921`) — Tirage souvenir choisi par l'équipe
 
 39. **Photo souvenir à imprimer**. Besoin terrain : à la fin d'un événement, imprimer une photo
     par équipe, encadrée aux couleurs d'Expédition. (1) **Base** : `teams.print_submission_id`
@@ -582,7 +578,7 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     ⚠️ Le plafond de compression des preuves (1000 px à l'époque) a été relevé à 1600 px
     juste après — voir #40.
 
-### En local, non poussé (2026-07-26) — Définition des photos relevée pour l'impression
+### Poussés sur GitHub (2026-07-26, commit `9e05921`) — Définition des photos relevée pour l'impression
 
 40. **`compressImage` : 1000 → 1600 px, qualité JPEG 0,72 → 0,82.** Le plafond de 1000 px
     datait d'avant le tirage souvenir (#39) : il visait le seul envoi sur réseau d'événement.
