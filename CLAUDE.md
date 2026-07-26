@@ -420,6 +420,25 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     désormais **scopés par id de conteneur**. Aucun changement d'app-shell → `CACHE` `sw.js` non
     bumpé.
 
+### Poussés sur GitHub (2026-07-26) — Suppression d'une chasse depuis la liste
+
+33. **Corbeille 🗑 par ligne dans le picker de duplication** (`deleteGameFromPicker`) : double
+    confirmation puis RPC `admin_purge_game` (purge storage + lignes, ownership vérifié serveur),
+    puis rafraîchissement des deux pickers. Comble un trou réel : le bouton de suppression
+    n'existait que sur `screenAdminEnd`, donc une chasse restée en `setup` était **ineffaçable
+    depuis l'app**. ⚠️ La ligne du picker passe de `<button>` à `<div role="button" tabindex="0">`
+    (+ `onkeydown` Entrée/Espace) : un `<button>` ne peut pas en contenir un autre — HTML invalide,
+    le clic sur la corbeille serait avalé par le parent. La corbeille fait `event.stopPropagation()`
+    pour ne pas déclencher la sélection. Le nom passé au handler a ses apostrophes remplacées par
+    `’` **avant** `escapeHtml` (sinon `&#39;` est redécodé par le parser HTML et casse le
+    littéral JS de l'attribut `onclick`).
+34. **`migration-legacy-admin.sql`** (à exécuter une fois, non appliquée automatiquement) :
+    réattribue les chasses au `admin_id` legacy (non-UUID) au compte `auth.users` de
+    l'organisateur, avec contrôles avant/après. Sans elle, la corbeille échoue sur les anciennes
+    chasses (`admin_purge_game` lève « Non autorisé ») et l'app affiche un message explicite le
+    disant. Après elle, les anciennes chasses redeviennent reprenables, modifiables et
+    supprimables, et la mention « ancienne » disparaît du picker.
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code. Historiquement « sans auth / RLS permissive »,

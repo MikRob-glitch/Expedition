@@ -246,6 +246,10 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 .sp-code{font-family:'Geist Mono',monospace;font-weight:600;font-size:15px;letter-spacing:.2em}
 .sp-name{font-weight:600;font-size:14px;line-height:1.2;margin-bottom:2px}
 .sp-date{font-size:12px;opacity:.6;font-family:'Geist Mono',monospace}
+.sp-del{flex-shrink:0;border:1px solid var(--line-strong);background:transparent;border-radius:8px;padding:6px 9px;font-size:14px;line-height:1;cursor:pointer;opacity:.55;transition:opacity .15s,background .15s,border-color .15s;color:inherit;font-family:inherit}
+.sp-del:hover{opacity:1;background:rgba(122,29,32,.10);border-color:var(--oxblood);color:var(--oxblood)}
+.sp-del:disabled{opacity:.25;cursor:not-allowed}
+.session-picker-item.selected .sp-del{border-color:rgba(255,255,255,.35)}
 
 /* ============ Export ZIP modal ============ */
 .export-overlay{position:fixed;inset:0;background:rgba(26,24,21,.65);z-index:150;display:none;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
@@ -1381,15 +1385,50 @@ async function loadGamesForDuplicate(){
     const parts = [dateStr, g.location || null, DUP_STATUS_LABEL[g.status] || g.status];
     if(g.admin_id !== u.id) parts.push('ancienne');
     const meta = parts.filter(Boolean).map(escapeHtml).join(' · ');
-    return `<button class="session-picker-item" data-code="${escapeHtml(g.code)}" onclick="selectDupSession('${escapeHtml(g.code)}')">
+    const nameAttr = escapeHtml((g.name||'').replace(/'/g,"\u2019"));
+    // Ligne = <div role="button"> et non <button> : un <button> ne peut pas en contenir un autre
+    // (HTML invalide, le clic sur la corbeille serait avalé par le parent).
+    return `<div class="session-picker-item" role="button" tabindex="0" data-code="${escapeHtml(g.code)}"
+        onclick="selectDupSession('${escapeHtml(g.code)}')"
+        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectDupSession('${escapeHtml(g.code)}')}">
       <div class="sp-date-col"><div class="sp-day">${day}</div><div class="sp-month">${month}</div></div>
       <div style="flex:1;min-width:0">
         <div class="sp-name">${escapeHtml(g.name)}</div>
         <div class="sp-date">${meta}</div>
       </div>
       <div class="sp-code">${escapeHtml(g.code)}</div>
-    </button>`;
+      <button class="sp-del" title="Supprimer définitivement cette chasse et ses photos"
+        aria-label="Supprimer la chasse ${escapeHtml(g.code)}"
+        onclick="event.stopPropagation();deleteGameFromPicker('${escapeHtml(g.code)}','${nameAttr}',this)">&#128465;</button>
+    </div>`;
   }).join('');
+}
+
+// Suppression définitive depuis la liste (RPC `admin_purge_game` : purge storage + lignes,
+// ownership vérifié côté serveur). Comble le trou : le bouton de suppression n'existait que
+// sur l'écran de fin, donc une chasse en `setup` était ineffaçable depuis l'app.
+async function deleteGameFromPicker(code, name, btn){
+  if(!sb) return;
+  if(!confirm(`Supprimer DÉFINITIVEMENT la chasse « ${name} » (${code}) : équipes, preuves et toutes les photos ?\n\nAction irréversible.`)) return;
+  if(!confirm('Dernière confirmation — suppression définitive et immédiate.')) return;
+  if(btn){ btn.disabled = true; btn.textContent = '…'; }
+  const { error } = await sb.rpc('admin_purge_game', { p_code: code });
+  if(error){
+    if(btn){ btn.disabled = false; btn.innerHTML = '&#128465;'; }
+    const legacy = /non autoris/i.test(error.message||'');
+    toast(legacy
+      ? 'Suppression refusée : cette chasse est antérieure à votre compte (admin_id hérité). Réattribuez-la en SQL pour pouvoir la gérer.'
+      : 'Suppression impossible : '+error.message, 'error', 7000);
+    return;
+  }
+  if(STATE.selectedDupCode === code){
+    STATE.selectedDupCode = null;
+    const b = $('#btn-dup-session');
+    if(b){ b.disabled = true; b.style.opacity = '.4'; }
+  }
+  toast(`Chasse ${code} et ses photos supprimées`,'success');
+  loadGamesForDuplicate();
+  loadSessionsForPicker();
 }
 
 function selectDupSession(code){
