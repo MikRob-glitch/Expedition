@@ -450,6 +450,20 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     peut pas être reconstruite avec un init (`new Request(req, {...})` lève). Conséquence pratique :
     un correctif déployé arrive désormais au premier rechargement, sans `Ctrl+Maj+R`.
 
+### Poussés sur GitHub (2026-07-26) — Version visible + proposition de mise à jour
+
+36. **Constante `BUILD`** (`'2026-07-26.4'`) loguée au démarrage et affichée en bas de l'écran de
+    préparation (`.build-tag`). Sans elle, impossible de savoir en un coup d'œil quelle version
+    tourne réellement sur un appareil — c'est ce qui a rendu le diagnostic de #35 laborieux.
+    **À incrémenter à chaque déploiement.**
+37. **Détection de nouvelle version** : l'enregistrement du SW écoute `updatefound` +
+    `statechange`, et affiche le bandeau `#update-banner` (« Nouvelle version disponible ·
+    Mettre à jour ») **seulement** si la page est déjà contrôlée par un ancien worker. Pas de
+    rechargement automatique : on n'arrache jamais la page sous les pieds d'un maître du jeu en
+    pleine partie. `reg.update()` est appelé au démarrage **et** au retour sur l'onglet
+    (`visibilitychange`) — sans ça le navigateur peut conserver l'ancien `sw.js` pendant des
+    heures. `CACHE` bumpé **v7→v8**.
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code. Historiquement « sans auth / RLS permissive »,

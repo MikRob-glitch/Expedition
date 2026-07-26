@@ -214,6 +214,10 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 /* Bandeau hors-ligne (PWA) */
 #offline-banner{position:fixed;top:0;left:0;right:0;z-index:250;background:var(--oxblood,#7a1f1f);color:#fff;font-size:12.5px;line-height:1.3;text-align:center;padding:calc(env(safe-area-inset-top,0px) + 7px) 12px 7px;transform:translateY(-100%);transition:transform .25s ease;pointer-events:none}
 #offline-banner.show{transform:none}
+#update-banner{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:260;background:var(--ink,#1a1815);color:var(--parchment,#f4ecd8);border:1px solid var(--gold-dark,#8a6d3b);border-radius:12px;padding:11px 13px;display:none;align-items:center;gap:10px;font-size:13px;box-shadow:0 6px 22px rgba(0,0,0,.28)}
+#update-banner.show{display:flex}
+#update-banner button{flex-shrink:0;background:var(--gold-dark,#8a6d3b);color:#fff;border:none;border-radius:8px;padding:7px 12px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.build-tag{font-family:'Geist Mono',monospace;font-size:10.5px;opacity:.45;letter-spacing:.06em;text-align:center;margin:14px 0 2px}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--parchment);padding:12px 18px;border-radius:10px;font-size:14px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:toastIn .3s ease;max-width:90%}
 .toast.success{background:var(--forest)}
@@ -294,6 +298,7 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <body>
 <div id="app"></div>
 <div id="offline-banner" role="status" aria-live="polite">⚠ Hors-ligne — l'appli reste utilisable ; l'envoi de photo attend le retour du réseau</div>
+<div id="update-banner" role="status" aria-live="polite"><span style="flex:1">Nouvelle version disponible.</span><button onclick="location.reload()">Mettre à jour</button></div>
 <div id="modal" class="modal"><button class="close" onclick="closeModal()">×</button><div class="modal-inner"></div></div>
 <div id="qr-overlay" class="qr-overlay">
   <button class="close" onclick="closeQR()" aria-label="Fermer">×</button>
@@ -379,6 +384,11 @@ function toast(msg, kind='', dur=2400){
 // ────── Supabase client ──────
 // Pré-configuration auto : projet "Expedition catching" (region eu-north-1).
 // Override possible via l'écran Configuration (les valeurs saisies remplacent les defaults).
+// Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
+// Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
+// (un service worker ou un cache HTTP peut servir une app-shell périmée).
+const BUILD = '2026-07-26.4';
+
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
   key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ3YWd3Ynp6dGNlaHZkenRrc2NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDIyODEsImV4cCI6MjA5NDc3ODI4MX0.jODIBEM1OLcRrBYk3mI5XeFR-Wp5ImLUUGiYNYkzJx8'
@@ -1066,6 +1076,8 @@ function screenAdminSetup(){
         <input id="resume-code" class="input code" style="flex:1" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false">
         <button class="btn ghost" style="width:auto;white-space:nowrap" onclick="resumeByCode()">Reprendre →</button>
       </div>
+
+      <div class="build-tag">version ${BUILD}</div>
 
       <div class="sticky-bottom">
         <button class="btn gold" onclick="createGame()">Créer la chasse →</button>
@@ -2881,10 +2893,33 @@ setInterval(()=>{
 // L'app-shell est mis en cache par sw.js → l'appli survit à un rechargement en coupure réseau.
 // Enregistrement non bloquant : un échec ne casse jamais le jeu.
 if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW non enregistré :', err));
+  window.addEventListener('load', async ()=>{
+    try{
+      const reg = await navigator.serviceWorker.register('sw.js');
+      // Une nouvelle version est prête ET la page est déjà contrôlée par une ancienne :
+      // on propose la mise à jour au lieu de recharger d'office — jamais arracher la page
+      // sous les pieds d'un maître du jeu en pleine partie.
+      const offer = (w)=>{
+        if(!w) return;
+        w.addEventListener('statechange', ()=>{
+          if(w.state === 'installed' && navigator.serviceWorker.controller){
+            const b = document.getElementById('update-banner');
+            if(b) b.classList.add('show');
+          }
+        });
+      };
+      offer(reg.installing);
+      reg.addEventListener('updatefound', ()=> offer(reg.installing));
+      // Cherche activement une nouvelle version au démarrage et au retour sur l'onglet :
+      // sans ça le navigateur peut garder l'ancien sw.js pendant des heures.
+      reg.update().catch(()=>{});
+      document.addEventListener('visibilitychange', ()=>{
+        if(document.visibilityState === 'visible') reg.update().catch(()=>{});
+      });
+    }catch(err){ console.warn('SW non enregistré :', err); }
   });
 }
+console.log('%cExpédition','font-weight:bold','· build', BUILD);
 function updateOnlineStatus(){
   const b = document.getElementById('offline-banner');
   if(b) b.classList.toggle('show', !navigator.onLine);
