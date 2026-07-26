@@ -439,6 +439,17 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     disant. Après elle, les anciennes chasses redeviennent reprenables, modifiables et
     supprimables, et la mention « ancienne » disparaît du picker.
 
+### Poussés sur GitHub (2026-07-26) — SW : l'app-shell périmée masquait les correctifs
+
+35. **`fetch(req.url, {cache:'reload'})` sur la navigation** (`sw.js`) + `CACHE` bumpé **v6→v7**.
+    Symptôme : la corbeille #33 n'apparaissait pas après déploiement, alors que le fichier publié
+    était correct. Cause : la navigation était déjà network-first, **mais `fetch(req)` respecte le
+    cache HTTP du navigateur** — GitHub Pages renvoie un `max-age`, donc le « réseau » servait une
+    copie périmée et le SW la recopiait ensuite dans `CACHE`. `cache:'reload'` force un aller-retour
+    réseau réel. ⚠️ On repart de `req.url` et non de `req` : une `Request` en mode `navigate` ne
+    peut pas être reconstruite avec un init (`new Request(req, {...})` lève). Conséquence pratique :
+    un correctif déployé arrive désormais au premier rechargement, sans `Ctrl+Maj+R`.
+
 ## Dette technique / points de vigilance connus
 
 - **Clé `anon` publique en clair** dans le code. Historiquement « sans auth / RLS permissive »,

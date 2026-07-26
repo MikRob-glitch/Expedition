@@ -7,7 +7,7 @@
    - Tuiles OSM : cache-first runtime (zones déjà vues dispo hors-ligne).
    - Appels Supabase (REST/Storage) : network-only (jamais d'état de jeu périmé).
    ⚠️ Bumper CACHE à chaque déploiement qui change l'app-shell. */
-const CACHE = 'expedition-v6';
+const CACHE = 'expedition-v7';
 const CORE = [
   './expedition.html',
   './confidentialite.html',
@@ -58,11 +58,15 @@ self.addEventListener('fetch', e=>{
 
   if(isSupabase(url.href)) return;          // donnée de jeu : toujours réseau
 
-  // Navigation (document) : network-first, fallback cache
+  // Navigation (document) : network-first, fallback cache.
+  // `cache:'reload'` contourne le cache HTTP du navigateur : sans lui, GitHub Pages
+  // renvoie un max-age et un simple rechargement pouvait servir une app-shell périmée
+  // (un correctif déployé n'apparaissait pas). On repart de req.url et non de req :
+  // une Request en mode 'navigate' ne peut pas être reconstruite avec un init.
   if(req.mode === 'navigate'){
     e.respondWith((async()=>{
       try{
-        const net = await fetch(req);
+        const net = await fetch(req.url, { cache:'reload', credentials:'same-origin' });
         const c = await caches.open(CACHE);
         c.put('./expedition.html', net.clone()).catch(()=>{});
         return net;
