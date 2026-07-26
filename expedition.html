@@ -422,6 +422,7 @@ function rowToGame(row, teamsRows){
     code: row.code,
     name: row.name,
     huntDate: row.hunt_date || null,
+    location: row.location || '',
     status: row.status,
     durationMinutes: row.duration_minutes,
     perClueMinutes: row.per_clue_minutes,
@@ -468,6 +469,7 @@ async function saveGame(game){
     code: game.code,
     name: game.name,
     hunt_date: game.huntDate || null,
+    location: game.location || null,
     status: game.status,
     duration_minutes: game.durationMinutes,
     per_clue_minutes: game.perClueMinutes,
@@ -1015,6 +1017,10 @@ function screenAdminSetup(){
         <label>Date de la chasse</label>
         <input id="g-date" class="input" type="date" value="${dm.date || new Date().toISOString().slice(0,10)}">
       </div>
+      <div class="field">
+        <label>Lieu de la chasse</label>
+        <input id="g-location" class="input" placeholder="ex. Center Parcs, Capfun Fort de l'Éve…" value="${escapeHtml(dm.location || '')}">
+      </div>
       <div class="flex-row">
         <div class="field" style="flex:1">
           <label>Durée totale (min)</label>
@@ -1037,12 +1043,17 @@ function screenAdminSetup(){
       <button id="btn-load-session" class="btn ghost" onclick="loadAndEditGameFromPicker()" disabled style="margin-top:10px;margin-bottom:16px;opacity:.4">Reprendre cette session →</button>
 
       <div class="divider-stars">✦ réutiliser une chasse ✦</div>
-      <h3 style="margin-bottom:4px">Dupliquer une chasse passée</h3>
-      <p class="help-text" style="margin:0 0 12px">Recréez une chasse déjà jouée (même terminée) pour un nouveau groupe : entrez son code. Les indices et réglages sont copiés dans une nouvelle session vierge — nouveau code, aucune équipe ni photo. La chasse d'origine n'est pas modifiée.</p>
-      <div class="flex-row" style="margin-bottom:16px">
-        <input id="dup-code" class="input code" style="flex:1" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false">
-        <button class="btn ghost" style="width:auto;white-space:nowrap" onclick="duplicateByCode()">Dupliquer →</button>
-      </div>
+      <h3 style="margin-bottom:4px">Dupliquer une chasse</h3>
+      <p class="help-text" style="margin:0 0 12px">Choisissez une de vos chasses (même terminée) pour la rejouer avec un nouveau groupe. Les indices et réglages sont copiés dans une nouvelle session vierge — nouveau code, aucune équipe ni photo. La chasse d'origine n'est jamais modifiée.</p>
+      <div id="dup-picker" class="session-picker"><div class="empty" style="padding:20px;font-size:14px">Chargement…</div></div>
+      <button id="btn-dup-session" class="btn ghost" onclick="duplicateSelected()" disabled style="margin-top:10px;opacity:.4">Dupliquer cette chasse →</button>
+      <details style="margin:10px 0 16px">
+        <summary class="help-text" style="cursor:pointer;list-style:revert">Dupliquer par code (chasse d'un autre compte)</summary>
+        <div class="flex-row" style="margin-top:10px">
+          <input id="dup-code" class="input code" style="flex:1" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false">
+          <button class="btn ghost" style="width:auto;white-space:nowrap" onclick="duplicateByCode()">Dupliquer →</button>
+        </div>
+      </details>
 
       <div class="divider-stars">✦ partie déjà en cours ? ✦</div>
       <h3 style="margin-bottom:4px">Reprendre par code</h3>
@@ -1066,7 +1077,9 @@ function screenAdminSetup(){
   }
   renderClueListEdit();
   STATE.selectedSessionCode = null;
+  STATE.selectedDupCode = null;
   loadSessionsForPicker();
+  loadGamesForDuplicate();
 }
 
 function renderClueListEdit(){
@@ -1272,6 +1285,7 @@ function openTeamMap(){
 async function createGame(){
   const name = $('#g-name').value.trim()||'Chasse au trésor';
   const huntDate = $('#g-date').value || null;
+  const location = $('#g-location').value.trim() || '';
   const duration = parseInt($('#g-duration').value)||90;
   const perClue = parseInt($('#g-perclue').value)||15;
   if(STATE.draftClues.length===0){ toast('Ajoutez au moins un indice','error'); return; }
@@ -1279,7 +1293,7 @@ async function createGame(){
 
   const code = genCode();
   const game = {
-    code, name, huntDate, status:'setup',
+    code, name, huntDate, location, status:'setup',
     durationMinutes:duration, perClueMinutes:perClue,
     clues: STATE.draftClues, teams:[],
     createdAt: Date.now(), startedAt:null, endedAt:null,
@@ -1295,9 +1309,9 @@ async function createGame(){
 }
 
 // ────── Dupliquer une chasse existante (toute statut) vers une nouvelle session ──────
-async function duplicateByCode(){
-  const code = ($('#dup-code').value || '').trim().toUpperCase();
-  if(code.length !== 4){ toast('Entrez le code à 4 lettres de la chasse à dupliquer','error'); return; }
+// Cœur partagé : charge la chasse source et remplit le brouillon de création.
+// La chasse d'origine n'est jamais modifiée (nouveaux `id` d'indices, nouveau code à la création).
+async function duplicateFromCode(code){
   const src = await loadGame(code);
   if(src === undefined){ toast('Réseau indisponible, réessayez','error'); return; }
   if(!src){ toast('Chasse introuvable','error'); return; }
@@ -1306,11 +1320,68 @@ async function duplicateByCode(){
   STATE.draftMeta = {
     name: (src.name || 'Chasse') + ' (copie)',
     date: new Date().toISOString().slice(0,10),
+    location: src.location || '',
     duration: src.durationMinutes || 90,
     perClue: src.perClueMinutes || 15
   };
   toast(`Chasse « ${src.name} » copiée — vérifiez puis créez la nouvelle session`,'success',4000);
   screenAdminSetup();
+}
+
+// Duplication depuis la liste (voie principale).
+async function duplicateSelected(){
+  const code = STATE.selectedDupCode;
+  if(!code){ toast('Sélectionnez une chasse à dupliquer','error'); return; }
+  await duplicateFromCode(code);
+}
+
+// Duplication par code (repli : chasse appartenant à un autre compte admin).
+async function duplicateByCode(){
+  const code = ($('#dup-code')?.value || '').trim().toUpperCase();
+  if(code.length !== 4){ toast('Entrez le code à 4 lettres de la chasse à dupliquer','error'); return; }
+  await duplicateFromCode(code);
+}
+
+// ────── Picker « dupliquer une chasse » : toutes MES chasses, tout statut ──────
+const DUP_STATUS_LABEL = { setup:'en préparation', active:'en cours', validation:'validation', judging:'jugement', ended:'terminée' };
+
+async function loadGamesForDuplicate(){
+  const picker = $('#dup-picker'); if(!picker) return;
+  if(!sb){ picker.innerHTML='<div class="empty" style="padding:20px;font-size:14px">Supabase non connecté</div>'; return; }
+  const u = await currentUser();
+  if(!u){ picker.innerHTML='<div class="empty" style="padding:20px;font-size:14px">Connectez-vous pour voir vos chasses</div>'; return; }
+  const { data, error } = await sb.from('games')
+    .select('code,name,hunt_date,location,status,created_at')
+    .eq('admin_id', u.id)
+    .order('created_at', { ascending:false })
+    .limit(60);
+  if(error){ picker.innerHTML='<div class="empty" style="padding:20px;font-size:14px">Erreur chargement</div>'; return; }
+  if(!data || data.length===0){
+    picker.innerHTML='<div class="empty" style="padding:24px 16px;font-size:14px">Aucune chasse à dupliquer</div>';
+    return;
+  }
+  picker.innerHTML = data.map(g=>{
+    const d = g.hunt_date ? new Date(g.hunt_date+'T12:00:00') : (g.created_at ? new Date(g.created_at) : null);
+    const day   = d ? d.getDate() : '—';
+    const month = d ? d.toLocaleDateString('fr-FR',{month:'short'}).replace('.','') : '?';
+    const dateStr = d ? d.toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'}) : 'Date non définie';
+    const meta = [dateStr, g.location || null, DUP_STATUS_LABEL[g.status] || g.status].filter(Boolean).map(escapeHtml).join(' · ');
+    return `<button class="session-picker-item" data-code="${escapeHtml(g.code)}" onclick="selectDupSession('${escapeHtml(g.code)}')">
+      <div class="sp-date-col"><div class="sp-day">${day}</div><div class="sp-month">${month}</div></div>
+      <div style="flex:1;min-width:0">
+        <div class="sp-name">${escapeHtml(g.name)}</div>
+        <div class="sp-date">${meta}</div>
+      </div>
+      <div class="sp-code">${escapeHtml(g.code)}</div>
+    </button>`;
+  }).join('');
+}
+
+function selectDupSession(code){
+  STATE.selectedDupCode = code;
+  $$('#dup-picker .session-picker-item').forEach(el=>el.classList.toggle('selected', el.dataset.code===code));
+  const btn = $('#btn-dup-session');
+  if(btn){ btn.disabled=false; btn.style.opacity='1'; }
 }
 
 // ────── Picker de sessions existantes (status=setup) ──────
@@ -1320,7 +1391,7 @@ async function loadSessionsForPicker(){
   const u = await currentUser();
   if(!u){ picker.innerHTML='<div class="empty" style="padding:20px;font-size:14px">Connectez-vous pour voir vos sessions</div>'; return; }
   const { data, error } = await sb.from('games')
-    .select('code,name,hunt_date,status')
+    .select('code,name,hunt_date,location,status')
     .eq('status','setup')
     .eq('admin_id', u.id)
     .order('hunt_date', { ascending:true, nullsFirst:false });
@@ -1338,7 +1409,7 @@ async function loadSessionsForPicker(){
       <div class="sp-date-col"><div class="sp-day">${day}</div><div class="sp-month">${month}</div></div>
       <div style="flex:1;min-width:0">
         <div class="sp-name">${escapeHtml(g.name)}</div>
-        <div class="sp-date">${dateStr}</div>
+        <div class="sp-date">${dateStr}${g.location ? ' · '+escapeHtml(g.location) : ''}</div>
       </div>
       <div class="sp-code">${escapeHtml(g.code)}</div>
     </button>`;
@@ -1347,7 +1418,7 @@ async function loadSessionsForPicker(){
 
 function selectSession(code){
   STATE.selectedSessionCode = code;
-  $$('.session-picker-item').forEach(el=>el.classList.toggle('selected', el.dataset.code===code));
+  $$('#session-picker .session-picker-item').forEach(el=>el.classList.toggle('selected', el.dataset.code===code));
   const btn = $('#btn-load-session');
   if(btn){ btn.disabled=false; btn.style.opacity='1'; }
 }
@@ -1411,6 +1482,10 @@ function screenAdminEditGame(){
         <label>Date de la chasse</label>
         <input id="g-date" class="input" type="date" value="${g.huntDate || ''}">
       </div>
+      <div class="field">
+        <label>Lieu de la chasse</label>
+        <input id="g-location" class="input" placeholder="ex. Center Parcs, Capfun Fort de l'Éve…" value="${escapeHtml(g.location || '')}">
+      </div>
       <div class="flex-row">
         <div class="field" style="flex:1">
           <label>Durée totale (min)</label>
@@ -1436,12 +1511,14 @@ function screenAdminEditGame(){
 async function saveEditedGame(){
   const name = $('#g-name').value.trim() || 'Chasse au trésor';
   const huntDate = $('#g-date').value || null;
+  const location = $('#g-location').value.trim() || '';
   const duration = parseInt($('#g-duration').value) || 90;
   const perClue = parseInt($('#g-perclue').value) || 15;
   if(STATE.draftClues.length===0){ toast('Ajoutez au moins un indice','error'); return; }
   if(STATE.draftClues.some(c=>!c.title.trim())){ toast('Chaque indice a besoin d\'un titre','error'); return; }
   STATE.game.name = name;
   STATE.game.huntDate = huntDate;
+  STATE.game.location = location;
   STATE.game.durationMinutes = duration;
   STATE.game.perClueMinutes = perClue;
   STATE.game.clues = STATE.draftClues;
@@ -1485,7 +1562,7 @@ function screenAdminLobby(){
         <span class="chip">Lobby</span>
       </div>
       <h2>Partagez le code</h2>
-      <p class="subtitle">Les équipes saisissent ce code pour rejoindre la chasse.</p>
+      <p class="subtitle">Les équipes saisissent ce code pour rejoindre la chasse.${g.location ? ' · <strong>'+escapeHtml(g.location)+'</strong>':''}</p>
       <div class="code-display">
         <div class="label">Code de chasse</div>
         <div class="code">${g.code}</div>

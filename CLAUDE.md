@@ -3,7 +3,7 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `5017856`). Les écarts connus
+> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `LIEU_DUP`). Les écarts connus
 > (travail local non poussé) sont signalés ⚠️. À ce jour, aucun écart : local et distant alignés.
 
 ## Vue d'ensemble
@@ -31,7 +31,8 @@ des photos comme preuves ; un maître du jeu (admin) valide puis fait juger les 
 
 ## Modèle de données (Postgres)
 
-- **`games`** — PK `code` (texte, 4 lettres). Champs : `name`, `status`, `clues` (jsonb :
+- **`games`** — PK `code` (texte, 4 lettres). Champs : `name`, `status`, `location` (texte,
+  optionnel — lieu de la chasse, ex. « Center Parcs »), `clues` (jsonb :
   `[{id,title,text,points,lat,lng}]` — `lat`/`lng` optionnels, `null` si l'indice n'est pas
   géolocalisé), `duration_minutes`, `per_clue_minutes`, `admin_id`, `started_at`, `ended_at`.
   ⚠️ **Aucune migration** pour la géoloc des indices : `clues` est du jsonb, les coords sont
@@ -86,12 +87,18 @@ dissocier les deux.
 - **Export ZIP** : modal sur les écrans Jury et Fin, télécharge toutes les photos d'une partie
   (filtrables par statut) en archive `{CODE}_photos.zip`, organisée `Équipe/HHhMM_statut_indice_id.jpg`
   (JSZip, pool de 8 requêtes parallèles).
-- **Dupliquer une chasse passée** : dans l'écran admin de préparation, le champ « Dupliquer
-  par code » charge une chasse existante (**n'importe quel statut**, y compris `ended`) via
-  `duplicateByCode` et copie ses indices (nouveaux `id`) + réglages dans le formulaire de
-  création (`STATE.draftMeta`, nom suffixé « (copie) », date du jour). « Créer la chasse »
-  génère ensuite une **nouvelle session vierge** (nouveau code, aucune équipe ni photo). La
-  chasse source n'est jamais modifiée. Permet de rejouer une même chasse pour un autre groupe.
+- **Dupliquer une chasse passée** : dans l'écran admin de préparation, section « Dupliquer une
+  chasse ». Voie principale = **liste de toutes MES chasses** (`loadGamesForDuplicate`, filtre
+  `admin_id = auth.uid()`, **tout statut** y compris `ended`, tri `created_at` desc, limite 60) →
+  sélection (`selectDupSession`) puis bouton « Dupliquer cette chasse ». Repli dans un `<details>`
+  replié = **par code** (`duplicateByCode`), utile pour une chasse appartenant à un autre compte.
+  Les deux voies passent par le cœur partagé `duplicateFromCode(code)`, qui copie les indices
+  (nouveaux `id`) + réglages (dont `location`) dans le formulaire de création (`STATE.draftMeta`,
+  nom suffixé « (copie) », date du jour). « Créer la chasse » génère ensuite une **nouvelle session
+  vierge** (nouveau code, aucune équipe ni photo). La chasse source n'est jamais modifiée.
+  ⚠️ Deux pickers coexistent sur cet écran (`#session-picker` reprise, `#dup-picker` duplication) :
+  `selectSession`/`selectDupSession` **scopent** leur `$$` par id de conteneur — sinon la sélection
+  de l'un désélectionne l'autre.
 - **Photo d'équipe à l'inscription** : sur l'écran « Rejoindre une chasse », champ photo
   **optionnel** (`capture="user"`, façade selfie). Capturée via `compressImage`, uploadée par
   `uploadTeamPhoto` dans `{game_code}/team_{team_id}.jpg`, puis `setTeamPhoto` écrit l'URL
@@ -384,6 +391,26 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     qui souffraient du même défaut de rafraîchissement de leurs écrans côté maître du jeu). Aucun
     changement d'app-shell → `CACHE` `sw.js` **non bumpé** (navigation network-first sert le hotfix
     en ligne).
+
+### Poussés sur GitHub (2026-07-26) — Lieu de la chasse + duplication par liste
+
+31. **Champ « Lieu de la chasse »** (`games.location`, colonne `text` nullable — migration
+    `alter table games add column if not exists location text;` appliquée en base + ajoutée à
+    `supabase-setup.sql`). Saisi à la création (`screenAdminSetup` → `createGame`) et modifiable
+    (`screenAdminEditGame` → `saveEditedGame`) ; porté par `rowToGame`/`saveGame` ; copié par
+    `duplicateFromCode`. Affiché dans le lobby admin (sous-titre), le picker de reprise et le
+    picker de duplication. Optionnel : vide = rien d'affiché.
+32. **Duplication par liste** (remplace la saisie de code comme voie principale). Nouveau picker
+    `#dup-picker` alimenté par `loadGamesForDuplicate` : **toutes les chasses de l'admin
+    connecté**, tout statut, tri `created_at` desc, limite 60, chaque ligne affichant nom, date,
+    lieu, statut et code. Sélection via `selectDupSession` puis « Dupliquer cette chasse »
+    (`duplicateSelected`). L'ancienne saisie par code (`duplicateByCode`) est conservée mais
+    repliée dans un `<details>` — seul moyen de dupliquer la chasse d'un **autre** compte, que la
+    liste (filtrée `admin_id`) ne peut pas montrer. Les deux voies partagent `duplicateFromCode`.
+    ⚠️ `selectSession` scopait son `$$('.session-picker-item')` au document : avec deux pickers sur
+    le même écran, sélectionner dans l'un désélectionnait l'autre → les deux sélecteurs sont
+    désormais **scopés par id de conteneur**. Aucun changement d'app-shell → `CACHE` `sw.js` non
+    bumpé.
 
 ## Dette technique / points de vigilance connus
 
