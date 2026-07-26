@@ -5,7 +5,11 @@ Guide de référence pour travailler sur l'application. À lire avant toute modi
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
 > **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `14af4ec`, `BUILD` `2026-07-26.5`,
 > `CACHE` `expedition-v9`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
-> À ce jour, aucun écart : local et distant alignés.
+>
+> ⚠️ **Écart en cours** : le **tirage souvenir** (#39) et le **relèvement de la définition
+> des photos** (#40) — `BUILD` `2026-07-26.7`, `CACHE` `expedition-v11`,
+> `migration-print-choice.sql` — sont **écrits en local mais pas encore poussés**
+> (pas de jeton GitHub dans l'environnement de travail). À pousser, puis re-cloner et comparer.
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
 > § « État des migrations SQL » si une migration est ajoutée, et une entrée dans le journal.
@@ -42,7 +46,8 @@ des photos comme preuves ; un maître du jeu (admin) valide puis fait juger les 
   ⚠️ **Aucune migration** pour la géoloc des indices : `clues` est du jsonb, les coords sont
   simplement stockées dans chaque objet indice.
 - **`teams`** — PK `id` (uid). FK `game_code`. Champs : `name`, `start_clue_id`, `photo_url`
-  (photo d'équipe optionnelle, prise à l'inscription), `joined_at`.
+  (photo d'équipe optionnelle, prise à l'inscription), `print_submission_id` (id de la photo
+  choisie par l'équipe pour le tirage souvenir — voir #39), `joined_at`.
 - **`submissions`** — PK `id` (uid, = nom du fichier photo). FK `team_id`
   (`on delete cascade`), `game_code`. Champs : `clue_id`, `photo_url`, `status`
   (`pending`/`approved`/`rejected`), `points`, `bonus_points`, `submitted_at`, `judged_at`.
@@ -141,6 +146,19 @@ dissocier les deux.
   `params.get('join')` → `STATE.joinDraftCode` → `render` crée une session équipe si aucune,
   `screenTeamJoin` pré-remplit `#join-code`). Lib `qrcode-generator@1.4.4` (CDN, cachée par le SW).
   Voir #28.
+- **Tirage souvenir encadré** : en fin de chasse (`ended`), chaque équipe choisit **une** photo
+  à imprimer sur `screenTeamEnd` (`renderTeamPrintCard` → `choosePrintPhoto` → `setTeamPrintChoice`,
+  stocké dans `teams.print_submission_id`). Le maître du jeu voit les choix sur `screenAdminEnd`
+  (`renderAdminPrintCard`), peut choisir **à la place** d'une équipe absente (`openPrintPicker`),
+  prévisualiser (`openPrintPreview`), télécharger un tirage (`downloadPrint`) ou **tous** en ZIP
+  `{CODE}_tirages.zip` (`downloadAllPrints`, JSZip, `STORE` — du JPEG ne se recompresse pas).
+  Le cadre est composé **en canvas** par `buildPrintCanvas` : fond parchemin + vignette, double
+  filet + losanges d'angle, rose des vents vectorielle (mêmes tracés que `icons/favicon.svg`),
+  puis cartouche « nom d'équipe / nom de la chasse · lieu / date ». Marges = 5 % de la largeur
+  de la photo, cartouche = 21 % → le tirage suit la définition de la photo (1600 px ⇒ ~300 dpi
+  en 10×15 cm, ~225 dpi en 13×18 — voir #40). ⚠️ La photo est chargée par **fetch → blob → objectURL** : une `<img>` pointant
+  directement le Storage (autre origine) **souillerait le canvas** et ferait échouer `toBlob()`.
+  ⚠️ Les polices sont préchargées (`ensurePrintFonts`) sinon le canvas dessine en repli système.
 - **Zoom des photos** : le modal photo (vote / validation / galerie) est zoomable — pincer,
   molette, double-clic (1×↔2,5×), glisser pour déplacer, boutons +/−/⟲ (`initPhotoZoom`,
   Pointer Events, zoom 1–6×). Voir #27.
@@ -163,7 +181,7 @@ dissocier les deux.
 
 Ordre d'application sur une base neuve : `supabase-setup.sql`, puis les migrations dans
 l'ordre chronologique ci-dessous. Sur la base de production, seules les lignes « à exécuter »
-restent à passer — **à ce jour, aucune : la base est à jour**.
+restent à passer — **à ce jour : `migration-print-choice.sql`**.
 
 | Fichier / migration | Objet | État |
 |---|---|---|
@@ -175,6 +193,7 @@ restent à passer — **à ce jour, aucune : la base est à jour**.
 | `alter table games add column location` | Lieu de la chasse (#31) | appliqué 2026-07-26 |
 | `migration-legacy-admin.sql` | Réattribution des `admin_id` legacy (#34) | appliqué 2026-07-26 |
 | `migration-storage-purge.sql` | Purge sans DELETE sur `storage.objects` (#38) | appliqué 2026-07-26 |
+| `migration-print-choice.sql` | `teams.print_submission_id` — tirage souvenir (#39) | ⚠️ **à exécuter** |
 
 ⚠️ `supabase-setup.sql` §5 est **obsolète** depuis #38 : ses trois fonctions de purge y
 suppriment encore des lignes de `storage.objects`, ce que Supabase refuse. C'est
@@ -543,8 +562,48 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     `service_role`** appelant l'API Storage, planifiée quotidiennement. En attendant, purger les
     vieilles chasses à la main depuis l'app **avant** que le cron n'en efface les lignes.
 
+### En local, non poussé (2026-07-26) — Tirage souvenir choisi par l'équipe
+
+39. **Photo souvenir à imprimer**. Besoin terrain : à la fin d'un événement, imprimer une photo
+    par équipe, encadrée aux couleurs d'Expédition. (1) **Base** : `teams.print_submission_id`
+    (`migration-print-choice.sql`, colonne `text` nullable, pas de FK — une preuve supprimée
+    laisse une valeur pendante que `teamPrintSub` ignore). Aucune policy à ajouter : `teams`
+    est encore ouvert en écriture (les équipes sont anonymes), et le choix ne peut pas passer
+    par `submissions` dont l'UPDATE est **réservé à l'admin** depuis le Lot 1. (2) **Équipe** :
+    carte de choix sur l'écran de fin, toutes ses photos (y compris refusées — un beau souvenir
+    n'est pas forcément une preuve conforme), sélection enregistrée immédiatement, aperçu du
+    tirage. (3) **Maître du jeu** : liste des choix par équipe sur l'écran de fin (compteur
+    `n/m`), choix de secours pour une équipe partie sans choisir, aperçu, téléchargement à
+    l'unité ou ZIP `{CODE}_tirages.zip`. (4) **Cadre** : `buildPrintCanvas`, rendu canvas pur
+    (aucun service d'image), rose des vents redessinée en vectoriel depuis `icons/favicon.svg`,
+    nom d'équipe / nom de la chasse · lieu / date de l'activité, ajustement automatique de la
+    taille des textes + ellipse (noms longs) et repli si le pavé « EXPÉDITION » ne tient pas.
+    `BUILD` → `2026-07-26.6`, `CACHE` **v9→v10**.
+    ⚠️ Le plafond de compression des preuves (1000 px à l'époque) a été relevé à 1600 px
+    juste après — voir #40.
+
+### En local, non poussé (2026-07-26) — Définition des photos relevée pour l'impression
+
+40. **`compressImage` : 1000 → 1600 px, qualité JPEG 0,72 → 0,82.** Le plafond de 1000 px
+    datait d'avant le tirage souvenir (#39) : il visait le seul envoi sur réseau d'événement.
+    Constantes nommées et documentées (`PHOTO_MAX`, `PHOTO_Q`, `PHOTO_BUDGET`), rééchantillonnage
+    en `imageSmoothingQuality:'high'`, jamais d'agrandissement, et le filet de sécurité baisse
+    désormais la **qualité** (plancher 0,45) plutôt que la définition si une photo dépasse
+    ~3 Mo de dataURL. Rendu à l'impression : 10×15 cm ~300 dpi, 13×18 ~225 dpi, A5 ~190 dpi.
+    La **photo d'équipe** (pastille de 40 px à l'écran) reste volontairement basse définition :
+    `compressImage(file, {max:800, q:0.8})` — inutile de payer 1600 px pour un avatar.
+    `BUILD` → `2026-07-26.7`, `CACHE` **v10→v11**.
+    ⚠️ **Contrepartie à surveiller** : ~350–450 Ko par preuve au lieu de ~200 Ko, soit **~2×**
+    en upload le jour J (l'outbox + le retry idempotent couvrent les échecs) et **~2×** en
+    stockage Supabase — or le tier gratuit plafonne à **1 Go** et la purge automatique 90 j
+    n'efface plus les fichiers depuis #38. Purger les vieilles chasses depuis la corbeille de
+    l'app, sinon le bucket se remplit deux fois plus vite qu'avant.
+
 ## Dette technique / points de vigilance connus
 
+- **[STOCKAGE — depuis 2026-07-26] Les preuves pèsent ~2× plus lourd** (1600 px, #40) alors
+  que le tier gratuit Supabase plafonne à 1 Go et que la purge automatique n'efface plus les
+  fichiers (voir ci-dessous). À surveiller après chaque événement.
 - **[RGPD — ouvert depuis 2026-07-26] Rétention 90 j : les photos ne sont plus purgées
   automatiquement.** `purge_expired_games` ne peut plus toucher au Storage (restriction Supabase,
   voir #38) : le cron efface les lignes, les fichiers restent. Correctif = Edge Function

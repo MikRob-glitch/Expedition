@@ -7,7 +7,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 ## Aperçu
 
 - **Multi-équipes en temps réel** — websockets (Supabase Realtime) + poll de sécurité (~15 s).
-- **Preuve par photo** — caméra native, compression côté client.
+- **Preuve par photo** — caméra native, compression côté client (1600 px, qualité adaptée à l'impression 10×15).
 - **Accès joueurs par QR code** — l'admin affiche un QR ; au scan, l'appli s'ouvre sur l'inscription avec le code **pré-rempli** (`?join=CODE`).
 - **Jugement live** — validation conforme/refusée par l'admin, puis vote du jury 50/30/10.
 - **Zoom sur les photos** — pincer / molette / double-clic / glisser pour juger les détails.
@@ -16,6 +16,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 - **Photo d'équipe** — selfie optionnel à l'inscription, affiché au lobby et au classement.
 - **Diaporama public** — photos en direct via l'URL `?diapo=CODE`.
 - **Export ZIP** — toutes les photos d'une partie, archive organisée par équipe.
+- **Tirage souvenir** — chaque équipe choisit sa photo préférée en fin de chasse ; le maître du jeu récupère les tirages **encadrés** (rose des vents, nom de la chasse, nom de l'équipe, date), à l'unité ou en ZIP.
 - **PWA offline** — service worker (app-shell en cache) + **file d'envoi photo hors-ligne** (IndexedDB) : un rechargement en coupure ne casse plus rien, une photo prise sans réseau part automatiquement au retour du réseau.
 - **Sécurité & RGPD** — auth admin par **code email** (Supabase Auth), **RLS scopées**, bucket photos verrouillé, consentement + politique de confidentialité + purge automatique à 90 j.
 

@@ -163,6 +163,25 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 .gallery .item .label{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.8));color:#fff;padding:8px 8px 6px;font-size:11px;font-family:'Geist Mono',monospace}
 .gallery .item .bonus-mark{position:absolute;top:6px;right:6px;background:var(--gold);color:var(--ink);font-family:'Geist Mono',monospace;font-size:10px;font-weight:600;padding:3px 6px;border-radius:4px}
 
+/* Tirage souvenir (choix + récupération) */
+.print-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.print-grid .p-item{position:relative;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:8px;overflow:hidden;background:#000;cursor:pointer}
+.print-grid .p-item img{width:100%;height:100%;object-fit:cover;display:block}
+.print-grid .p-item.sel{border-color:var(--gold-dark);box-shadow:0 0 0 3px rgba(201,165,90,.4)}
+.print-grid .p-item.sel::after{content:'\2726';position:absolute;top:2px;right:5px;color:var(--gold);font-size:16px;text-shadow:0 1px 3px rgba(0,0,0,.9)}
+.print-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.print-row:last-of-type{border-bottom:0}
+.print-row .thumb{width:52px;height:52px;flex:0 0 auto;border-radius:8px;object-fit:cover;background:var(--parchment-3)}
+.print-row .thumb.empty-thumb{display:flex;align-items:center;justify-content:center;color:var(--ink-mute);border:1px dashed var(--line-strong);background:transparent}
+.print-row .nm{flex:1;min-width:0}
+.print-row .nm b{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.print-row .nm span{font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink-mute)}
+.print-pick{max-height:82vh;overflow-y:auto;padding:4px}
+.print-pick h3{color:var(--parchment);margin:0 0 4px;font-family:'Fraunces',Georgia,serif}
+.print-pick p{color:var(--parchment);opacity:.65;font-size:12px;margin:0 0 12px}
+.print-wait{color:var(--parchment);font-family:'Geist Mono',monospace;font-size:13px;padding:30px}
+.print-actions{margin-top:12px}
+
 .modal{position:fixed;inset:0;background:rgba(26,24,21,.95);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
 .modal.open{display:flex;animation:fade .2s}
 .modal .modal-inner{max-width:100%;max-height:100%;text-align:center}
@@ -387,7 +406,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-26.5';
+const BUILD = '2026-07-26.7';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -441,7 +460,7 @@ function rowToGame(row, teamsRows){
     durationMinutes: row.duration_minutes,
     perClueMinutes: row.per_clue_minutes,
     clues: row.clues || [],
-    teams: (teamsRows||[]).map(t=>({id:t.id, name:t.name, joinedAt:new Date(t.joined_at).getTime(), startClueId:t.start_clue_id||null, photoUrl:t.photo_url||null})),
+    teams: (teamsRows||[]).map(t=>({id:t.id, name:t.name, joinedAt:new Date(t.joined_at).getTime(), startClueId:t.start_clue_id||null, photoUrl:t.photo_url||null, printSubId:t.print_submission_id||null})),
     createdAt: new Date(row.created_at).getTime(),
     startedAt: row.started_at ? new Date(row.started_at).getTime() : null,
     endedAt: row.ended_at ? new Date(row.ended_at).getTime() : null,
@@ -706,27 +725,42 @@ function fmtTime(secs){
   return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
 }
 
-// Compress image: canvas resize to max 1000px, JPEG 0.7
-async function compressImage(file){
+// Compression des photos avant envoi.
+// PHOTO_MAX = plus grand côté conservé. Arbitrage volume ↔ qualité d'impression :
+//   1000 px (ancien) → 10×15 cm à ~270 dpi, mais 13×18 déjà limite.
+//   1600 px (retenu) → 10×15 à ~300 dpi, 13×18 à ~225 dpi, A5 à ~190 dpi.
+// Coût : ~350–450 Ko par preuve au lieu de ~200 Ko. Un envoi raté n'est pas perdu
+// (outbox IndexedDB + retry idempotent), mais le stockage Supabase gonfle d'autant —
+// et la purge automatique 90 j n'efface plus les fichiers (voir #38) : purger les
+// vieilles chasses depuis l'app.
+// PHOTO_BUDGET = plafond de sécurité en caractères de dataURL (~3/4 en octets réels) :
+// si la photo dépasse encore, on baisse la qualité plutôt que la définition.
+const PHOTO_MAX = 1600, PHOTO_Q = 0.82, PHOTO_BUDGET = 3_000_000;
+
+async function compressImage(file, opts){
+  const max = opts?.max || PHOTO_MAX;
+  const q0  = opts?.q   || PHOTO_Q;
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
     reader.onload=e=>{
       const img=new Image();
       img.onload=()=>{
-        const max=1000;
         let w=img.width, h=img.height;
+        // On réduit seulement : jamais d'agrandissement (ça n'ajoute aucun détail).
         if(w>max||h>max){
           if(w>h){ h=Math.round(h*max/w); w=max; } else { w=Math.round(w*max/h); h=max; }
         }
         const canvas=document.createElement('canvas');
         canvas.width=w; canvas.height=h;
         const ctx=canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';   // rééchantillonnage soigné (ignoré si non supporté)
         ctx.drawImage(img,0,0,w,h);
-        let q = 0.72;
+        let q = q0;
         let url = canvas.toDataURL('image/jpeg', q);
-        // Re-compress if still too large
-        while(url.length > 1_400_000 && q > 0.35){
-          q -= 0.1;
+        // Filet de sécurité : photo encore trop lourde → on baisse la qualité par paliers.
+        while(url.length > PHOTO_BUDGET && q > 0.45){
+          q -= 0.08;
           url = canvas.toDataURL('image/jpeg', q);
         }
         resolve(url);
@@ -2013,10 +2047,12 @@ function screenAdminEnd(){
           </div>
         </div>
       </div>
-      
+
+      ${renderAdminPrintCard()}
+
       <div class="divider-stars">✦ Galerie ✦</div>
       ${renderGalleryByClue()}
-      
+
       <div class="card" style="margin-top:16px;border-color:var(--oxblood)">
         <h3 style="margin-bottom:8px">Effacement des données (RGPD)</h3>
         <p class="help-text" style="margin:0 0 12px">Supprime définitivement cette chasse : équipes, preuves et <strong>toutes les photos</strong>. Irréversible. (Sinon, tout est purgé automatiquement 90 jours après la création.)</p>
@@ -2294,7 +2330,7 @@ async function handleJoinCapture(e){
   STATE.joinConsent = $('#join-consent')?.checked || false;
   toast('Compression de la photo…');
   try{
-    STATE.joinPhoto = await compressImage(file);
+    STATE.joinPhoto = await compressImage(file, { max:800, q:0.8 });  // pastille : 800 px suffisent
     render();
     // restaure les champs après re-render
     if($('#join-code')) $('#join-code').value = STATE.joinDraftCode;
@@ -2652,7 +2688,9 @@ function screenTeamEnd(){
         <div class="display" style="font-size:64px;color:var(--gold);margin:8px 0">${myPoints}</div>
         <div class="mono" style="font-size:13px;opacity:.7">${myApproved.length} indice${myApproved.length>1?'s':''} validé${myApproved.length>1?'s':''}</div>
       </div>
-      
+
+      ${renderTeamPrintCard()}
+
       ${renderLeaderboard(false)}
       
       <div class="divider-stars">✦ Galerie ✦</div>
@@ -2852,6 +2890,359 @@ async function runExportZip(){
   const mb = (blob.size/1024/1024).toFixed(1);
   logLine(`✓ ZIP prêt — ${done-errors} photo(s), ${mb} Mo${errors?` · ${errors} échec(s)`:''}`, 'ok');
   btn.disabled = false; btn.textContent = 'Télécharger à nouveau';
+}
+
+// ---------- TIRAGE SOUVENIR (cadre Expédition) ----------
+// En fin de chasse, chaque équipe choisit UNE photo à imprimer (teams.print_submission_id).
+// Le maître du jeu récupère les choix (écran de fin) et télécharge les tirages encadrés :
+// rose des vents Expédition, nom de l'équipe, nom de la chasse (+ lieu), date de l'activité.
+// Rendu 100 % canvas côté client. ⚠️ Les photos sont chargées par fetch → blob → objectURL :
+// une <img> pointant directement sur le Storage (autre origine) souillerait le canvas et
+// ferait échouer toBlob()/toDataURL().
+
+const PRINT_Q = 0.92;                       // qualité JPEG du tirage
+const PRINT_MAX = 4000;                     // garde-fou taille canvas
+
+function printDateStr(g){
+  const d = g?.huntDate ? new Date(g.huntDate+'T12:00:00')
+          : g?.endedAt ? new Date(g.endedAt)
+          : g?.createdAt ? new Date(g.createdAt) : new Date();
+  return d.toLocaleDateString('fr-FR', { day:'numeric', month:'long', year:'numeric' });
+}
+function safeFile(s){ return (s||'').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,'_').trim() || '_'; }
+function myTeam(){ return STATE.game?.teams.find(t=>t.id===STATE.me?.teamId) || null; }
+function teamPrintSub(team){
+  if(!team?.printSubId) return null;
+  return STATE.submissions.find(s=>s.id===team.printSubId && s.photoUrl) || null;
+}
+
+// Écrit le choix en base. Optimiste : on met à jour l'objet local dès le succès, sans
+// attendre le tour de synchro (le realtime repassera derrière de toute façon).
+async function setTeamPrintChoice(teamId, subId){
+  if(!sb) return false;
+  const { data, error } = await sb.from('teams')
+    .update({ print_submission_id: subId || null }).eq('id', teamId)
+    .select('id,print_submission_id');
+  if(error || !data || !data.length){
+    const m = error?.message || 'aucune ligne mise à jour — équipe introuvable en base';
+    const miss = /print_submission_id|schema cache|column|PGRST204/i.test(m);
+    toast(miss ? '⚠ Colonne « print_submission_id » absente dans Supabase — lancez migration-print-choice.sql'
+               : 'Choix non enregistré : '+m, 'error', 6500);
+    return false;
+  }
+  const t = STATE.game?.teams.find(x=>x.id===teamId);
+  if(t) t.printSubId = subId || null;
+  toast(subId ? 'Photo souvenir enregistrée' : 'Choix annulé', 'success');
+  render();
+  return true;
+}
+async function choosePrintPhoto(subId){
+  const t = myTeam(); if(!t) return;
+  if(t.printSubId === subId) return;         // déjà sélectionnée : rien à faire
+  await setTeamPrintChoice(t.id, subId);
+}
+
+// ────── Chargement d'une photo sans souiller le canvas ──────
+async function loadPrintImage(url){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const objUrl = URL.createObjectURL(await r.blob());
+  const img = new Image();
+  img.src = objUrl;
+  try{
+    if(img.decode) await img.decode();
+    else await new Promise((res,rej)=>{ img.onload=res; img.onerror=()=>rej(new Error('image illisible')); });
+  }catch(e){ URL.revokeObjectURL(objUrl); throw e; }
+  return img;
+}
+
+// ────── Rose des vents (mêmes tracés que icons/favicon.svg, repère 64×64) ──────
+const ROSE_STAR = [[32,5],[34.1,26.92],[40.84,23.16],[37.08,29.9],[59,32],[37.08,34.1],[40.84,40.84],[34.1,37.08],[32,59],[29.9,37.08],[23.16,40.84],[26.92,34.1],[5,32],[26.92,29.9],[23.16,23.16],[29.9,26.92]];
+const ROSE_GOLD = [[[40.84,23.16],[37.08,29.9],[34.1,26.92]],[[40.84,40.84],[34.1,37.08],[37.08,34.1]],[[23.16,40.84],[26.92,34.1],[29.9,37.08]],[[23.16,23.16],[29.9,26.92],[26.92,29.9]]];
+const ROSE_NORTH = [[32,5],[34.1,26.92],[29.9,26.92]];
+function drawRose(ctx, cx, cy, R){
+  const s = R/31, TAU = Math.PI*2;
+  const poly = pts => { ctx.beginPath(); pts.forEach((p,i)=>{ const x=cx+(p[0]-32)*s, y=cy+(p[1]-32)*s; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.closePath(); };
+  ctx.beginPath(); ctx.arc(cx,cy,31*s,0,TAU); ctx.fillStyle='#f4ede0'; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx,cy,30*s,0,TAU); ctx.strokeStyle='#1a1815'; ctx.lineWidth=2.2*s; ctx.stroke();
+  poly(ROSE_STAR); ctx.fillStyle='#1a1815'; ctx.fill();
+  ctx.fillStyle='#a0832f'; ROSE_GOLD.forEach(g=>{ poly(g); ctx.fill(); });
+  poly(ROSE_NORTH); ctx.fillStyle='#8b2e2e'; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx,cy,3.4*s,0,TAU); ctx.fillStyle='#a0832f'; ctx.fill();
+  ctx.lineWidth=Math.max(1,1*s); ctx.strokeStyle='#1a1815'; ctx.stroke();
+}
+
+// ────── Typo canvas : ajustement, ellipse, interlettrage manuel ──────
+// (ctx.letterSpacing n'est pas supporté partout → on dessine caractère par caractère.)
+function fitFont(ctx, text, maxW, mk, size, min){
+  let s = size;
+  while(s > min){ ctx.font = mk(s); if(ctx.measureText(text).width <= maxW) return s; s -= Math.max(1, Math.round(s*0.05)); }
+  ctx.font = mk(min); return min;
+}
+function ellipsize(ctx, t, maxW){
+  if(!t) return '';
+  if(ctx.measureText(t).width <= maxW) return t;
+  let s = t;
+  while(s.length > 1 && ctx.measureText(s+'…').width > maxW) s = s.slice(0,-1);
+  return s+'…';
+}
+function spacedWidth(ctx, t, sp){ let w=0; for(const ch of t) w += ctx.measureText(ch).width + sp; return Math.max(0, w-sp); }
+function drawSpaced(ctx, t, x, y, sp, align){
+  let cx = align==='right' ? x - spacedWidth(ctx,t,sp) : align==='center' ? x - spacedWidth(ctx,t,sp)/2 : x;
+  for(const ch of t){ ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + sp; }
+}
+async function ensurePrintFonts(){
+  if(!document.fonts?.load) return;
+  try{
+    await Promise.all([
+      document.fonts.load('800 80px Fraunces'),
+      document.fonts.load('italic 600 80px Fraunces'),
+      document.fonts.load('600 80px "Geist Mono"'),
+      document.fonts.ready
+    ]);
+  }catch(_){}
+}
+
+// ────── Le cadre ──────
+// Marges = 5 % de la largeur de la photo (haut/gauche/droite), cartouche = 19 % en bas.
+// Tout est proportionnel à la photo : le tirage reste net quelle que soit sa définition.
+async function buildPrintCanvas(sub, team){
+  const g = STATE.game;
+  await ensurePrintFonts();
+  const img = await loadPrintImage(sub.photoUrl);
+  let PW = img.naturalWidth || img.width, PH = img.naturalHeight || img.height;
+  if(!PW || !PH) throw new Error('image vide');
+  const k = Math.min(1, PRINT_MAX/Math.max(PW,PH));
+  PW = Math.round(PW*k); PH = Math.round(PH*k);
+
+  const pad  = Math.round(PW*0.05);
+  const foot = Math.round(PW*0.21);
+  const W = PW + pad*2, H = PH + pad + foot;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+
+  // Fond parchemin + légère vignette (même esprit que l'appli)
+  ctx.fillStyle = '#f4ede0'; ctx.fillRect(0,0,W,H);
+  const vg = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.28, W/2,H/2,Math.max(W,H)*0.78);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(110,85,45,0.13)');
+  ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
+
+  // Photo + filet d'encadrement collé à ses bords
+  ctx.drawImage(img, pad, pad, PW, PH);
+  URL.revokeObjectURL(img.src);
+  const lwP = Math.max(2, PW*0.004);
+  ctx.strokeStyle = '#1a1815'; ctx.lineWidth = lwP;
+  ctx.strokeRect(pad - lwP/2, pad - lwP/2, PW + lwP, PH + lwP);
+
+  // Double filet extérieur + losanges d'angle
+  const i1 = pad*0.34, lw1 = Math.max(2, PW*0.0035);
+  ctx.lineWidth = lw1; ctx.strokeStyle = '#1a1815';
+  ctx.strokeRect(i1, i1, W-i1*2, H-i1*2);
+  const i2 = pad*0.55, lw2 = Math.max(1, PW*0.0015);
+  ctx.lineWidth = lw2; ctx.strokeStyle = '#a0832f';
+  ctx.strokeRect(i2, i2, W-i2*2, H-i2*2);
+  const dR = Math.max(3, PW*0.008);
+  ctx.fillStyle = '#a0832f';
+  [[i1,i1],[W-i1,i1],[i1,H-i1],[W-i1,H-i1]].forEach(([x,y])=>{
+    ctx.save(); ctx.translate(x,y); ctx.rotate(Math.PI/4); ctx.fillRect(-dR/2,-dR/2,dR,dR); ctx.restore();
+  });
+
+  // ── Cartouche ──
+  const y0 = pad + PH;
+  const R  = foot*0.30;
+  const cx = pad + R + PW*0.005, cy = y0 + foot*0.46;
+  drawRose(ctx, cx, cy, R);
+
+  const textX = cx + R + PW*0.028;
+  const rightX = W - pad;
+  ctx.textBaseline = 'alphabetic';
+
+  // Bloc droit : la signature « EXPÉDITION » + code de la chasse
+  let rightW = 0;
+  const brandSize = foot*0.135, brandSp = brandSize*0.18;
+  ctx.font = `600 ${brandSize}px "Geist Mono", monospace`;
+  rightW = spacedWidth(ctx, 'EXPÉDITION', brandSp);
+  const roomForBrand = (rightX - textX) * 0.42 > rightW;
+  if(roomForBrand){
+    ctx.fillStyle = '#a0832f';
+    drawSpaced(ctx, 'EXPÉDITION', rightX, cy + foot*0.02, brandSp, 'right');
+    const codeSize = foot*0.115;
+    ctx.font = `500 ${codeSize}px "Geist Mono", monospace`;
+    ctx.fillStyle = '#6e6552';
+    drawSpaced(ctx, `CHASSE ${g.code}`, rightX, cy + foot*0.24, codeSize*0.12, 'right');
+  }
+  const leftMax = (roomForBrand ? rightX - rightW - PW*0.045 : rightX) - textX;
+
+  // Ligne 1 : l'équipe
+  const mkTeam = s => `800 ${s}px Fraunces, Georgia, serif`;
+  const tSize = fitFont(ctx, team?.name || '', leftMax, mkTeam, foot*0.30, foot*0.15);
+  ctx.font = mkTeam(tSize); ctx.fillStyle = '#1a1815'; ctx.textAlign = 'left';
+  ctx.fillText(ellipsize(ctx, team?.name || 'Équipe', leftMax), textX, cy - foot*0.05);
+
+  // Ligne 2 : la chasse (+ lieu)
+  const sub2 = g.name + (g.location ? ' · ' + g.location : '');
+  const mkHunt = s => `italic 600 ${s}px Fraunces, Georgia, serif`;
+  const hSize = fitFont(ctx, sub2, leftMax, mkHunt, foot*0.165, foot*0.10);
+  ctx.font = mkHunt(hSize); ctx.fillStyle = '#4a4438';
+  ctx.fillText(ellipsize(ctx, sub2, leftMax), textX, cy + foot*0.155);
+
+  // Ligne 3 : la date
+  const dSize = foot*0.125;
+  ctx.font = `500 ${dSize}px "Geist Mono", monospace`;
+  ctx.fillStyle = '#6e6552';
+  drawSpaced(ctx, printDateStr(g).toUpperCase(), textX, cy + foot*0.32, dSize*0.10, 'left');
+
+  return cv;
+}
+function canvasToBlob(cv){
+  return new Promise((res,rej)=>{
+    if(cv.toBlob) cv.toBlob(b=> b?res(b):rej(new Error('encodage impossible')), 'image/jpeg', PRINT_Q);
+    else { try{ res(dataUrlToBlob(cv.toDataURL('image/jpeg', PRINT_Q))); }catch(e){ rej(e); } }
+  });
+}
+function dataUrlToBlob(u){
+  const [h,b] = u.split(','); const bin = atob(b); const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type:(h.match(/:(.*?);/)||[,'image/jpeg'])[1] });
+}
+function saveBlob(blob, filename){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 30_000);
+}
+function printFileName(team){
+  return `Expedition_${safeFile(STATE.game.code)}_${safeFile(team?.name||'equipe')}.jpg`;
+}
+
+// ────── Aperçu plein écran ──────
+async function openPrintPreview(teamId){
+  const g = STATE.game; if(!g) return;
+  const team = g.teams.find(t=>t.id===teamId); const sub = teamPrintSub(team);
+  if(!sub){ toast('Aucune photo choisie','error'); return; }
+  $('#modal .modal-inner').innerHTML = '<div class="print-wait">Composition du tirage…</div>';
+  $('#modal').classList.add('open');
+  try{
+    const cv = await buildPrintCanvas(sub, team);
+    const url = cv.toDataURL('image/jpeg', PRINT_Q);
+    $('#modal .modal-inner').innerHTML = `
+      <img src="${url}" alt="Tirage ${escapeHtml(team.name)}">
+      <div class="print-actions"><button class="btn gold sm" onclick="downloadPrint('${teamId}')">⬇ Télécharger ce tirage</button></div>`;
+  }catch(e){
+    $('#modal .modal-inner').innerHTML = `<div class="print-wait">Tirage impossible : ${escapeHtml(e.message)}</div>`;
+    reportError(e, 'tirage');
+  }
+}
+async function downloadPrint(teamId){
+  const g = STATE.game; if(!g) return;
+  const team = g.teams.find(t=>t.id===teamId); const sub = teamPrintSub(team);
+  if(!sub){ toast('Aucune photo choisie','error'); return; }
+  toast('Composition du tirage…','',1500);
+  try{
+    const cv = await buildPrintCanvas(sub, team);
+    saveBlob(await canvasToBlob(cv), printFileName(team));
+    toast('Tirage téléchargé','success');
+  }catch(e){ toast('Tirage impossible : '+e.message,'error',5000); reportError(e,'tirage'); }
+}
+
+// ────── Sélecteur de photo (équipe : grille dans l'écran ; admin : modal) ──────
+function renderPrintGrid(teamId, currentId, handler){
+  const subs = STATE.submissions.filter(s=>s.teamId===teamId && s.photoUrl);
+  if(!subs.length) return '<div class="empty" style="padding:18px;font-size:14px">Aucune photo envoyée.</div>';
+  return `<div class="print-grid">${subs.map(s=>{
+    const clue = STATE.game.clues.find(c=>c.id===s.clueId);
+    return `<button type="button" class="p-item${currentId===s.id?' sel':''}" onclick="${handler}('${s.id}')" title="${escapeHtml(clue?.title||'')}">
+      <img src="${s.photoDataUrl}" alt="${escapeHtml(clue?.title||'photo')}" loading="lazy">
+    </button>`;
+  }).join('')}</div>`;
+}
+function openPrintPicker(teamId){
+  const g = STATE.game; const t = g?.teams.find(x=>x.id===teamId); if(!t) return;
+  STATE.printPickTeam = teamId;
+  $('#modal .modal-inner').innerHTML = `
+    <div class="print-pick">
+      <h3>Photo à imprimer — ${escapeHtml(t.name)}</h3>
+      <p>Choix de secours : à n'utiliser que si l'équipe n'a rien choisi.</p>
+      ${renderPrintGrid(teamId, t.printSubId, 'pickPrintForTeam')}
+    </div>`;
+  $('#modal').classList.add('open');
+}
+async function pickPrintForTeam(subId){
+  const teamId = STATE.printPickTeam; if(!teamId) return;
+  closeModal();
+  await setTeamPrintChoice(teamId, subId);
+}
+
+// ────── Écran équipe : la carte de choix ──────
+function renderTeamPrintCard(){
+  const t = myTeam(); if(!t) return '';
+  const mine = STATE.submissions.filter(s=>s.teamId===t.id && s.photoUrl);
+  if(!mine.length) return '';
+  const chosen = t.printSubId && mine.some(s=>s.id===t.printSubId) ? t.printSubId : null;
+  return `
+    <div class="card" style="margin-top:20px;border-color:var(--gold-dark)">
+      <h3 style="margin-bottom:6px">🖨 Votre photo souvenir</h3>
+      <p class="help-text" style="margin:0 0 12px">Choisissez la photo que vous voulez emporter : le maître du jeu l'imprimera encadrée aux couleurs d'Expédition.</p>
+      ${renderPrintGrid(t.id, chosen, 'choosePrintPhoto')}
+      ${chosen ? `
+        <p class="mono" style="font-size:11px;color:var(--forest);margin:12px 0 8px">✓ Choix enregistré — le maître du jeu le voit de son côté.</p>
+        <button class="btn ghost sm" onclick="openPrintPreview('${t.id}')" style="width:100%">👁 Voir le tirage encadré</button>`
+      : `<p class="mono" style="font-size:11px;color:var(--oxblood);margin:12px 0 0">Aucune photo choisie pour l'instant.</p>`}
+    </div>`;
+}
+
+// ────── Écran maître du jeu : récupération des choix ──────
+function renderAdminPrintCard(){
+  const g = STATE.game;
+  const rows = g.teams.map(t=>({ t, sub: teamPrintSub(t) }));
+  const done = rows.filter(r=>r.sub).length;
+  return `
+    <div class="card" style="margin-top:16px;border-color:var(--gold-dark)">
+      <h3 style="margin-bottom:6px">🖨 Tirages photo — ${done}/${g.teams.length} équipe${g.teams.length>1?'s':''}</h3>
+      <p class="help-text" style="margin:0 0 12px">Chaque équipe choisit sa photo souvenir depuis son écran de fin. Le tirage est généré avec la rose des vents, le nom de la chasse, celui de l'équipe et la date.</p>
+      ${g.teams.length===0 ? '<div class="empty" style="padding:18px;font-size:14px">Aucune équipe</div>' : g.teams.map(t=>{
+        const sub = teamPrintSub(t);
+        const nm = (t.name||'').replace(/'/g,'’');
+        return `<div class="print-row">
+          ${sub ? `<img class="thumb" src="${sub.photoDataUrl}" alt="">` : '<div class="thumb empty-thumb">—</div>'}
+          <div class="nm"><b>${escapeHtml(t.name)}</b><span>${sub ? 'photo choisie' : 'en attente du choix'}</span></div>
+          ${sub ? `<button class="btn sm ghost" onclick="openPrintPreview('${t.id}')" title="Aperçu">👁</button>
+                   <button class="btn sm" onclick="downloadPrint('${t.id}')" title="Télécharger">⬇</button>`
+                : `<button class="btn sm ghost" onclick="openPrintPicker('${t.id}')">Choisir</button>`}
+        </div>`;
+      }).join('')}
+      <button id="print-zip-btn" class="btn gold" onclick="downloadAllPrints()" style="width:100%;margin-top:14px"${done?'':' disabled'}>⬇ Télécharger les ${done||''} tirage${done>1?'s':''} (ZIP)</button>
+    </div>`;
+}
+
+// Génération séquentielle (le rendu canvas est gourmand) + ZIP sans compression :
+// des JPEG déjà compressés ne gagnent rien à être dégonflés une seconde fois.
+async function downloadAllPrints(){
+  const g = STATE.game; if(!g) return;
+  if(typeof JSZip === 'undefined'){ toast('JSZip non chargé (réseau ?)','error',4500); return; }
+  const rows = g.teams.map(t=>({ t, sub: teamPrintSub(t) })).filter(r=>r.sub);
+  if(!rows.length){ toast('Aucune équipe n\'a encore choisi de photo','error',4000); return; }
+  const btn = $('#print-zip-btn'); const label = btn?.textContent;
+  if(btn){ btn.disabled = true; }
+  const zip = new JSZip(); let ok = 0, ko = 0, i = 0;
+  for(const r of rows){
+    i++;
+    if(btn) btn.textContent = `Composition ${i}/${rows.length}…`;
+    try{
+      const cv = await buildPrintCanvas(r.sub, r.t);
+      zip.file(`${String(i).padStart(2,'0')}_${safeFile(r.t.name)}.jpg`, await canvasToBlob(cv));
+      ok++;
+    }catch(e){ ko++; console.warn('Tirage', r.t.name, e); }
+  }
+  if(!ok){
+    if(btn){ btn.disabled = false; btn.textContent = label; }
+    toast('Aucun tirage généré (photos inaccessibles ?)','error',5000); return;
+  }
+  if(btn) btn.textContent = 'Compression…';
+  const blob = await zip.generateAsync({ type:'blob', compression:'STORE' });
+  saveBlob(blob, `${g.code}_tirages.zip`);
+  if(btn){ btn.disabled = false; btn.textContent = label; }
+  toast(`${ok} tirage(s) prêt(s)${ko?` · ${ko} échec(s)`:''}`, ko?'error':'success', 4000);
 }
 
 // ---------- UTIL ----------

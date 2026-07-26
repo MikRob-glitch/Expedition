@@ -35,6 +35,7 @@ icons/                     ← icon-192/512, icon-maskable-512, favicon.svg/-16/
 supabase-setup.sql         ← schéma + RLS scopées + bucket + auth + RGPD (à exécuter 1×)
 migration-lot1-rls.sql     ← Lot 1 sécurité : auth admin + RLS scopées
 migration-lot2-storage.sql ← Lot 2 sécurité : verrou du bucket photos
+migration-print-choice.sql ← teams.print_submission_id (tirage souvenir)
 .github/workflows/keepalive.yml ← ping Supabase (anti-pause tier gratuit)
 .nojekyll                  ← désactive Jekyll sur GitHub Pages
 README.md                  ← présentation + démarrage rapide
@@ -61,7 +62,8 @@ CLAUDE.md                  ← guide de travail + journal des correctifs
 games        (code PK, name, status, duration_minutes, per_clue_minutes,
               clues JSONB, admin_id, created_at, started_at, ended_at)
 
-teams        (id PK, game_code FK, name, start_clue_id, photo_url, joined_at)
+teams        (id PK, game_code FK, name, start_clue_id, photo_url,
+              print_submission_id, joined_at)
 
 submissions  (id PK, game_code FK, team_id FK, clue_id, photo_url,
               status, points, bonus_points, submitted_at, judged_at,
@@ -72,6 +74,7 @@ submissions  (id PK, game_code FK, team_id FK, clue_id, photo_url,
 - `games.admin_id` : reçoit `auth.uid()` (Supabase Auth) — l'admin propriétaire, vérifié par les RLS.
 - `teams.start_clue_id` : indice de départ imposé (dispersion). `null` = pas de verrou.
 - `teams.photo_url` : photo d'équipe optionnelle (selfie à l'inscription).
+- `teams.print_submission_id` : photo choisie par l'équipe pour le tirage souvenir (`null` = pas de choix). Pas de FK : valeur pendante ignorée côté client.
 - `submissions.bonus_points` : points de **vote du jury** (50/30/10).
 - `submissions.id` = **nom du fichier** dans le Storage (`{game_code}/{id}.jpg`) — ne jamais dissocier.
 - `submissions.lat/lng` : colonnes héritées du prototype GPS, plus renseignées.
@@ -137,6 +140,12 @@ Selfie **optionnel** à l'inscription (`capture="user"`), uploadé dans `{game_c
 
 ### PWA offline (service worker + outbox)
 `sw.js` : navigation HTML **network-first** (hotfix en ligne toujours servi ; hors-ligne → dernière version cachée), CDN/Leaflet + polices **cache-first**, tuiles OSM en cache runtime, **appels Supabase toujours réseau**. Une photo prise hors-ligne est mise en **file IndexedDB** (`enqueueSubmission`), survit rechargement/fermeture, et est **ré-émise automatiquement** au retour du réseau (`flushOutbox`, insert idempotent). ⚠️ Limite iOS : pas de Background Sync → flush appli ouverte/réouverte. ⚠️ Bumper `CACHE` de `sw.js` à chaque changement d'app-shell.
+
+### Compression des photos
+`compressImage(file, {max, q})` — plus grand côté ramené à **1600 px**, JPEG **0,82**, rééchantillonnage `high`, jamais d'agrandissement ; si la dataURL dépasse ~3 Mo, la **qualité** baisse par paliers (plancher 0,45) et non la définition. Photo d'équipe : `{max:800, q:0.8}` (simple pastille). Compromis : ~350–450 Ko par preuve (≈2× l'ancien plafond de 1000 px) contre un tirage net en 10×15 cm (~300 dpi) et 13×18 (~225 dpi).
+
+### Tirage souvenir encadré
+Écran de fin **équipe** : l'équipe choisit **une** photo parmi les siennes (`teams.print_submission_id`). Écran de fin **admin** : liste des choix, choix de secours pour une équipe absente, aperçu, téléchargement à l'unité ou en ZIP `{CODE}_tirages.zip`. Le cadre (parchemin, double filet, rose des vents, nom d'équipe, nom de la chasse + lieu, date) est composé **en canvas** (`buildPrintCanvas`) — la photo passe par `fetch → blob → objectURL` pour ne pas souiller le canvas. Migration : `migration-print-choice.sql`.
 
 ### Export ZIP des photos
 Écrans **Jury** et **Fin** : télécharge **toutes les photos** d'une partie (filtrable par statut) en `{CODE}_photos.zip`, organisé `Équipe/HHhMM_statut_indice_id.jpg` (JSZip, pool de 8 requêtes).
