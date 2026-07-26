@@ -3,7 +3,7 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-03, commit `2c20328`). Les écarts connus
+> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `5017856`). Les écarts connus
 > (travail local non poussé) sont signalés ⚠️. À ce jour, aucun écart : local et distant alignés.
 
 ## Vue d'ensemble
@@ -371,6 +371,19 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     `CLAUDE.md` (jetons de template email Supabase — `.Token` = variable Liquid invalide, non
     protégée par les backticks car Liquid lit le markdown brut). `.nojekyll` désactive Jekyll →
     Pages sert les fichiers statiques tels quels. Aucun changement applicatif.
+
+### Poussés sur GitHub (2026-07-26, commit `5017856`) — Correctif : classement final non affiché côté équipe
+
+30. **Re-render realtime de `screenTeamWaiting`**. Symptôme : après la fin d'une chasse, l'équipe
+    restait bloquée sur l'écran d'attente (« Les résultats arrivent… ») et ne voyait jamais le
+    classement final. Cause : `refreshState` ne déclenche `render()` sur changement d'état que si
+    l'écran courant figure dans une **liste blanche** ; celle-ci omettait `team-waiting`. Quand
+    l'admin terminait la chasse (`status` → `ended`), l'update realtime parvenait bien à
+    l'appareil joueur, mais `render()` n'était pas appelé → pas de bascule vers `screenTeamEnd`.
+    Correctif : ajout de `team-waiting` à la liste blanche (+ `admin-validation` et `admin-judging`
+    qui souffraient du même défaut de rafraîchissement de leurs écrans côté maître du jeu). Aucun
+    changement d'app-shell → `CACHE` `sw.js` **non bumpé** (navigation network-first sert le hotfix
+    en ligne).
 
 ## Dette technique / points de vigilance connus
 
