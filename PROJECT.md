@@ -11,7 +11,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 
 | Couche | Choix | Pourquoi |
 |---|---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique (~2770 lignes) | Zéro build, démarrage instantané, debug trivial |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~3360 lignes) | Zéro build, démarrage instantané, debug trivial |
 | Backend | Supabase (Postgres + Realtime + Storage + Auth) | Synchro websockets, photos hébergées, auth OTP, tier gratuit |
 | Caméra | `<input type="file" capture>` | Caméra native iOS/Android sans permission custom |
 | Carte | Leaflet 1.9.4 + tuiles OpenStreetMap | Carte d'orientation des indices (géoloc optionnelle) |
@@ -27,7 +27,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 ## Fichiers du projet
 
 ```
-expedition.html            ← app complète, single-file SPA (~2770 lignes)
+expedition.html            ← app complète, single-file SPA (~3360 lignes)
 sw.js                      ← service worker (app-shell offline, cache, tuiles OSM)
 confidentialite.html       ← politique de confidentialité RGPD (servie par Pages)
 manifest.json              ← manifeste PWA (icônes any + maskable)
@@ -35,6 +35,8 @@ icons/                     ← icon-192/512, icon-maskable-512, favicon.svg/-16/
 supabase-setup.sql         ← schéma + RLS scopées + bucket + auth + RGPD (à exécuter 1×)
 migration-lot1-rls.sql     ← Lot 1 sécurité : auth admin + RLS scopées
 migration-lot2-storage.sql ← Lot 2 sécurité : verrou du bucket photos
+migration-legacy-admin.sql ← réattribution des admin_id d'avant l'auth (à jouer 1×)
+migration-storage-purge.sql ← purge sans DELETE sur storage.objects (obligatoire)
 migration-print-choice.sql ← teams.print_submission_id (tirage souvenir)
 .github/workflows/keepalive.yml ← ping Supabase (anti-pause tier gratuit)
 .nojekyll                  ← désactive Jekyll sur GitHub Pages
@@ -59,8 +61,9 @@ CLAUDE.md                  ← guide de travail + journal des correctifs
 ### Modèle de données
 
 ```sql
-games        (code PK, name, status, duration_minutes, per_clue_minutes,
-              clues JSONB, admin_id, created_at, started_at, ended_at)
+games        (code PK, name, hunt_date, location, status, duration_minutes,
+              per_clue_minutes, clues JSONB, admin_id,
+              created_at, started_at, ended_at)
 
 teams        (id PK, game_code FK, name, start_clue_id, photo_url,
               print_submission_id, joined_at)
@@ -71,7 +74,8 @@ submissions  (id PK, game_code FK, team_id FK, clue_id, photo_url,
 ```
 
 - `games.clues` (JSONB) : `[{id, title, text, points, lat, lng}, ...]` — `lat`/`lng` **optionnels** (géoloc d'indice, `null` si non localisé). **Aucune migration** : les coords vivent dans le jsonb.
-- `games.admin_id` : reçoit `auth.uid()` (Supabase Auth) — l'admin propriétaire, vérifié par les RLS.
+- `games.hunt_date` / `games.location` : date et lieu de l'activité (optionnels) — repris sur le cadre du tirage souvenir et dans les listes de chasses.
+- `games.admin_id` : reçoit `auth.uid()` (Supabase Auth) — l'admin propriétaire, vérifié par les RLS. ⚠️ Les chasses d'avant juin 2026 portent un identifiant client non-UUID (voir `migration-legacy-admin.sql`).
 - `teams.start_clue_id` : indice de départ imposé (dispersion). `null` = pas de verrou.
 - `teams.photo_url` : photo d'équipe optionnelle (selfie à l'inscription).
 - `teams.print_submission_id` : photo choisie par l'équipe pour le tirage souvenir (`null` = pas de choix). Pas de FK : valeur pendante ignorée côté client.
@@ -93,7 +97,7 @@ setup → active → validation → judging → ended
 | `active` | Les équipes capturent et envoient leurs preuves photo | Équipes |
 | `validation` | Marquer chaque photo **conforme / refusée** (→ points d'indice) | Admin |
 | `judging` | **Vote du jury** : 50/30/10 par indice (toutes photos) | Jury/Admin |
-| `ended` | Classement final + galerie | — |
+| `ended` | Classement final + galerie + **choix du tirage souvenir** | Équipes (choix) / Admin (récupération) |
 
 > `active → validation` est calculé à la fin du temps imparti, mais **persisté uniquement par l'admin** (les équipes le calculent en local).
 
@@ -151,7 +155,10 @@ Selfie **optionnel** à l'inscription (`capture="user"`), uploadé dans `{game_c
 Écrans **Jury** et **Fin** : télécharge **toutes les photos** d'une partie (filtrable par statut) en `{CODE}_photos.zip`, organisé `Équipe/HHhMM_statut_indice_id.jpg` (JSZip, pool de 8 requêtes).
 
 ### Dupliquer une chasse passée
-Champ « Dupliquer par code » : charge une chasse existante (tout statut) et copie ses indices (nouveaux `id`) + réglages dans le formulaire → **nouvelle session vierge**. La source n'est jamais modifiée.
+Voie principale : **liste de toutes mes chasses** (`loadGamesForDuplicate`, tout statut, tri par date) → sélection → « Dupliquer cette chasse ». Repli replié : **par code** (`duplicateByCode`), seul moyen de dupliquer la chasse d'un autre compte. Les deux passent par `duplicateFromCode` : indices (nouveaux `id`) + réglages (dont `location`) copiés dans le formulaire → **nouvelle session vierge**. La source n'est jamais modifiée.
+
+### Supprimer une chasse
+Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Double confirmation, puis **deux étapes dans cet ordre** : (1) `purgeGamePhotos` retire les fichiers par l'**API Storage** — Supabase interdit tout `DELETE` SQL sur `storage.objects` ; (2) RPC `admin_purge_game` supprime les lignes (cascade). ⚠️ Jamais l'inverse : le bucket n'étant pas listable, les chemins ne se reconstruisent que depuis `submissions.id` / `teams.id`.
 
 ---
 
@@ -174,7 +181,11 @@ Champ « Dupliquer par code » : charge une chasse existante (tout statut) et co
 | `showQR` / `closeQR` | QR d'accès joueurs (deep-link `?join=CODE`) |
 | `openPhoto` / `initPhotoZoom` | Modal photo + zoom/pan |
 | `openExportZip` / `runExportZip` | Export ZIP des photos |
-| `purgeCurrentGame` / `admin_purge_game` | Effacement RGPD in-app (RPC SECURITY DEFINER) |
+| `compressImage` | Redimension + JPEG avant envoi (`{max, q}`) |
+| `setTeamPrintChoice` / `choosePrintPhoto` | Choix de la photo souvenir (équipe) |
+| `buildPrintCanvas` / `downloadPrint` / `downloadAllPrints` | Composition du cadre et récupération des tirages |
+| `loadGamesForDuplicate` / `duplicateFromCode` | Liste de mes chasses + duplication |
+| `purgeGamePhotos` + `purgeCurrentGame` / `admin_purge_game` | Effacement RGPD in-app : fichiers par l'API Storage **puis** lignes (RPC SECURITY DEFINER) |
 | `renderLeaderboard` | Classement (points d'indice + vote) |
 
 ---
@@ -199,7 +210,8 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 
 - **Consentement obligatoire** à l'inscription (case à cocher bloquante + lien vers `confidentialite.html`).
 - **Politique de confidentialité** (`confidentialite.html`) : modèle FR complet. ⚠️ Champs « À COMPLÉTER » (identité + email de l'organisateur) avant usage commercial.
-- **Conservation + effacement** : fonctions `purge_expired_games` / `purge_game` (SECURITY DEFINER) + job **pg_cron** quotidien → suppression auto **90 j** après création. Effacement in-app par l'admin via RPC `admin_purge_game(code)` (bouton sur l'écran Fin).
+- **Conservation + effacement** : fonctions `purge_expired_games` / `purge_game` (SECURITY DEFINER) + job **pg_cron** quotidien → suppression auto **90 j** après création. Effacement in-app par l'admin via RPC `admin_purge_game(code)` (bouton sur l'écran Fin) **précédé** de `purgeGamePhotos` côté client.
+- ⚠️ **Ouvert** : depuis la restriction Supabase sur `storage.objects`, le cron **n'efface plus les fichiers**, seulement les lignes. Les photos restent dans le bucket. Correctif prévu : Edge Function `service_role`. En attendant, purger les vieilles chasses **depuis l'app** avant l'échéance des 90 jours.
 
 ---
 
@@ -217,13 +229,15 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 2. **Secret des indices côté client seulement** (payload `clues` public).
 3. **Plus de GPS sur les preuves** : la preuve est la photo seule.
 4. **iOS** : pas de Background Sync → flush outbox appli ouverte/réouverte uniquement.
-5. **Pas de tests automatisés** ; compression photo destructive (cible < 1,4 Mo).
+5. **Pas de tests automatisés** ; compression photo destructive (1600 px, JPEG 0,82, plafond ~3 Mo de dataURL).
+6. **Stockage** : ~350–450 Ko par preuve depuis le passage à 1600 px, tier gratuit plafonné à **1 Go**, et la purge automatique n'efface plus les fichiers → vider les vieilles chasses après chaque événement.
+7. **Tirage souvenir** : composé côté client (canvas) — la qualité plafonne à ce que vaut la photo envoyée (net en 10×15, correct en 13×18).
 
 ---
 
 ## Roadmap
 
-- **Lot Edge Functions** (`service_role`) : verrouiller les écritures `teams`/`submissions` + servir à chaque équipe seulement ses indices autorisés (ferme la fuite des textes/GPS d'indices).
+- **Lot Edge Functions** (`service_role`) : verrouiller les écritures `teams`/`submissions`, servir à chaque équipe seulement ses indices autorisés (ferme la fuite des textes/GPS d'indices), et **purger les fichiers du Storage** à l'échéance des 90 j (le cron ne sait plus le faire).
 - **Supabase Pro** : plus de pause, backups quotidiens (remplace le keep-alive).
 - **App native** (Expo/React Native) : le schéma et la logique ne changent pas.
 - Notifications push quand le jury vote ; replay animé ; etc.
@@ -239,7 +253,9 @@ python3 -m http.server 8000
 ```
 
 ```sql
--- Effacer une chasse (cascade → teams + submissions + storage)
+-- Effacer les LIGNES d'une chasse (cascade → teams + submissions)
+-- ⚠️ Les fichiers du bucket ne sont PAS supprimés (restriction storage.objects) :
+--    préférer la corbeille de l'app, qui purge d'abord les photos par l'API Storage.
 select public.purge_game('XXXX');
 ```
 
@@ -247,4 +263,4 @@ select public.purge_game('XXXX');
 
 ## Historique des évolutions
 
-Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
+Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** et **photos 1600 px**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
