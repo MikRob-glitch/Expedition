@@ -1345,27 +1345,42 @@ async function duplicateByCode(){
 // ────── Picker « dupliquer une chasse » : toutes MES chasses, tout statut ──────
 const DUP_STATUS_LABEL = { setup:'en préparation', active:'en cours', validation:'validation', judging:'jugement', ended:'terminée' };
 
+// Un admin_id « legacy » = id client de 7 caractères d'avant l'auth (juin 2026), pas un UUID.
+// Ces chasses n'ont pas de propriétaire authentifié : elles précèdent le compte, donc elles
+// sont forcément à nous. On les propose à la duplication (lecture seule sur la source ; la
+// copie créée appartiendra bien à auth.uid()). Les chasses d'un AUTRE compte authentifié
+// (UUID différent du nôtre) restent exclues.
+const isAuthUid = (v)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v||'');
+
 async function loadGamesForDuplicate(){
   const picker = $('#dup-picker'); if(!picker) return;
-  if(!sb){ picker.innerHTML='<div class="empty" style="padding:20px;font-size:14px">Supabase non connecté</div>'; return; }
+  const msg = (t)=>{ picker.innerHTML='<div class="empty" style="padding:24px 16px;font-size:14px">'+t+'</div>'; };
+  if(!sb){ msg('Supabase non connecté'); return; }
   const u = await currentUser();
-  if(!u){ picker.innerHTML='<div class="empty" style="padding:20px;font-size:14px">Connectez-vous pour voir vos chasses</div>'; return; }
+  if(!u){ msg('Connectez-vous pour voir vos chasses'); return; }
   const { data, error } = await sb.from('games')
-    .select('code,name,hunt_date,location,status,created_at')
-    .eq('admin_id', u.id)
+    .select('code,name,hunt_date,location,status,created_at,admin_id')
     .order('created_at', { ascending:false })
-    .limit(60);
-  if(error){ picker.innerHTML='<div class="empty" style="padding:20px;font-size:14px">Erreur chargement</div>'; return; }
-  if(!data || data.length===0){
-    picker.innerHTML='<div class="empty" style="padding:24px 16px;font-size:14px">Aucune chasse à dupliquer</div>';
+    .limit(200);
+  if(error){ msg('Erreur chargement : '+escapeHtml(error.message)); return; }
+  if(!data || data.length===0){ msg('Aucune chasse en base'); return; }
+
+  const mine   = data.filter(g=> g.admin_id === u.id);
+  const legacy = data.filter(g=> g.admin_id !== u.id && !isAuthUid(g.admin_id));
+  const rows   = mine.concat(legacy).slice(0,60);
+  if(rows.length===0){
+    msg('Aucune chasse à vous ('+data.length+' chasse(s) en base appartiennent à un autre compte)');
     return;
   }
-  picker.innerHTML = data.map(g=>{
+
+  picker.innerHTML = rows.map(g=>{
     const d = g.hunt_date ? new Date(g.hunt_date+'T12:00:00') : (g.created_at ? new Date(g.created_at) : null);
     const day   = d ? d.getDate() : '—';
     const month = d ? d.toLocaleDateString('fr-FR',{month:'short'}).replace('.','') : '?';
     const dateStr = d ? d.toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'}) : 'Date non définie';
-    const meta = [dateStr, g.location || null, DUP_STATUS_LABEL[g.status] || g.status].filter(Boolean).map(escapeHtml).join(' · ');
+    const parts = [dateStr, g.location || null, DUP_STATUS_LABEL[g.status] || g.status];
+    if(g.admin_id !== u.id) parts.push('ancienne');
+    const meta = parts.filter(Boolean).map(escapeHtml).join(' · ');
     return `<button class="session-picker-item" data-code="${escapeHtml(g.code)}" onclick="selectDupSession('${escapeHtml(g.code)}')">
       <div class="sp-date-col"><div class="sp-day">${day}</div><div class="sp-month">${month}</div></div>
       <div style="flex:1;min-width:0">

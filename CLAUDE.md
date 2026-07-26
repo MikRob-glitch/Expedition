@@ -406,7 +406,15 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     lieu, statut et code. Sélection via `selectDupSession` puis « Dupliquer cette chasse »
     (`duplicateSelected`). L'ancienne saisie par code (`duplicateByCode`) est conservée mais
     repliée dans un `<details>` — seul moyen de dupliquer la chasse d'un **autre** compte, que la
-    liste (filtrée `admin_id`) ne peut pas montrer. Les deux voies partagent `duplicateFromCode`.
+    liste ne peut pas montrer. Les deux voies partagent `duplicateFromCode`.
+    ⚠️ **Le picker ne filtre pas sur `admin_id = auth.uid()` seul** : les chasses d'avant le Lot 1
+    (juin 2026) portent un `admin_id` client de 7 caractères (`arvbeed`…), jamais un UUID — un
+    filtre strict renvoyait donc une liste **vide** alors que 24 chasses existaient. Règle
+    retenue (`isAuthUid`) : on garde les chasses dont `admin_id === auth.uid()` **et** celles dont
+    l'`admin_id` n'est pas un UUID (= antérieures au compte, donc à nous), et on exclut celles
+    d'un autre compte authentifié. Les anciennes portent la mention « ancienne ». Sans risque RLS :
+    la duplication ne fait que **lire** la source (SELECT public) et la copie créée appartient à
+    `auth.uid()`.
     ⚠️ `selectSession` scopait son `$$('.session-picker-item')` au document : avec deux pickers sur
     le même écran, sélectionner dans l'un désélectionnait l'autre → les deux sélecteurs sont
     désormais **scopés par id de conteneur**. Aucun changement d'app-shell → `CACHE` `sw.js` non
