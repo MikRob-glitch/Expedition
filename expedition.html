@@ -387,7 +387,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-26.4';
+const BUILD = '2026-07-26.5';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -1416,14 +1416,45 @@ async function loadGamesForDuplicate(){
   }).join('');
 }
 
-// Suppression définitive depuis la liste (RPC `admin_purge_game` : purge storage + lignes,
-// ownership vérifié côté serveur). Comble le trou : le bouton de suppression n'existait que
-// sur l'écran de fin, donc une chasse en `setup` était ineffaçable depuis l'app.
+// Supabase interdit tout DELETE direct sur `storage.objects`, même en SECURITY DEFINER
+// (« Direct deletion from storage tables is not allowed »). Les photos doivent donc partir
+// par l'API Storage, côté client, AVANT la purge des lignes : le bucket n'étant pas listable
+// (Lot 2), seules `submissions.id` et `teams.id` permettent de reconstruire les chemins.
+// Plan de nommage : {code}/{submission_id}.jpg et {code}/team_{team_id}.jpg
+async function purgeGamePhotos(code){
+  if(!sb) return { removed:0, error:null };
+  const [subs, teams] = await Promise.all([
+    sb.from('submissions').select('id').eq('game_code', code),
+    sb.from('teams').select('id').eq('game_code', code)
+  ]);
+  if(subs.error)  return { removed:0, error:subs.error };
+  if(teams.error) return { removed:0, error:teams.error };
+  const paths = [
+    ...(subs.data  || []).map(r=> `${code}/${r.id}.jpg`),
+    ...(teams.data || []).map(r=> `${code}/team_${r.id}.jpg`)
+  ];
+  if(paths.length === 0) return { removed:0, error:null };
+  let removed = 0, firstErr = null;
+  for(let i=0; i<paths.length; i+=100){
+    const { data, error } = await sb.storage.from('photos').remove(paths.slice(i, i+100));
+    if(error){ if(!firstErr) firstErr = error; }
+    else removed += (data || []).length;
+  }
+  return { removed, error:firstErr };
+}
+
+// Suppression définitive depuis la liste : photos via l'API Storage, puis lignes via le RPC
+// `admin_purge_game` (ownership vérifié côté serveur). Comble le trou : le bouton de
+// suppression n'existait que sur l'écran de fin, donc une chasse en `setup` était
+// ineffaçable depuis l'app.
 async function deleteGameFromPicker(code, name, btn){
   if(!sb) return;
   if(!confirm(`Supprimer DÉFINITIVEMENT la chasse « ${name} » (${code}) : équipes, preuves et toutes les photos ?\n\nAction irréversible.`)) return;
   if(!confirm('Dernière confirmation — suppression définitive et immédiate.')) return;
   if(btn){ btn.disabled = true; btn.textContent = '…'; }
+  // Photos d'abord : une fois les lignes supprimées, les chemins sont irrécupérables.
+  const ph = await purgeGamePhotos(code);
+  if(ph.error) console.warn('Photos non supprimées :', ph.error.message);
   const { error } = await sb.rpc('admin_purge_game', { p_code: code });
   if(error){
     if(btn){ btn.disabled = false; btn.innerHTML = '&#128465;'; }
@@ -1438,7 +1469,9 @@ async function deleteGameFromPicker(code, name, btn){
     const b = $('#btn-dup-session');
     if(b){ b.disabled = true; b.style.opacity = '.4'; }
   }
-  toast(`Chasse ${code} et ses photos supprimées`,'success');
+  toast(ph.error
+    ? `Chasse ${code} supprimée — mais ${ph.error.message} (photos possiblement conservées)`
+    : `Chasse ${code} et ses photos supprimées`, ph.error ? 'error' : 'success', ph.error ? 7000 : 3000);
   loadGamesForDuplicate();
   loadSessionsForPicker();
 }
@@ -2000,9 +2033,13 @@ async function purgeCurrentGame(){
   const g = STATE.game; if(!g || !sb) return;
   if(!confirm(`Supprimer DÉFINITIVEMENT la chasse « ${g.name} » (${g.code}) : équipes, preuves et toutes les photos ?\n\nAction irréversible.`)) return;
   if(!confirm('Dernière confirmation — suppression définitive et immédiate.')) return;
+  // Photos d'abord (API Storage) : après la purge des lignes, les chemins sont perdus.
+  const ph = await purgeGamePhotos(g.code);
+  if(ph.error) console.warn('Photos non supprimées :', ph.error.message);
   const { error } = await sb.rpc('admin_purge_game', { p_code: g.code });
   if(error){ toast('Suppression impossible : '+error.message,'error',5000); return; }
-  toast('Chasse et photos supprimées','success');
+  toast(ph.error ? 'Chasse supprimée — photos possiblement conservées' : 'Chasse et photos supprimées',
+        ph.error ? 'error' : 'success', ph.error ? 6000 : 3000);
   STATE.game = null; STATE.submissions = [];
   if(STATE.me){ STATE.me.gameCode = null; await saveMe(); }
   stopRealtime();

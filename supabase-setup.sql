@@ -137,6 +137,11 @@ create policy "photos upload"
   with check (bucket_id = 'photos');
 
 -- ───────── 5. RGPD : rétention + effacement ─────────
+-- ⚠️ OBSOLÈTE depuis 2026-07-26 : Supabase interdit tout DELETE direct sur storage.objects
+-- (« Direct deletion from storage tables is not allowed. Use the Storage API instead »).
+-- Les fonctions ci-dessous sont REMPLACÉES par migration-storage-purge.sql : elles n'y
+-- purgent plus que les lignes, les photos partant par l'API Storage côté client.
+-- Appliquer migration-storage-purge.sql APRÈS ce fichier sur une base neuve.
 -- Suppression automatique des photos + données 90 jours après création d'une chasse,
 -- + fonction d'effacement à la demande. postgres a bypassrls + DELETE sur storage.objects.
 

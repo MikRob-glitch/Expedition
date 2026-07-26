@@ -464,8 +464,37 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     (`visibilitychange`) — sans ça le navigateur peut conserver l'ancien `sw.js` pendant des
     heures. `CACHE` bumpé **v7→v8**.
 
+### Poussés sur GitHub (2026-07-26) — Supabase interdit le DELETE direct sur storage.objects
+
+38. **Purge scindée : lignes en SQL, fichiers via l'API Storage** (`migration-storage-purge.sql`,
+    à exécuter une fois). Symptôme : « Suppression impossible : Direct deletion from storage
+    tables is not allowed. use the Storage API instead » en supprimant une chasse. Supabase
+    refuse désormais tout `delete from storage.objects`, **même en `SECURITY DEFINER`** (sinon le
+    binaire resterait orphelin sur le stockage objet). Les **trois** fonctions du §5 étaient donc
+    cassées — dont `purge_expired_games`, c'est-à-dire le **cron RGPD quotidien, en échec
+    silencieux depuis la restriction**. Nouvelle répartition : les fonctions ne suppriment plus
+    que les lignes (`games` → cascade `teams`/`submissions`) ; les photos sont retirées par le
+    client via `sb.storage.from('photos').remove(paths)` dans `purgeGamePhotos(code)`, appelé
+    **avant** le RPC — après la purge des lignes les chemins sont irrécupérables, le bucket
+    n'étant pas listable (Lot 2). Les chemins sont reconstruits depuis `submissions.id` et
+    `teams.id` (`{code}/{id}.jpg`, `{code}/team_{id}.jpg`), par lots de 100. Nouvelle policy
+    `photos_delete_owner` sur `storage.objects` : DELETE réservé à l'admin authentifié dont
+    `auth.uid()` possède la chasse dont le code est le premier segment du chemin
+    (`storage.foldername(name))[1]`). Branché sur la corbeille du picker **et** sur
+    `purgeCurrentGame` (écran de fin). `BUILD` → `2026-07-26.5`, `CACHE` **v8→v9**.
+    ⚠️ **Reste ouvert** : `purge_expired_games` n'efface plus les fichiers, seulement les lignes.
+    La rétention 90 j laisse donc les photos dans le bucket. Correctif = **Edge Function
+    `service_role`** appelant l'API Storage, planifiée quotidiennement. En attendant, purger les
+    vieilles chasses à la main depuis l'app **avant** que le cron n'en efface les lignes.
+
 ## Dette technique / points de vigilance connus
 
+- **[RGPD — ouvert depuis 2026-07-26] Rétention 90 j : les photos ne sont plus purgées
+  automatiquement.** `purge_expired_games` ne peut plus toucher au Storage (restriction Supabase,
+  voir #38) : le cron efface les lignes, les fichiers restent. Correctif = Edge Function
+  `service_role` appelant l'API Storage, planifiée quotidiennement. Contournement manuel :
+  supprimer les vieilles chasses depuis la corbeille de l'app (qui, elle, purge bien les deux)
+  **avant** l'échéance des 90 jours.
 - **Clé `anon` publique en clair** dans le code. Historiquement « sans auth / RLS permissive »,
   désormais durcie (Lots 1–2 : auth admin + RLS scopées + storage verrouillé). Reste à traiter
   avant usage grand public / commercial : un tiers peut toujours scrapper les codes de chasse et
