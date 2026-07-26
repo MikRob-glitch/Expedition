@@ -1385,7 +1385,7 @@ async function loadGamesForDuplicate(){
     const parts = [dateStr, g.location || null, DUP_STATUS_LABEL[g.status] || g.status];
     if(g.admin_id !== u.id) parts.push('ancienne');
     const meta = parts.filter(Boolean).map(escapeHtml).join(' · ');
-    const nameAttr = escapeHtml((g.name||'').replace(/'/g,"\u2019"));
+    const nameAttr = escapeHtml((g.name||'').replace(/'/g,"’"));
     // Ligne = <div role="button"> et non <button> : un <button> ne peut pas en contenir un autre
     // (HTML invalide, le clic sur la corbeille serait avalé par le parent).
     return `<div class="session-picker-item" role="button" tabindex="0" data-code="${escapeHtml(g.code)}"
