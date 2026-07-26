@@ -3,8 +3,12 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `d9cf78e`). Les écarts connus
-> (travail local non poussé) sont signalés ⚠️. À ce jour, aucun écart : local et distant alignés.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `14af4ec`, `BUILD` `2026-07-26.5`,
+> `CACHE` `expedition-v9`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> À ce jour, aucun écart : local et distant alignés.
+>
+> **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
+> § « État des migrations SQL » si une migration est ajoutée, et une entrée dans le journal.
 
 ## Vue d'ensemble
 
@@ -88,8 +92,9 @@ dissocier les deux.
   (filtrables par statut) en archive `{CODE}_photos.zip`, organisée `Équipe/HHhMM_statut_indice_id.jpg`
   (JSZip, pool de 8 requêtes parallèles).
 - **Dupliquer une chasse passée** : dans l'écran admin de préparation, section « Dupliquer une
-  chasse ». Voie principale = **liste de toutes MES chasses** (`loadGamesForDuplicate`, filtre
-  `admin_id = auth.uid()`, **tout statut** y compris `ended`, tri `created_at` desc, limite 60) →
+  chasse ». Voie principale = **liste de toutes MES chasses** (`loadGamesForDuplicate` : chasses
+  dont `admin_id = auth.uid()` **ou** dont l'`admin_id` n'est pas un UUID — voir #32 et le
+  § migrations —, **tout statut** y compris `ended`, tri `created_at` desc, limite 60) →
   sélection (`selectDupSession`) puis bouton « Dupliquer cette chasse ». Repli dans un `<details>`
   replié = **par code** (`duplicateByCode`), utile pour une chasse appartenant à un autre compte.
   Les deux voies passent par le cœur partagé `duplicateFromCode(code)`, qui copie les indices
@@ -99,6 +104,14 @@ dissocier les deux.
   ⚠️ Deux pickers coexistent sur cet écran (`#session-picker` reprise, `#dup-picker` duplication) :
   `selectSession`/`selectDupSession` **scopent** leur `$$` par id de conteneur — sinon la sélection
   de l'un désélectionne l'autre.
+- **Supprimer une chasse** : corbeille 🗑 sur chaque ligne de la liste de duplication
+  (`deleteGameFromPicker`) et bouton sur l'écran de fin (`purgeCurrentGame`). Double confirmation.
+  **Deux étapes obligatoires, dans cet ordre** : (1) `purgeGamePhotos(code)` retire les fichiers
+  par l'**API Storage** (`sb.storage.from('photos').remove`) — Supabase interdit tout DELETE SQL
+  sur `storage.objects`, voir #38 ; (2) RPC `admin_purge_game` supprime les lignes (`games` →
+  cascade `teams`/`submissions`), ownership vérifié serveur. ⚠️ **Jamais l'inverse** : le bucket
+  n'étant pas listable (Lot 2), les chemins ne se reconstruisent que depuis `submissions.id` et
+  `teams.id` — une fois les lignes parties, les photos sont irrécupérables et orphelines.
 - **Photo d'équipe à l'inscription** : sur l'écran « Rejoindre une chasse », champ photo
   **optionnel** (`capture="user"`, façade selfie). Capturée via `compressImage`, uploadée par
   `uploadTeamPhoto` dans `{game_code}/team_{team_id}.jpg`, puis `setTeamPhoto` écrit l'URL
@@ -145,6 +158,49 @@ dissocier les deux.
 - **Photos « disparues »** : chercher les fichiers Storage `D4CK/%` sans `submission`
   correspondante (`storage.objects` vs `submissions.id`) = uploads dont l'insert a échoué.
   Réinsérer les lignes pointant sur les fichiers existants.
+
+## État des migrations SQL
+
+Ordre d'application sur une base neuve : `supabase-setup.sql`, puis les migrations dans
+l'ordre chronologique ci-dessous. Sur la base de production, seules les lignes « à exécuter »
+restent à passer.
+
+| Fichier / migration | Objet | État |
+|---|---|---|
+| `supabase-setup.sql` | Schéma de base, RLS, Realtime, Storage, RGPD | appliqué |
+| `migration-lot1-rls.sql` | Auth admin + RLS scopées (#12/#13) | appliqué 2026-06-30 |
+| `migration-lot2-storage.sql` | Verrou du bucket photos (#14) | appliqué 2026-06-30 |
+| `rgpd_retention_purge` | Rétention 90 j + pg_cron (#19) | appliqué 2026-06-30 |
+| `admin_purge_game_rpc` | Effacement in-app (#20) | appliqué 2026-06-30 |
+| `alter table games add column location` | Lieu de la chasse (#31) | appliqué 2026-07-26 |
+| `migration-legacy-admin.sql` | Réattribution des `admin_id` legacy (#34) | appliqué 2026-07-26 |
+| `migration-storage-purge.sql` | Purge sans DELETE sur `storage.objects` (#38) | **à exécuter** |
+
+⚠️ `supabase-setup.sql` §5 est **obsolète** depuis #38 : ses trois fonctions de purge y
+suppriment encore des lignes de `storage.objects`, ce que Supabase refuse. C'est
+`migration-storage-purge.sql` qui fait foi. Appliquer les deux, dans cet ordre, sur une base neuve.
+
+## Déploiement
+
+Pas de build : GitHub Pages sert les fichiers du dépôt tels quels (`.nojekyll`, voir #29).
+
+**Checklist à chaque livraison :**
+
+1. Incrémenter **`BUILD`** dans `expedition.html` (affiché en bas de l'écran de préparation et
+   logué au démarrage). Sans ça, impossible de savoir quelle version tourne sur un appareil.
+2. Incrémenter **`CACHE`** dans `sw.js` si l'app-shell change (`expedition.html`, icônes,
+   `manifest.json`, CDN précachés). Dans le doute, incrémenter.
+3. Vérifier la **syntaxe JS** avant de pousser : extraire le bloc `<script>` inline de
+   `expedition.html` et le passer à `new Function(...)`, plus `node --check sw.js`.
+4. Vérifier l'**intégrité du fichier** : il doit finir par `</script></body></html>`, et les
+   ancres de fin (`function escapeHtml`, `async function logout`, `// ---------- TICK`) doivent
+   être présentes. Voir l'avertissement sur le mount OneDrive dans « Workflow attendu ».
+5. Pousser, puis **re-cloner et comparer** au dossier local (`diff`) — la seule preuve que ce qui
+   est publié est bien ce qui a été écrit.
+6. Mettre à jour ce fichier : ligne HEAD de l'en-tête, § migrations si besoin, entrée de journal.
+7. Sur l'appareil : la nouvelle version arrive au premier rechargement (#35) ; le bandeau
+   « Nouvelle version disponible » s'affiche si un ancien worker contrôle encore la page (#37).
+   Contrôler le numéro affiché en bas de l'écran de préparation.
 
 ## Journal des correctifs
 
@@ -528,4 +584,23 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
 
 Implémentation directe, sans recap de questions. Corriger préventivement ce qui n'a pas
 encore été testé en conditions réelles plutôt que demander confirmation. Vérifier la syntaxe
-JS avant livraison
+JS avant livraison.
+
+**Règles apprises à la dure — ne pas les redécouvrir :**
+
+- ⚠️ **Le dossier de travail est synchronisé OneDrive** : `git init` y échoue et laisse un `.git`
+  corrompu ; depuis un sandbox Linux, une lecture du mount peut rendre une copie **tronquée**.
+  Procédure fiable : cloner le dépôt dans `/tmp`, y rejouer les éditions par remplacements de
+  chaînes **exacts** (échec bruyant si une ancre ne matche pas), vérifier, pousser — puis
+  répercuter les mêmes éditions dans le dossier local. Ne jamais pousser une copie du mount sans
+  contrôle d'intégrité.
+- ⚠️ **Avant de conclure qu'un correctif ne marche pas, vérifier la version qui tourne** (`BUILD`
+  en bas de l'écran de préparation). Un cache HTTP ou un service worker périmé a déjà fait
+  conclure à tort à un bug applicatif (#35/#36).
+- ⚠️ **Écritures équipe = INSERT seul, jamais `upsert`** (RLS UPDATE réservée à l'admin, bucket
+  sans policy UPDATE) — sinon le moindre retry se bloque en `42501`. Insert idempotent : `23505`
+  (DB) et `409` (storage) valent succès.
+- ⚠️ **Photos : API Storage uniquement**, jamais de `delete from storage.objects` (#38).
+- ⚠️ **L'API REST Supabase n'est pas joignable depuis le sandbox** (proxy) : impossible de
+  vérifier une hypothèse sur les données par `curl`. Passer par le table editor ou une requête
+  SQL demandée à l'utilisateur, plutôt que supposer.
