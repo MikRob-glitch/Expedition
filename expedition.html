@@ -406,7 +406,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-26.7';
+const BUILD = '2026-07-26.8';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -2901,7 +2901,7 @@ async function runExportZip(){
 // ferait échouer toBlob()/toDataURL().
 
 const PRINT_Q = 0.92;                       // qualité JPEG du tirage
-const PRINT_MAX = 4000;                     // garde-fou taille canvas
+const PRINT_LONG = 1800, PRINT_SHORT = 1200; // 15×10 cm à ~300 dpi : format de sortie FIXE
 
 function printDateStr(g){
   const d = g?.huntDate ? new Date(g.huntDate+'T12:00:00')
@@ -3004,22 +3004,32 @@ async function ensurePrintFonts(){
 }
 
 // ────── Le cadre ──────
-// Marges = 5 % de la largeur de la photo (haut/gauche/droite), cartouche = 19 % en bas.
-// Tout est proportionnel à la photo : le tirage reste net quelle que soit sa définition.
+// Le tirage complet (photo + cadre) sort au format EXACT 10×15 cm — 1200×1800 px en
+// portrait, 1800×1200 en paysage (~300 dpi) selon l'orientation de la photo. Le labo
+// imprime donc plein format, sans recadrage ni bande blanche de son côté.
+// La photo est posée ENTIÈRE (« contain », jamais rognée) dans la fenêtre ; le parchemin
+// absorbe la différence de ratio. Cas remarquable : une photo portrait 3:4 (sortie
+// standard de compressImage) remplit la fenêtre portrait exactement, sans marge.
 async function buildPrintCanvas(sub, team){
   const g = STATE.game;
   await ensurePrintFonts();
   const img = await loadPrintImage(sub.photoUrl);
-  let PW = img.naturalWidth || img.width, PH = img.naturalHeight || img.height;
-  if(!PW || !PH) throw new Error('image vide');
-  const k = Math.min(1, PRINT_MAX/Math.max(PW,PH));
-  PW = Math.round(PW*k); PH = Math.round(PH*k);
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  if(!iw || !ih){ URL.revokeObjectURL(img.src); throw new Error('image vide'); }
 
-  const pad  = Math.round(PW*0.05);
-  const foot = Math.round(PW*0.21);
-  const W = PW + pad*2, H = PH + pad + foot;
+  const landscape = iw >= ih;
+  const W = landscape ? PRINT_LONG : PRINT_SHORT;
+  const H = landscape ? PRINT_SHORT : PRINT_LONG;
+  const pad  = Math.round(PRINT_SHORT*0.05);   // 60 px ≈ 5 mm de marge
+  // Cartouche : 300 px en portrait → fenêtre 1080×1440 = 3:4 exact (zéro marge pour une
+  // photo standard) ; 230 px en paysage (un bandeau plus fin sur le petit côté).
+  const foot = landscape ? 230 : 300;
+  const aw = W - pad*2, ah = H - pad - foot;   // fenêtre disponible pour la photo
+
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
   // Fond parchemin + légère vignette (même esprit que l'appli)
   ctx.fillStyle = '#f4ede0'; ctx.fillRect(0,0,W,H);
@@ -3027,33 +3037,38 @@ async function buildPrintCanvas(sub, team){
   vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(110,85,45,0.13)');
   ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
 
-  // Photo + filet d'encadrement collé à ses bords
-  ctx.drawImage(img, pad, pad, PW, PH);
+  // Photo entière, centrée dans la fenêtre (agrandie si besoin : un tirage à trou serait pire)
+  const sc = Math.min(aw/iw, ah/ih);
+  const dw = Math.round(iw*sc), dh = Math.round(ih*sc);
+  const dx = pad + Math.round((aw-dw)/2), dy = pad + Math.round((ah-dh)/2);
+  ctx.drawImage(img, dx, dy, dw, dh);
   URL.revokeObjectURL(img.src);
-  const lwP = Math.max(2, PW*0.004);
+
+  // Filet d'encadrement collé aux bords RÉELS de la photo dessinée
+  const lwP = 5;
   ctx.strokeStyle = '#1a1815'; ctx.lineWidth = lwP;
-  ctx.strokeRect(pad - lwP/2, pad - lwP/2, PW + lwP, PH + lwP);
+  ctx.strokeRect(dx - lwP/2, dy - lwP/2, dw + lwP, dh + lwP);
 
   // Double filet extérieur + losanges d'angle
-  const i1 = pad*0.34, lw1 = Math.max(2, PW*0.0035);
+  const i1 = Math.round(pad*0.34), lw1 = 4;
   ctx.lineWidth = lw1; ctx.strokeStyle = '#1a1815';
   ctx.strokeRect(i1, i1, W-i1*2, H-i1*2);
-  const i2 = pad*0.55, lw2 = Math.max(1, PW*0.0015);
+  const i2 = Math.round(pad*0.55), lw2 = 2;
   ctx.lineWidth = lw2; ctx.strokeStyle = '#a0832f';
   ctx.strokeRect(i2, i2, W-i2*2, H-i2*2);
-  const dR = Math.max(3, PW*0.008);
+  const dR = 13;
   ctx.fillStyle = '#a0832f';
   [[i1,i1],[W-i1,i1],[i1,H-i1],[W-i1,H-i1]].forEach(([x,y])=>{
     ctx.save(); ctx.translate(x,y); ctx.rotate(Math.PI/4); ctx.fillRect(-dR/2,-dR/2,dR,dR); ctx.restore();
   });
 
   // ── Cartouche ──
-  const y0 = pad + PH;
+  const y0 = H - foot;
   const R  = foot*0.30;
-  const cx = pad + R + PW*0.005, cy = y0 + foot*0.46;
+  const cx = pad + R + 8, cy = y0 + foot*0.46;
   drawRose(ctx, cx, cy, R);
 
-  const textX = cx + R + PW*0.028;
+  const textX = cx + R + 34;
   const rightX = W - pad;
   ctx.textBaseline = 'alphabetic';
 
@@ -3071,7 +3086,7 @@ async function buildPrintCanvas(sub, team){
     ctx.fillStyle = '#6e6552';
     drawSpaced(ctx, `CHASSE ${g.code}`, rightX, cy + foot*0.24, codeSize*0.12, 'right');
   }
-  const leftMax = (roomForBrand ? rightX - rightW - PW*0.045 : rightX) - textX;
+  const leftMax = (roomForBrand ? rightX - rightW - 54 : rightX) - textX;
 
   // Ligne 1 : l'équipe
   const mkTeam = s => `800 ${s}px Fraunces, Georgia, serif`;
@@ -3094,6 +3109,7 @@ async function buildPrintCanvas(sub, team){
 
   return cv;
 }
+
 function canvasToBlob(cv){
   return new Promise((res,rej)=>{
     if(cv.toBlob) cv.toBlob(b=> b?res(b):rej(new Error('encodage impossible')), 'image/jpeg', PRINT_Q);

@@ -3,8 +3,8 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `9e05921`, `BUILD` `2026-07-26.7`,
-> `CACHE` `expedition-v11`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `9e05921`+docs, `BUILD` `2026-07-26.8`,
+> `CACHE` `expedition-v12`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > À ce jour, aucun écart : local et distant alignés (vérifié par re-clonage + `diff`).
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
@@ -150,9 +150,11 @@ dissocier les deux.
   `{CODE}_tirages.zip` (`downloadAllPrints`, JSZip, `STORE` — du JPEG ne se recompresse pas).
   Le cadre est composé **en canvas** par `buildPrintCanvas` : fond parchemin + vignette, double
   filet + losanges d'angle, rose des vents vectorielle (mêmes tracés que `icons/favicon.svg`),
-  puis cartouche « nom d'équipe / nom de la chasse · lieu / date ». Marges = 5 % de la largeur
-  de la photo, cartouche = 21 % → le tirage suit la définition de la photo (1600 px ⇒ ~300 dpi
-  en 10×15 cm, ~225 dpi en 13×18 — voir #40). ⚠️ La photo est chargée par **fetch → blob → objectURL** : une `<img>` pointant
+  puis cartouche « nom d'équipe / nom de la chasse · lieu / date ». **Format de sortie FIXE
+  10×15 cm** : 1200×1800 px en portrait, 1800×1200 en paysage (~300 dpi), selon l'orientation
+  de la photo — le labo imprime plein format sans recadrer (#41). La photo est posée **entière**
+  (« contain », jamais rognée) dans la fenêtre ; le parchemin absorbe l'écart de ratio, et une
+  photo portrait 3:4 (sortie standard de `compressImage`, #40) remplit la fenêtre exactement. ⚠️ La photo est chargée par **fetch → blob → objectURL** : une `<img>` pointant
   directement le Storage (autre origine) **souillerait le canvas** et ferait échouer `toBlob()`.
   ⚠️ Les polices sont préchargées (`ensurePrintFonts`) sinon le canvas dessine en repli système.
 - **Zoom des photos** : le modal photo (vote / validation / galerie) est zoomable — pincer,
@@ -594,6 +596,21 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     stockage Supabase — or le tier gratuit plafonne à **1 Go** et la purge automatique 90 j
     n'efface plus les fichiers depuis #38. Purger les vieilles chasses depuis la corbeille de
     l'app, sinon le bucket se remplit deux fois plus vite qu'avant.
+
+### Poussés sur GitHub (2026-07-26) — Tirage au format 10×15 exact
+
+41. **`buildPrintCanvas` : format de sortie fixe 10×15 cm** (portrait 1200×1800, paysage
+    1800×1200, ~300 dpi). Avant, le canvas suivait les dimensions de la photo + marges → un
+    ratio quelconque, que le labo photo aurait **recadré ou bordé de blanc** à l'impression.
+    Désormais l'orientation suit la photo (`iw >= ih`), et la photo est posée **entière** en
+    « contain » centré dans la fenêtre (agrandie au besoin — un tirage à trou serait pire) ;
+    le filet intérieur épouse les bords **réellement dessinés**. Géométrie : marge 60 px
+    (≈ 5 mm), cartouche 300 px en portrait — choisi pour que la fenêtre fasse 1080×1440,
+    soit **3:4 exact** : la sortie standard de `compressImage` tombe au pixel près — et
+    230 px en paysage (une 4:3 paysage laisse ~2 cm de parchemin de part et d'autre, assumé :
+    on ne rogne jamais la photo). `PRINT_MAX` (garde-fou devenu inutile) remplacé par
+    `PRINT_LONG`/`PRINT_SHORT`. Cotes du cadre en px fixes (le canvas ne varie plus).
+    `BUILD` → `2026-07-26.8`, `CACHE` **v11→v12**.
 
 ## Dette technique / points de vigilance connus
 
