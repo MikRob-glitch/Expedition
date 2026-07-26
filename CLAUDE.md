@@ -3,7 +3,7 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `LIEU_DUP`). Les écarts connus
+> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `d9cf78e`). Les écarts connus
 > (travail local non poussé) sont signalés ⚠️. À ce jour, aucun écart : local et distant alignés.
 
 ## Vue d'ensemble
