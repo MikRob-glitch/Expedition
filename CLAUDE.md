@@ -163,7 +163,7 @@ dissocier les deux.
 
 Ordre d'application sur une base neuve : `supabase-setup.sql`, puis les migrations dans
 l'ordre chronologique ci-dessous. Sur la base de production, seules les lignes « à exécuter »
-restent à passer.
+restent à passer — **à ce jour, aucune : la base est à jour**.
 
 | Fichier / migration | Objet | État |
 |---|---|---|
@@ -174,7 +174,7 @@ restent à passer.
 | `admin_purge_game_rpc` | Effacement in-app (#20) | appliqué 2026-06-30 |
 | `alter table games add column location` | Lieu de la chasse (#31) | appliqué 2026-07-26 |
 | `migration-legacy-admin.sql` | Réattribution des `admin_id` legacy (#34) | appliqué 2026-07-26 |
-| `migration-storage-purge.sql` | Purge sans DELETE sur `storage.objects` (#38) | **à exécuter** |
+| `migration-storage-purge.sql` | Purge sans DELETE sur `storage.objects` (#38) | appliqué 2026-07-26 |
 
 ⚠️ `supabase-setup.sql` §5 est **obsolète** depuis #38 : ses trois fonctions de purge y
 suppriment encore des lignes de `storage.objects`, ce que Supabase refuse. C'est
