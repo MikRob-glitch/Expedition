@@ -166,12 +166,12 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 /* Tirage souvenir (choix + récupération) */
 .print-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .print-grid .p-item{position:relative;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:8px;overflow:hidden;background:#000;cursor:pointer}
-.print-grid .p-item img{width:100%;height:100%;object-fit:cover;display:block}
+.print-grid .p-item img{width:100%;height:100%;object-fit:contain;display:block}
 .print-grid .p-item.sel{border-color:var(--gold-dark);box-shadow:0 0 0 3px rgba(201,165,90,.4)}
 .print-grid .p-item.sel::after{content:'\2726';position:absolute;top:2px;right:5px;color:var(--gold);font-size:16px;text-shadow:0 1px 3px rgba(0,0,0,.9)}
 .print-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
 .print-row:last-of-type{border-bottom:0}
-.print-row .thumb{width:52px;height:52px;flex:0 0 auto;border-radius:8px;object-fit:cover;background:var(--parchment-3)}
+.print-row .thumb{width:52px;height:52px;flex:0 0 auto;border-radius:8px;object-fit:contain;background:#000}
 .print-row .thumb.empty-thumb{display:flex;align-items:center;justify-content:center;color:var(--ink-mute);border:1px dashed var(--line-strong);background:transparent}
 .print-row .nm{flex:1;min-width:0}
 .print-row .nm b{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -406,7 +406,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-26.8';
+const BUILD = '2026-07-26.9';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -3063,49 +3063,57 @@ async function buildPrintCanvas(sub, team){
   });
 
   // ── Cartouche ──
+  // Gauche : le logo — rose des vents avec « EXPÉDITION » dessous (lockup).
+  // Droite : nom d'équipe / nom de la chasse · lieu / date, sur toute la largeur restante.
   const y0 = H - foot;
-  const R  = foot*0.30;
-  const cx = pad + R + 8, cy = y0 + foot*0.46;
-  drawRose(ctx, cx, cy, R);
-
-  const textX = cx + R + 34;
-  const rightX = W - pad;
+  // Le lockup logo + « EXPÉDITION » s'adapte à l'orientation : empilé (nom sous la
+  // rose) dans le cartouche portrait (300 px de haut), côte à côte dans le cartouche
+  // paysage (230 px — un empilement y touchait le filet doré).
+  const brandSize = foot*0.095, brandSp = brandSize*0.12;
+  const gap = foot*0.10;
   ctx.textBaseline = 'alphabetic';
-
-  // Bloc droit : la signature « EXPÉDITION » + code de la chasse
-  let rightW = 0;
-  const brandSize = foot*0.135, brandSp = brandSize*0.18;
   ctx.font = `600 ${brandSize}px "Geist Mono", monospace`;
-  rightW = spacedWidth(ctx, 'EXPÉDITION', brandSp);
-  const roomForBrand = (rightX - textX) * 0.42 > rightW;
-  if(roomForBrand){
+  const brandW = spacedWidth(ctx, 'EXPÉDITION', brandSp);
+  let lockW;
+  if(landscape){
+    const R = foot*0.30;
+    drawRose(ctx, pad + R, y0 + foot*0.5, R);
     ctx.fillStyle = '#a0832f';
-    drawSpaced(ctx, 'EXPÉDITION', rightX, cy + foot*0.02, brandSp, 'right');
-    const codeSize = foot*0.115;
-    ctx.font = `500 ${codeSize}px "Geist Mono", monospace`;
-    ctx.fillStyle = '#6e6552';
-    drawSpaced(ctx, `CHASSE ${g.code}`, rightX, cy + foot*0.24, codeSize*0.12, 'right');
+    drawSpaced(ctx, 'EXPÉDITION', pad + 2*R + gap, y0 + foot*0.5 + brandSize*0.35, brandSp, 'left');
+    lockW = 2*R + gap + brandW;
+  }else{
+    const innerPad = i2 + 10;
+    const availH = foot - innerPad*2;
+    const R = Math.min(foot*0.26, (availH - brandSize - gap)/2);
+    lockW = Math.max(2*R, brandW);
+    const cx = pad + lockW/2;
+    const lockTop = y0 + innerPad + (availH - (2*R + gap + brandSize))/2;
+    drawRose(ctx, cx, lockTop + R, R);
+    ctx.fillStyle = '#a0832f';
+    drawSpaced(ctx, 'EXPÉDITION', cx, lockTop + 2*R + gap + brandSize*0.8, brandSp, 'center');
   }
-  const leftMax = (roomForBrand ? rightX - rightW - 54 : rightX) - textX;
+
+  const textX = pad + lockW + foot*0.16;
+  const leftMax = (W - pad) - textX;
 
   // Ligne 1 : l'équipe
   const mkTeam = s => `800 ${s}px Fraunces, Georgia, serif`;
   const tSize = fitFont(ctx, team?.name || '', leftMax, mkTeam, foot*0.30, foot*0.15);
   ctx.font = mkTeam(tSize); ctx.fillStyle = '#1a1815'; ctx.textAlign = 'left';
-  ctx.fillText(ellipsize(ctx, team?.name || 'Équipe', leftMax), textX, cy - foot*0.05);
+  ctx.fillText(ellipsize(ctx, team?.name || 'Équipe', leftMax), textX, y0 + foot*0.41);
 
   // Ligne 2 : la chasse (+ lieu)
   const sub2 = g.name + (g.location ? ' · ' + g.location : '');
   const mkHunt = s => `italic 600 ${s}px Fraunces, Georgia, serif`;
   const hSize = fitFont(ctx, sub2, leftMax, mkHunt, foot*0.165, foot*0.10);
   ctx.font = mkHunt(hSize); ctx.fillStyle = '#4a4438';
-  ctx.fillText(ellipsize(ctx, sub2, leftMax), textX, cy + foot*0.155);
+  ctx.fillText(ellipsize(ctx, sub2, leftMax), textX, y0 + foot*0.615);
 
   // Ligne 3 : la date
   const dSize = foot*0.125;
   ctx.font = `500 ${dSize}px "Geist Mono", monospace`;
   ctx.fillStyle = '#6e6552';
-  drawSpaced(ctx, printDateStr(g).toUpperCase(), textX, cy + foot*0.32, dSize*0.10, 'left');
+  drawSpaced(ctx, printDateStr(g).toUpperCase(), textX, y0 + foot*0.78, dSize*0.10, 'left');
 
   return cv;
 }

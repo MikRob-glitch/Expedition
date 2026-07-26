@@ -3,8 +3,8 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `9e05921`+docs, `BUILD` `2026-07-26.8`,
-> `CACHE` `expedition-v12`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `9e05921`+docs, `BUILD` `2026-07-26.9`,
+> `CACHE` `expedition-v13`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > À ce jour, aucun écart : local et distant alignés (vérifié par re-clonage + `diff`).
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
@@ -150,7 +150,8 @@ dissocier les deux.
   `{CODE}_tirages.zip` (`downloadAllPrints`, JSZip, `STORE` — du JPEG ne se recompresse pas).
   Le cadre est composé **en canvas** par `buildPrintCanvas` : fond parchemin + vignette, double
   filet + losanges d'angle, rose des vents vectorielle (mêmes tracés que `icons/favicon.svg`),
-  puis cartouche « nom d'équipe / nom de la chasse · lieu / date ». **Format de sortie FIXE
+  puis cartouche : lockup logo (rose des vents + « EXPÉDITION » — empilé en portrait, côte à
+  côte en paysage) et « nom d'équipe / nom de la chasse · lieu / date ». **Format de sortie FIXE
   10×15 cm** : 1200×1800 px en portrait, 1800×1200 en paysage (~300 dpi), selon l'orientation
   de la photo — le labo imprime plein format sans recadrer (#41). La photo est posée **entière**
   (« contain », jamais rognée) dans la fenêtre ; le parchemin absorbe l'écart de ratio, et une
@@ -611,6 +612,20 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     on ne rogne jamais la photo). `PRINT_MAX` (garde-fou devenu inutile) remplacé par
     `PRINT_LONG`/`PRINT_SHORT`. Cotes du cadre en px fixes (le canvas ne varie plus).
     `BUILD` → `2026-07-26.8`, `CACHE` **v11→v12**.
+
+### Poussés sur GitHub (2026-07-26) — Cartouche : lockup logo, sans code de chasse
+
+42. **Cartouche du tirage remanié.** (1) Le code de la chasse (« CHASSE XXXX ») est retiré —
+    information de gestion, pas de souvenir. (2) « EXPÉDITION » forme désormais un **lockup
+    avec la rose des vents** : nom sous le logo en portrait (cartouche de 300 px), **côte à
+    côte** en paysage (230 px — l'empilement y touchait le filet doré, deux itérations pour
+    le voir). (3) Les textes (équipe / chasse · lieu / date) récupèrent **toute la largeur**
+    restante : le nom de chasse long qui se tronquait en portrait (#41) tient maintenant.
+    (4) Vignettes de sélection (grille équipe, lignes admin) passées d'`object-fit:cover` à
+    **`contain`** : l'utilisateur choisit sur la photo **entière**, plus sur un recadrage
+    carré — sur le tirage, la photo a toujours été posée entière (« contain », #41), mais
+    les vignettes recadrées pouvaient faire croire le contraire. `BUILD` → `2026-07-26.9`,
+    `CACHE` **v12→v13**.
 
 ## Dette technique / points de vigilance connus
 
