@@ -60,6 +60,7 @@ alter table submissions alter column lng drop not null;
 
 -- Migration : ajout du lieu de la chasse (optionnel)
 alter table games add column if not exists location text;
+alter table games add column if not exists logo_url text;
 
 -- Migration : l'app utilise aussi les statuts 'validation' et 'judging'
 alter table games drop constraint if exists games_status_check;

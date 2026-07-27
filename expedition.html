@@ -176,6 +176,12 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 .print-row .nm{flex:1;min-width:0}
 .print-row .nm b{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .print-row .nm span{font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink-mute)}
+.logo-field{display:flex;align-items:center;gap:12px}
+.logo-prev{width:78px;height:78px;flex:0 0 auto;border:1px dashed var(--line-strong);border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--parchment-2);overflow:hidden}
+.logo-prev img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.logo-prev span{font-size:10px;line-height:1.3;color:var(--ink-mute);font-family:'Geist Mono',monospace;text-align:center;padding:4px}
+.logo-actions{display:flex;flex-direction:column;gap:6px;flex:1}
+.logo-actions .btn{width:100%}
 .print-pick{max-height:82vh;overflow-y:auto;padding:4px}
 .print-pick h3{color:var(--parchment);margin:0 0 4px;font-family:'Fraunces',Georgia,serif}
 .print-pick p{color:var(--parchment);opacity:.65;font-size:12px;margin:0 0 12px}
@@ -406,7 +412,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-26.9';
+const BUILD = '2026-07-27.1';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -456,6 +462,7 @@ function rowToGame(row, teamsRows){
     name: row.name,
     huntDate: row.hunt_date || null,
     location: row.location || '',
+    logoUrl: row.logo_url || null,
     status: row.status,
     durationMinutes: row.duration_minutes,
     perClueMinutes: row.per_clue_minutes,
@@ -503,6 +510,7 @@ async function saveGame(game){
     name: game.name,
     hunt_date: game.huntDate || null,
     location: game.location || null,
+    logo_url: game.logoUrl || null,
     status: game.status,
     duration_minutes: game.durationMinutes,
     per_clue_minutes: game.perClueMinutes,
@@ -772,6 +780,113 @@ async function compressImage(file, opts){
     reader.readAsDataURL(file);
   });
 }
+
+// ────── Logo du lieu (optionnel) ──────
+// Toujours réencodé en PNG : un logo se pose sur le parchemin du tirage, donc la
+// transparence doit survivre (un aplat blanc ferait une vignette disgracieuse).
+// 600 px suffisent : sur le tirage 10×15 le logo fait au plus ~2 cm de large.
+const LOGO_MAX = 600;
+
+async function compressLogo(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=>{
+      const img = new Image();
+      img.onload = ()=>{
+        let w = img.width || LOGO_MAX, h = img.height || LOGO_MAX;   // SVG sans dimensions
+        if(w > LOGO_MAX || h > LOGO_MAX){
+          if(w > h){ h = Math.round(h*LOGO_MAX/w); w = LOGO_MAX; } else { w = Math.round(w*LOGO_MAX/h); h = LOGO_MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = ()=>reject(new Error('image illisible (essayez un PNG ou un JPEG)'));
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Chemin fixe {code}/logo.png. Le bucket n'a pas de policy UPDATE (Lot 2) : on
+// SUPPRIME avant de réécrire, sinon un upsert partirait en 42501 silencieux.
+async function uploadGameLogoBlob(blob, code){
+  const path = `${code}/logo.png`;
+  try{ await sb.storage.from('photos').remove([path]); }catch(_){}
+  const { error } = await sb.storage.from('photos').upload(path, blob, { contentType:'image/png', upsert:false });
+  if(error){ toast('Logo du lieu : '+error.message, 'error', 5000); return null; }
+  const { data } = sb.storage.from('photos').getPublicUrl(path);
+  return data.publicUrl + '?v=' + Date.now();     // l'URL est stable : cache-buster obligatoire
+}
+
+// Renvoie l'URL à écrire dans games.logo_url (ou null si aucun logo).
+async function persistGameLogo(code){
+  const d = STATE.logoDraft || {};
+  if(d.data){
+    const res = await fetch(d.data);
+    return await uploadGameLogoBlob(await res.blob(), code);
+  }
+  if(d.url){
+    if(d.url.includes(`/${code}/logo.png`)) return d.url;   // déjà en place
+    // Logo hérité d'une chasse dupliquée : on RECOPIE le fichier sous le nouveau code.
+    // Garder l'URL d'origine ferait pointer la copie sur un fichier qui disparaît avec sa chasse.
+    try{
+      const r = await fetch(d.url);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return await uploadGameLogoBlob(await r.blob(), code);
+    }catch(e){ toast('Logo du lieu non recopié : '+e.message, 'error', 4500); return null; }
+  }
+  return null;
+}
+
+// ── UI du champ logo (écrans de création et de modification) ──
+function logoPreviewSrc(){ const d = STATE.logoDraft || {}; return d.data || d.url || null; }
+function renderLogoField(){
+  const src = logoPreviewSrc();
+  return `
+    <div class="field">
+      <label>Logo du lieu (optionnel)</label>
+      <div class="logo-field">
+        <div class="logo-prev" id="logo-prev">${src ? `<img src="${escapeHtml(src)}" alt="Logo du lieu">` : '<span>aucun<br>logo</span>'}</div>
+        <div class="logo-actions">
+          <input type="file" id="g-logo" accept="image/png,image/jpeg,image/webp" onchange="handleLogoPick(event)" style="display:none">
+          <button type="button" class="btn ghost sm" onclick="document.getElementById('g-logo').click()">${src ? 'Remplacer' : 'Choisir un fichier'}</button>
+          ${src ? '<button type="button" class="btn ghost sm" onclick="clearGameLogo()">Retirer</button>' : ''}
+        </div>
+      </div>
+      <p class="help-text" style="margin:8px 0 0">Apparaît sur le tirage souvenir, à droite du cartouche. PNG à fond transparent de préférence. Assurez-vous d'avoir l'accord du lieu pour utiliser sa marque.</p>
+    </div>`;
+}
+// Rendu ciblé (pas de render() global) : un re-render effacerait les champs déjà saisis.
+function refreshLogoField(){
+  const box = document.getElementById('logo-prev'); if(!box) return;
+  const src = logoPreviewSrc();
+  box.innerHTML = src ? `<img src="${escapeHtml(src)}" alt="Logo du lieu">` : '<span>aucun<br>logo</span>';
+  const acts = box.parentElement.querySelector('.logo-actions');
+  const btns = acts.querySelectorAll('button');
+  btns[0].textContent = src ? 'Remplacer' : 'Choisir un fichier';
+  if(src && btns.length === 1){
+    const b = document.createElement('button');
+    b.type='button'; b.className='btn ghost sm'; b.textContent='Retirer';
+    b.setAttribute('onclick','clearGameLogo()');
+    acts.appendChild(b);
+  }
+  if(!src && btns.length > 1) btns[1].remove();
+}
+async function handleLogoPick(e){
+  const file = e.target.files?.[0]; if(!file) return;
+  try{
+    STATE.logoDraft = { data: await compressLogo(file), url: null };
+    refreshLogoField();
+    toast('Logo chargé — il sera enregistré avec la chasse','success');
+  }catch(err){ toast('Logo : '+err.message, 'error', 5000); }
+  e.target.value = '';
+}
+function clearGameLogo(){ STATE.logoDraft = { data:null, url:null }; refreshLogoField(); }
 
 // ============ REALTIME ============
 function startRealtime(){
@@ -1048,6 +1163,8 @@ async function adminVerifyCode(){
 // ---------- ADMIN ----------
 function screenAdminSetup(){
   const dm = STATE.draftMeta || {};
+  // Brouillon de logo : conservé entre deux rendus de l'écran (et alimenté par une duplication).
+  if(!STATE.logoDraft) STATE.logoDraft = { data:null, url: dm.logoUrl || null };
   app().innerHTML = `
     <div class="screen" data-screen="admin-setup">
       <div class="topbar">
@@ -1069,6 +1186,7 @@ function screenAdminSetup(){
         <label>Lieu de la chasse</label>
         <input id="g-location" class="input" placeholder="ex. Center Parcs, Capfun Fort de l'Éve…" value="${escapeHtml(dm.location || '')}">
       </div>
+      ${renderLogoField()}
       <div class="flex-row">
         <div class="field" style="flex:1">
           <label>Durée totale (min)</label>
@@ -1350,10 +1468,15 @@ async function createGame(){
     adminId: STATE.me.id
   };
   await saveGame(game);
+  // Le logo part APRÈS l'insert : la policy de suppression du bucket vérifie que la
+  // chasse dont le code ouvre le chemin appartient bien à auth.uid().
+  const logoUrl = await persistGameLogo(code);
+  if(logoUrl){ game.logoUrl = logoUrl; await saveGame(game); }
   STATE.me.gameCode = code;
   await saveMe();
   STATE.draftClues = null;
   STATE.draftMeta = null;
+  STATE.logoDraft = null;
   startRealtime();
   render();
 }
@@ -1371,9 +1494,11 @@ async function duplicateFromCode(code){
     name: (src.name || 'Chasse') + ' (copie)',
     date: new Date().toISOString().slice(0,10),
     location: src.location || '',
+    logoUrl: src.logoUrl || null,
     duration: src.durationMinutes || 90,
     perClue: src.perClueMinutes || 15
   };
+  STATE.logoDraft = { data:null, url: src.logoUrl || null };   // recopié sous le nouveau code à la création
   toast(`Chasse « ${src.name} » copiée — vérifiez puis créez la nouvelle session`,'success',4000);
   screenAdminSetup();
 }
@@ -1465,7 +1590,8 @@ async function purgeGamePhotos(code){
   if(teams.error) return { removed:0, error:teams.error };
   const paths = [
     ...(subs.data  || []).map(r=> `${code}/${r.id}.jpg`),
-    ...(teams.data || []).map(r=> `${code}/team_${r.id}.jpg`)
+    ...(teams.data || []).map(r=> `${code}/team_${r.id}.jpg`),
+    `${code}/logo.png`                       // logo du lieu (sans effet s'il n'existe pas)
   ];
   if(paths.length === 0) return { removed:0, error:null };
   let removed = 0, firstErr = null;
@@ -1597,6 +1723,7 @@ async function resumeByCode(){
 function screenAdminEditGame(){
   const g = STATE.game;
   STATE.draftMeta = null;
+  STATE.logoDraft = { data:null, url: g.logoUrl || null };
   STATE.draftClues = JSON.parse(JSON.stringify(g.clues));
   app().innerHTML = `
     <div class="screen" data-screen="admin-edit">
@@ -1619,6 +1746,7 @@ function screenAdminEditGame(){
         <label>Lieu de la chasse</label>
         <input id="g-location" class="input" placeholder="ex. Center Parcs, Capfun Fort de l'Éve…" value="${escapeHtml(g.location || '')}">
       </div>
+      ${renderLogoField()}
       <div class="flex-row">
         <div class="field" style="flex:1">
           <label>Durée totale (min)</label>
@@ -1655,8 +1783,10 @@ async function saveEditedGame(){
   STATE.game.durationMinutes = duration;
   STATE.game.perClueMinutes = perClue;
   STATE.game.clues = STATE.draftClues;
+  STATE.game.logoUrl = await persistGameLogo(STATE.game.code);
   await saveGame(STATE.game);
   STATE.draftClues = null;
+  STATE.logoDraft = null;
   toast('Modifications sauvegardées ✓','success');
   render();
 }
@@ -3014,6 +3144,9 @@ async function buildPrintCanvas(sub, team){
   const g = STATE.game;
   await ensurePrintFonts();
   const img = await loadPrintImage(sub.photoUrl);
+  // Logo du lieu : facultatif et jamais bloquant — un échec de chargement ne doit pas
+  // priver l'équipe de son tirage.
+  const venue = g.logoUrl ? await loadPrintImage(g.logoUrl).catch(e=>{ console.warn('Logo du lieu', e); return null; }) : null;
   const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
   if(!iw || !ih){ URL.revokeObjectURL(img.src); throw new Error('image vide'); }
 
@@ -3093,8 +3226,20 @@ async function buildPrintCanvas(sub, team){
     drawSpaced(ctx, 'EXPÉDITION', cx, lockTop + 2*R + gap + brandSize*0.8, brandSp, 'center');
   }
 
+  // Logo du lieu, calé à droite du cartouche. La place qu'il occupe est retirée de la
+  // largeur des textes — jamais l'inverse.
+  let rightW = 0;
+  if(venue && venue.width && venue.height){
+    const bh = foot*0.62, bw = Math.min(foot*1.30, W*0.20);
+    const vs = Math.min(bw/venue.width, bh/venue.height);
+    const vw = Math.round(venue.width*vs), vh = Math.round(venue.height*vs);
+    ctx.drawImage(venue, W - pad - vw, y0 + Math.round((foot-vh)/2), vw, vh);
+    URL.revokeObjectURL(venue.src);
+    rightW = vw + foot*0.16;
+  }
+
   const textX = pad + lockW + foot*0.16;
-  const leftMax = (W - pad) - textX;
+  const leftMax = (W - pad) - rightW - textX;
 
   // Ligne 1 : l'équipe
   const mkTeam = s => `800 ${s}px Fraunces, Georgia, serif`;

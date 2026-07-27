@@ -38,6 +38,7 @@ migration-lot2-storage.sql ← Lot 2 sécurité : verrou du bucket photos
 migration-legacy-admin.sql ← réattribution des admin_id d'avant l'auth (à jouer 1×)
 migration-storage-purge.sql ← purge sans DELETE sur storage.objects (obligatoire)
 migration-print-choice.sql ← teams.print_submission_id (tirage souvenir)
+migration-venue-logo.sql   ← games.logo_url (logo du lieu sur le tirage)
 .github/workflows/keepalive.yml ← ping Supabase (anti-pause tier gratuit)
 .nojekyll                  ← désactive Jekyll sur GitHub Pages
 README.md                  ← présentation + démarrage rapide
@@ -61,7 +62,7 @@ CLAUDE.md                  ← guide de travail + journal des correctifs
 ### Modèle de données
 
 ```sql
-games        (code PK, name, hunt_date, location, status, duration_minutes,
+games        (code PK, name, hunt_date, location, logo_url, status, duration_minutes,
               per_clue_minutes, clues JSONB, admin_id,
               created_at, started_at, ended_at)
 
@@ -75,6 +76,7 @@ submissions  (id PK, game_code FK, team_id FK, clue_id, photo_url,
 
 - `games.clues` (JSONB) : `[{id, title, text, points, lat, lng}, ...]` — `lat`/`lng` **optionnels** (géoloc d'indice, `null` si non localisé). **Aucune migration** : les coords vivent dans le jsonb.
 - `games.hunt_date` / `games.location` : date et lieu de l'activité (optionnels) — repris sur le cadre du tirage souvenir et dans les listes de chasses.
+- `games.logo_url` : logo du lieu (optionnel), fichier `{code}/logo.png` du bucket `photos`, affiché à droite du cartouche du tirage. Recopié sous le nouveau code lors d'une duplication.
 - `games.admin_id` : reçoit `auth.uid()` (Supabase Auth) — l'admin propriétaire, vérifié par les RLS. ⚠️ Les chasses d'avant juin 2026 portent un identifiant client non-UUID (voir `migration-legacy-admin.sql`).
 - `teams.start_clue_id` : indice de départ imposé (dispersion). `null` = pas de verrou.
 - `teams.photo_url` : photo d'équipe optionnelle (selfie à l'inscription).
@@ -83,7 +85,7 @@ submissions  (id PK, game_code FK, team_id FK, clue_id, photo_url,
 - `submissions.id` = **nom du fichier** dans le Storage (`{game_code}/{id}.jpg`) — ne jamais dissocier.
 - `submissions.lat/lng` : colonnes héritées du prototype GPS, plus renseignées.
 - Toutes les FK ont `on delete cascade`.
-- **Storage** : bucket public `photos`, `{game_code}/{id}.jpg` (preuves), `{game_code}/team_{id}.jpg` (photos d'équipe).
+- **Storage** : bucket public `photos`, `{game_code}/{id}.jpg` (preuves), `{game_code}/team_{id}.jpg` (photos d'équipe), `{game_code}/logo.png` (logo du lieu).
 
 ### Machine à états (`games.status`)
 
@@ -149,7 +151,7 @@ Selfie **optionnel** à l'inscription (`capture="user"`), uploadé dans `{game_c
 `compressImage(file, {max, q})` — plus grand côté ramené à **1600 px**, JPEG **0,82**, rééchantillonnage `high`, jamais d'agrandissement ; si la dataURL dépasse ~3 Mo, la **qualité** baisse par paliers (plancher 0,45) et non la définition. Photo d'équipe : `{max:800, q:0.8}` (simple pastille). Compromis : ~350–450 Ko par preuve (≈2× l'ancien plafond de 1000 px) contre un tirage net en 10×15 cm (~300 dpi) et 13×18 (~225 dpi).
 
 ### Tirage souvenir encadré
-Écran de fin **équipe** : l'équipe choisit **une** photo parmi les siennes (`teams.print_submission_id`). Écran de fin **admin** : liste des choix, choix de secours pour une équipe absente, aperçu, téléchargement à l'unité ou en ZIP `{CODE}_tirages.zip`. Le cadre (parchemin, double filet, lockup logo « rose des vents + EXPÉDITION », nom d'équipe, nom de la chasse + lieu, date) est composé **en canvas** (`buildPrintCanvas`) — la photo passe par `fetch → blob → objectURL` pour ne pas souiller le canvas. **Sortie au format fixe 10×15 cm** (1200×1800 portrait / 1800×1200 paysage, ~300 dpi) selon l'orientation de la photo : le labo imprime plein format, sans recadrage ; la photo est posée entière (jamais rognée), le parchemin absorbe l'écart de ratio. Migration : `migration-print-choice.sql`.
+Écran de fin **équipe** : l'équipe choisit **une** photo parmi les siennes (`teams.print_submission_id`). Écran de fin **admin** : liste des choix, choix de secours pour une équipe absente, aperçu, téléchargement à l'unité ou en ZIP `{CODE}_tirages.zip`. Le cadre (parchemin, double filet, lockup logo « rose des vents + EXPÉDITION », nom d'équipe, nom de la chasse + lieu, date, et **logo du lieu** à droite s'il a été joint à la chasse) est composé **en canvas** (`buildPrintCanvas`) — la photo passe par `fetch → blob → objectURL` pour ne pas souiller le canvas. **Sortie au format fixe 10×15 cm** (1200×1800 portrait / 1800×1200 paysage, ~300 dpi) selon l'orientation de la photo : le labo imprime plein format, sans recadrage ; la photo est posée entière (jamais rognée), le parchemin absorbe l'écart de ratio. Migration : `migration-print-choice.sql`.
 
 ### Export ZIP des photos
 Écrans **Jury** et **Fin** : télécharge **toutes les photos** d'une partie (filtrable par statut) en `{CODE}_photos.zip`, organisé `Équipe/HHhMM_statut_indice_id.jpg` (JSZip, pool de 8 requêtes).
@@ -182,6 +184,7 @@ Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Doub
 | `openPhoto` / `initPhotoZoom` | Modal photo + zoom/pan |
 | `openExportZip` / `runExportZip` | Export ZIP des photos |
 | `compressImage` | Redimension + JPEG avant envoi (`{max, q}`) |
+| `compressLogo` / `persistGameLogo` | Logo du lieu : PNG 600 px (alpha conservé) + envoi au bucket |
 | `setTeamPrintChoice` / `choosePrintPhoto` | Choix de la photo souvenir (équipe) |
 | `buildPrintCanvas` / `downloadPrint` / `downloadAllPrints` | Composition du cadre et récupération des tirages |
 | `loadGamesForDuplicate` / `duplicateFromCode` | Liste de mes chasses + duplication |

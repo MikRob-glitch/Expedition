@@ -3,8 +3,8 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `9e05921`+docs, `BUILD` `2026-07-26.9`,
-> `CACHE` `expedition-v13`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `9559917`+docs, `BUILD` `2026-07-27.1`,
+> `CACHE` `expedition-v14`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > À ce jour, aucun écart : local et distant alignés (vérifié par re-clonage + `diff`).
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
@@ -36,7 +36,8 @@ des photos comme preuves ; un maître du jeu (admin) valide puis fait juger les 
 ## Modèle de données (Postgres)
 
 - **`games`** — PK `code` (texte, 4 lettres). Champs : `name`, `status`, `location` (texte,
-  optionnel — lieu de la chasse, ex. « Center Parcs »), `clues` (jsonb :
+  optionnel — lieu de la chasse, ex. « Center Parcs »), `logo_url` (texte, optionnel — logo du
+  lieu affiché sur le tirage, fichier `{code}/logo.png` dans le bucket, voir #43), `clues` (jsonb :
   `[{id,title,text,points,lat,lng}]` — `lat`/`lng` optionnels, `null` si l'indice n'est pas
   géolocalisé), `duration_minutes`, `per_clue_minutes`, `admin_id`, `started_at`, `ended_at`.
   ⚠️ **Aucune migration** pour la géoloc des indices : `clues` est du jsonb, les coords sont
@@ -48,8 +49,9 @@ des photos comme preuves ; un maître du jeu (admin) valide puis fait juger les 
   (`on delete cascade`), `game_code`. Champs : `clue_id`, `photo_url`, `status`
   (`pending`/`approved`/`rejected`), `points`, `bonus_points`, `submitted_at`, `judged_at`.
   Colonnes `lat`/`lng` héritées du prototype GPS, désormais inutilisées.
-- **Storage** : bucket public `photos`, chemin `{game_code}/{submission_id}.jpg` pour les preuves
-  et `{game_code}/team_{team_id}.jpg` pour les photos d'équipe.
+- **Storage** : bucket public `photos`, chemin `{game_code}/{submission_id}.jpg` pour les preuves,
+  `{game_code}/team_{team_id}.jpg` pour les photos d'équipe et `{game_code}/logo.png` pour le
+  logo du lieu.
 
 ⚠️ Le **`submission.id` est réutilisé comme nom de fichier** dans le Storage. Ne jamais
 dissocier les deux.
@@ -151,7 +153,8 @@ dissocier les deux.
   Le cadre est composé **en canvas** par `buildPrintCanvas` : fond parchemin + vignette, double
   filet + losanges d'angle, rose des vents vectorielle (mêmes tracés que `icons/favicon.svg`),
   puis cartouche : lockup logo (rose des vents + « EXPÉDITION » — empilé en portrait, côte à
-  côte en paysage) et « nom d'équipe / nom de la chasse · lieu / date ». **Format de sortie FIXE
+  côte en paysage), « nom d'équipe / nom de la chasse · lieu / date », et à droite le **logo du
+  lieu** s'il a été joint à la chasse (#43). **Format de sortie FIXE
   10×15 cm** : 1200×1800 px en portrait, 1800×1200 en paysage (~300 dpi), selon l'orientation
   de la photo — le labo imprime plein format sans recadrer (#41). La photo est posée **entière**
   (« contain », jamais rognée) dans la fenêtre ; le parchemin absorbe l'écart de ratio, et une
@@ -193,6 +196,7 @@ restent à passer — **à ce jour, aucune : la base est à jour**.
 | `migration-legacy-admin.sql` | Réattribution des `admin_id` legacy (#34) | appliqué 2026-07-26 |
 | `migration-storage-purge.sql` | Purge sans DELETE sur `storage.objects` (#38) | appliqué 2026-07-26 |
 | `migration-print-choice.sql` | `teams.print_submission_id` — tirage souvenir (#39) | appliqué 2026-07-26 |
+| `migration-venue-logo.sql` | `games.logo_url` — logo du lieu (#43) | appliqué 2026-07-27 |
 
 ⚠️ `supabase-setup.sql` §5 est **obsolète** depuis #38 : ses trois fonctions de purge y
 suppriment encore des lignes de `storage.objects`, ce que Supabase refuse. C'est
@@ -626,6 +630,31 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     carré — sur le tirage, la photo a toujours été posée entière (« contain », #41), mais
     les vignettes recadrées pouvaient faire croire le contraire. `BUILD` → `2026-07-26.9`,
     `CACHE` **v12→v13**.
+
+### Poussés sur GitHub (2026-07-27) — Logo du lieu sur le tirage
+
+43. **Logo du lieu (camping, Center Parcs, entreprise…)**. (1) **Base** : `games.logo_url`
+    (`migration-venue-logo.sql`, appliquée le 2026-07-27). (2) **Fichier** : chemin fixe
+    `{code}/logo.png` dans le bucket `photos`. Aucune policy à ajouter — l'upload est déjà
+    ouvert (Lot 2) et `photos_delete_owner` couvre la suppression par l'admin propriétaire.
+    ⚠️ Le bucket n'a **pas** de policy UPDATE : `uploadGameLogoBlob` fait donc `remove()`
+    **puis** `upload(upsert:false)` — un `upsert` partirait en `42501` silencieux (même piège
+    que #26). (3) **Format** : `compressLogo` réencode **toujours en PNG** à 600 px — un logo
+    se pose sur le parchemin, la transparence doit survivre ; un JPEG y collerait un pavé blanc.
+    (4) **UI** : champ « Logo du lieu (optionnel) » avec aperçu sur les écrans de création et de
+    modification (`renderLogoField`, `handleLogoPick`, `clearGameLogo`) ; le brouillon vit dans
+    `STATE.logoDraft` et `refreshLogoField` met à jour **l'aperçu seul** — un `render()` global
+    effacerait les champs déjà saisis. (5) **Envoi** : `persistGameLogo` est appelé **après**
+    l'insert de la chasse (la policy de suppression vérifie que le code du chemin appartient à
+    `auth.uid()`). (6) **Duplication** : le fichier est **recopié** sous le nouveau code, jamais
+    référencé en travers — sinon supprimer la chasse source ferait disparaître le logo de la
+    copie. (7) **Purge** : `{code}/logo.png` ajouté aux chemins de `purgeGamePhotos`.
+    (8) **Tirage** : logo calé à droite du cartouche, boîte de `foot*0.62` de haut et au plus
+    20 % de la largeur, posé entier ; la place qu'il prend est retirée de la largeur des textes.
+    Un échec de chargement n'empêche jamais la production du tirage. `BUILD` → `2026-07-27.1`,
+    `CACHE` **v13→v14**.
+    ⚠️ **Marques de tiers** : c'est à l'organisateur de s'assurer qu'il a l'accord du lieu pour
+    imprimer son logo (mention affichée sous le champ).
 
 ## Dette technique / points de vigilance connus
 
