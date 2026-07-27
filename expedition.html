@@ -186,7 +186,9 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 .print-pick h3{color:var(--parchment);margin:0 0 4px;font-family:'Fraunces',Georgia,serif}
 .print-pick p{color:var(--parchment);opacity:.65;font-size:12px;margin:0 0 12px}
 .print-wait{color:var(--parchment);font-family:'Geist Mono',monospace;font-size:13px;padding:30px}
-.print-actions{margin-top:12px}
+.print-actions{margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.print-grid .p-item .p-zoom{position:absolute;bottom:4px;right:4px;width:28px;height:28px;border-radius:50%;background:rgba(26,24,21,.72);color:#f4ede0;font-size:14px;display:flex;align-items:center;justify-content:center;line-height:1}
+.print-grid .p-item .p-zoom:active{background:rgba(26,24,21,.95)}
 
 .modal{position:fixed;inset:0;background:rgba(26,24,21,.95);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
 .modal.open{display:flex;animation:fade .2s}
@@ -412,7 +414,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-27.2';
+const BUILD = '2026-07-27.3';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -3330,13 +3332,14 @@ async function downloadPrint(teamId){
 }
 
 // ────── Sélecteur de photo (équipe : grille dans l'écran ; admin : modal) ──────
-function renderPrintGrid(teamId, currentId, handler){
+function renderPrintGrid(teamId, currentId, handler, mode){
   const subs = STATE.submissions.filter(s=>s.teamId===teamId && s.photoUrl);
   if(!subs.length) return '<div class="empty" style="padding:18px;font-size:14px">Aucune photo envoyée.</div>';
   return `<div class="print-grid">${subs.map(s=>{
     const clue = STATE.game.clues.find(c=>c.id===s.clueId);
     return `<button type="button" class="p-item${currentId===s.id?' sel':''}" onclick="${handler}('${s.id}')" title="${escapeHtml(clue?.title||'')}">
       <img src="${s.photoDataUrl}" alt="${escapeHtml(clue?.title||'photo')}" loading="lazy">
+      <span class="p-zoom" role="button" aria-label="Agrandir" onclick="event.stopPropagation();openPrintZoom('${s.id}','${mode}')">🔍</span>
     </button>`;
   }).join('')}</div>`;
 }
@@ -3347,7 +3350,7 @@ function openPrintPicker(teamId){
     <div class="print-pick">
       <h3>Photo à imprimer — ${escapeHtml(t.name)}</h3>
       <p>Choix de secours : à n'utiliser que si l'équipe n'a rien choisi.</p>
-      ${renderPrintGrid(teamId, t.printSubId, 'pickPrintForTeam')}
+      ${renderPrintGrid(teamId, t.printSubId, 'pickPrintForTeam', 'admin')}
     </div>`;
   $('#modal').classList.add('open');
 }
@@ -3355,6 +3358,42 @@ async function pickPrintForTeam(subId){
   const teamId = STATE.printPickTeam; if(!teamId) return;
   closeModal();
   await setTeamPrintChoice(teamId, subId);
+}
+
+// ────── Voir la photo en grand (zoom) avant de choisir ──────
+// Réutilise le contrôleur de zoom du modal photo (pincer / molette / double-clic / glisser).
+// En mode admin la visionneuse remplace le contenu du sélecteur : « ← Retour » le rouvre,
+// sinon un simple aperçu ferait perdre la liste des photos de l'équipe.
+function openPrintZoom(subId, mode){
+  const s = STATE.submissions.find(x=>x.id===subId); if(!s) return;
+  const clue = STATE.game?.clues.find(c=>c.id===s.clueId);
+  const chosen = mode==='admin'
+    ? STATE.game?.teams.find(t=>t.id===STATE.printPickTeam)?.printSubId
+    : myTeam()?.printSubId;
+  $('#modal .modal-inner').innerHTML = `
+    <div class="zoomv"><img src="${s.photoDataUrl}" draggable="false" alt=""></div>
+    <div class="zoom-ctrl">
+      <button type="button" onclick="PZOOM&&PZOOM.btn('out')" aria-label="Dézoomer">−</button>
+      <button type="button" onclick="PZOOM&&PZOOM.btn('reset')" aria-label="Réinitialiser">⟲</button>
+      <button type="button" onclick="PZOOM&&PZOOM.btn('in')" aria-label="Zoomer">+</button>
+    </div>
+    <div class="info">${escapeHtml(clue?.title || 'Photo')}${s.status==='rejected'?' · refusée (mais imprimable)':''}</div>
+    <div class="print-actions">
+      ${mode==='admin' ? '<button class="btn ghost sm" onclick="backToPrintPicker()">← Retour</button>' : ''}
+      <button class="btn ${chosen===subId?'ghost':'gold'} sm" onclick="pickPrintFromZoom('${subId}','${mode}')">
+        ${chosen===subId ? '✓ Déjà choisie' : '✦ Choisir cette photo'}
+      </button>
+    </div>`;
+  $('#modal').classList.add('open');
+  const box = $('#modal .zoomv'), img = box.querySelector('img');
+  const start = ()=>{ window.PZOOM = initPhotoZoom(box, img); };
+  if(img.complete && img.naturalWidth) start(); else img.onload = start;
+}
+function backToPrintPicker(){ closeModal(); openPrintPicker(STATE.printPickTeam); }
+async function pickPrintFromZoom(subId, mode){
+  closeModal();
+  if(mode==='admin') await setTeamPrintChoice(STATE.printPickTeam, subId);
+  else await choosePrintPhoto(subId);
 }
 
 // ────── Écran équipe : la carte de choix ──────
@@ -3367,7 +3406,7 @@ function renderTeamPrintCard(){
     <div class="card" style="margin-top:20px;border-color:var(--gold-dark)">
       <h3 style="margin-bottom:6px">🖨 Votre photo souvenir</h3>
       <p class="help-text" style="margin:0 0 12px">Choisissez la photo que vous voulez emporter : le maître du jeu l'imprimera encadrée aux couleurs d'Expédition.</p>
-      ${renderPrintGrid(t.id, chosen, 'choosePrintPhoto')}
+      ${renderPrintGrid(t.id, chosen, 'choosePrintPhoto', 'team')}
       ${chosen ? `
         <p class="mono" style="font-size:11px;color:var(--forest);margin:12px 0 8px">✓ Choix enregistré — le maître du jeu le voit de son côté.</p>
         <button class="btn ghost sm" onclick="openPrintPreview('${t.id}')" style="width:100%">👁 Voir le tirage encadré</button>`

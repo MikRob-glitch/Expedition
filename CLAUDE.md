@@ -3,8 +3,8 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `550a63c`+docs, `BUILD` `2026-07-27.2`,
-> `CACHE` `expedition-v15`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `92eb326`+docs, `BUILD` `2026-07-27.3`,
+> `CACHE` `expedition-v16`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > À ce jour, aucun écart : local et distant alignés (vérifié par re-clonage + `diff`).
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
@@ -162,6 +162,13 @@ dissocier les deux.
   photo portrait 3:4 (sortie standard de `compressImage`, #40) remplit la fenêtre exactement. ⚠️ La photo est chargée par **fetch → blob → objectURL** : une `<img>` pointant
   directement le Storage (autre origine) **souillerait le canvas** et ferait échouer `toBlob()`.
   ⚠️ Les polices sont préchargées (`ensurePrintFonts`) sinon le canvas dessine en repli système.
+- **Zoom avant le choix du tirage** : chaque vignette de la grille de choix (équipe et
+  sélecteur admin) porte une pastille 🔍 qui ouvre la photo en grand, zoomable
+  (`openPrintZoom` → `initPhotoZoom`), avec un bouton « ✦ Choisir cette photo ». En mode admin
+  la visionneuse remplace le contenu du sélecteur : « ← Retour » (`backToPrintPicker`) le
+  rouvre, sinon un simple coup d'œil ferait perdre la liste. Un clic sur la vignette elle-même
+  sélectionne toujours directement (la loupe fait `stopPropagation`). ⚠️ La loupe est un
+  `<span role="button">` : un `<button>` ne peut pas en contenir un autre (même piège que #33).
 - **Zoom des photos** : le modal photo (vote / validation / galerie) est zoomable — pincer,
   molette, double-clic (1×↔2,5×), glisser pour déplacer, boutons +/−/⟲ (`initPhotoZoom`,
   Pointer Events, zoom 1–6×). Voir #27.
@@ -670,6 +677,17 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     `usableBot`, ce dernier calé sur le filet doré). Chaque ligne garde son ajustement de
     largeur (`fitFont` + `ellipsize`). Effet mesuré : les noms longs qui se tronquaient tiennent
     désormais entiers. `BUILD` → `2026-07-27.2`, `CACHE` **v14→v15**.
+
+### Poussés sur GitHub (2026-07-27) — Zoom sur les photos avant de choisir le tirage
+
+45. **Loupe sur les vignettes de choix du tirage.** Sur un écran de téléphone, une vignette
+    d'un tiers de largeur ne permet pas de juger la netteté ni les visages : les équipes
+    choisissaient à l'aveugle. `renderPrintGrid` prend un paramètre `mode` (`team`/`admin`) et
+    pose sur chaque vignette une pastille 🔍 → `openPrintZoom`, qui réutilise `initPhotoZoom`
+    (pincer / molette / double-clic / glisser, 1–6×) et propose « ✦ Choisir cette photo »
+    (libellé « ✓ Déjà choisie » si c'est le choix courant). Côté admin, la visionneuse écrase
+    le contenu du sélecteur → bouton « ← Retour » (`backToPrintPicker`). Le clic sur la vignette
+    continue de sélectionner en un geste. `BUILD` → `2026-07-27.3`, `CACHE` **v15→v16**.
 
 ## Dette technique / points de vigilance connus
 
