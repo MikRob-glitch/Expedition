@@ -3,8 +3,8 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `92eb326`+docs, `BUILD` `2026-07-27.3`,
-> `CACHE` `expedition-v16`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `3897c4a`+docs, `BUILD` `2026-07-27.4`,
+> `CACHE` `expedition-v17`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > À ce jour, aucun écart : local et distant alignés (vérifié par re-clonage + `diff`).
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
@@ -146,7 +146,10 @@ dissocier les deux.
   Voir #28.
 - **Tirage souvenir encadré** : en fin de chasse (`ended`), chaque équipe choisit **une** photo
   à imprimer sur `screenTeamEnd` (`renderTeamPrintCard` → `choosePrintPhoto` → `setTeamPrintChoice`,
-  stocké dans `teams.print_submission_id`). Le maître du jeu voit les choix sur `screenAdminEnd`
+  stocké dans `teams.print_submission_id`). Le tirage est un **produit** (imprimé, offert ou
+  vendu par l'organisateur) : côté équipe, l'aperçu est une **épreuve** (`buildProofCanvas` :
+  700 px + filigrane « ÉPREUVE ») et **aucun téléchargement** n'est proposé — voir #46.
+  Le maître du jeu voit les choix sur `screenAdminEnd`
   (`renderAdminPrintCard`), peut choisir **à la place** d'une équipe absente (`openPrintPicker`),
   prévisualiser (`openPrintPreview`), télécharger un tirage (`downloadPrint`) ou **tous** en ZIP
   `{CODE}_tirages.zip` (`downloadAllPrints`, JSZip, `STORE` — du JPEG ne se recompresse pas).
@@ -688,6 +691,24 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     (libellé « ✓ Déjà choisie » si c'est le choix courant). Côté admin, la visionneuse écrase
     le contenu du sélecteur → bouton « ← Retour » (`backToPrintPicker`). Le clic sur la vignette
     continue de sélectionner en un geste. `BUILD` → `2026-07-27.3`, `CACHE` **v15→v16**.
+
+### Poussés sur GitHub (2026-07-27, commit `952b779`) — Le tirage n'est plus téléchargeable par les équipes
+
+46. **Épreuve filigranée côté joueur.** Le tirage étant destiné à être imprimé puis offert ou
+    vendu, laisser les équipes le télécharger en pleine définition revenait à donner le produit.
+    `openPrintPreview(teamId, mode)` a désormais deux régimes : `admin` (défaut) rend le tirage
+    définitif avec son bouton de téléchargement ; `team` passe par `buildProofCanvas` — le
+    tirage complet est réduit à **700 px** au plus long côté puis barré d'un filigrane
+    « ÉPREUVE » répété en diagonale (texte plein **et** contour, pour rester lisible sur une
+    zone sombre comme sur une zone claire) — sans aucun bouton de téléchargement. La mention
+    « le tirage vous sera remis par l'organisateur » remplace ce bouton. `BUILD` →
+    `2026-07-27.4`, `CACHE` **v16→v17**.
+    ⚠️ **Limite assumée, à ne pas se raconter d'histoires** : tout ce qu'un navigateur affiche
+    peut être capturé (appui long, capture d'écran) et les **photos brutes** restent de toute
+    façon accessibles par leur URL publique dans le bucket (`public=true`, cf. Lot 2).
+    Le filigrane + la basse définition rendent le fichier **inutilisable à l'impression** ;
+    ils n'empêchent pas de le copier. Une vraie protection supposerait des URLs signées et un
+    rendu du cadre côté serveur (Edge Function) — non fait.
 
 ## Dette technique / points de vigilance connus
 
