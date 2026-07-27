@@ -3,8 +3,8 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `9559917`+docs, `BUILD` `2026-07-27.1`,
-> `CACHE` `expedition-v14`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-26, commit `550a63c`+docs, `BUILD` `2026-07-27.2`,
+> `CACHE` `expedition-v15`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > À ce jour, aucun écart : local et distant alignés (vérifié par re-clonage + `diff`).
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
@@ -153,8 +153,9 @@ dissocier les deux.
   Le cadre est composé **en canvas** par `buildPrintCanvas` : fond parchemin + vignette, double
   filet + losanges d'angle, rose des vents vectorielle (mêmes tracés que `icons/favicon.svg`),
   puis cartouche : lockup logo (rose des vents + « EXPÉDITION » — empilé en portrait, côte à
-  côte en paysage), « nom d'équipe / nom de la chasse · lieu / date », et à droite le **logo du
-  lieu** s'il a été joint à la chasse (#43). **Format de sortie FIXE
+  côte en paysage), le bloc de texte **équipe / chasse / lieu / date** (une ligne chacun, mis
+  à l'échelle pour tenir dans le cartouche — voir #44) et, à droite, le **logo du lieu** s'il a
+  été joint à la chasse (#43). **Format de sortie FIXE
   10×15 cm** : 1200×1800 px en portrait, 1800×1200 en paysage (~300 dpi), selon l'orientation
   de la photo — le labo imprime plein format sans recadrer (#41). La photo est posée **entière**
   (« contain », jamais rognée) dans la fenêtre ; le parchemin absorbe l'écart de ratio, et une
@@ -655,6 +656,20 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     `CACHE` **v13→v14**.
     ⚠️ **Marques de tiers** : c'est à l'organisateur de s'assurer qu'il a l'accord du lieu pour
     imprimer son logo (mention affichée sous le champ).
+
+### Poussés sur GitHub (2026-07-27, commit `92eb326`) — Le lieu sur sa propre ligne
+
+44. **Cartouche : bloc de texte à 4 lignes, mis à l'échelle.** Le lieu était accolé au nom de
+    chasse (« Chasse · Lieu ») sur une seule ligne : dès que le logo du lieu (#43) prenait de
+    la largeur, l'ellipse mangeait le lieu — invisible en portrait, précisément là où on
+    voulait le lire. Il a désormais **sa propre ligne**, sous le nom de la chasse.
+    Quatre lignes ne tenant pas aux tailles nominales dans le cartouche paysage (230 px contre
+    300 en portrait), les lignes sont décrites dans un tableau (texte, taille, taille mini,
+    couleur, interligne), leur **hauteur totale est mesurée avant de dessiner**, puis un facteur
+    d'échelle unique `k` ramène le bloc dans la place réellement disponible (`usableTop` →
+    `usableBot`, ce dernier calé sur le filet doré). Chaque ligne garde son ajustement de
+    largeur (`fitFont` + `ellipsize`). Effet mesuré : les noms longs qui se tronquaient tiennent
+    désormais entiers. `BUILD` → `2026-07-27.2`, `CACHE` **v14→v15**.
 
 ## Dette technique / points de vigilance connus
 
