@@ -2,7 +2,7 @@
 
 Application web mobile (**PWA installable, capable hors-ligne**) pour organiser une **chasse au trésor multi-équipes**. Les équipes résolvent des indices, prouvent chaque trouvaille par une **photo**, l'admin **valide** la conformité, puis un **jury vote** les meilleures photos. Synchronisation temps réel entre tous les téléphones.
 
-> Application mono-fichier (`expedition.html`, ~3360 lignes), zéro build, prête à déployer. Documentation technique complète : [`PROJECT.md`](PROJECT.md) ; guide de travail pour modifier l'app : [`CLAUDE.md`](CLAUDE.md).
+> Application mono-fichier (`expedition.html`, ~3620 lignes), zéro build, prête à déployer. Documentation technique complète : [`PROJECT.md`](PROJECT.md) ; guide de travail pour modifier l'app : [`CLAUDE.md`](CLAUDE.md).
 
 ## Aperçu
 
@@ -25,7 +25,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 
 | Couche | Choix |
 |---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique (~3360 lignes), zéro build |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~3620 lignes), zéro build |
 | Caméra | `<input type="file" capture>` (natif iOS/Android) |
 | Backend | Supabase (Postgres + Realtime + Storage + **Auth**) |
 | Carte | Leaflet 1.9.4 + tuiles OpenStreetMap (orientation des indices) |

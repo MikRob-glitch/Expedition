@@ -11,7 +11,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 
 | Couche | Choix | Pourquoi |
 |---|---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique (~3360 lignes) | Zéro build, démarrage instantané, debug trivial |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~3620 lignes) | Zéro build, démarrage instantané, debug trivial |
 | Backend | Supabase (Postgres + Realtime + Storage + Auth) | Synchro websockets, photos hébergées, auth OTP, tier gratuit |
 | Caméra | `<input type="file" capture>` | Caméra native iOS/Android sans permission custom |
 | Carte | Leaflet 1.9.4 + tuiles OpenStreetMap | Carte d'orientation des indices (géoloc optionnelle) |
@@ -27,7 +27,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 ## Fichiers du projet
 
 ```
-expedition.html            ← app complète, single-file SPA (~3360 lignes)
+expedition.html            ← app complète, single-file SPA (~3620 lignes)
 sw.js                      ← service worker (app-shell offline, cache, tuiles OSM)
 confidentialite.html       ← politique de confidentialité RGPD (servie par Pages)
 manifest.json              ← manifeste PWA (icônes any + maskable)
@@ -182,11 +182,13 @@ Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Doub
 | `openClueMapPicker` / `openTeamMap` | Carte Leaflet (admin place / équipe s'oriente) |
 | `showQR` / `closeQR` | QR d'accès joueurs (deep-link `?join=CODE`) |
 | `openPhoto` / `initPhotoZoom` | Modal photo + zoom/pan |
+| `openPrintZoom` / `backToPrintPicker` | Voir une photo en grand avant de choisir le tirage |
 | `openExportZip` / `runExportZip` | Export ZIP des photos |
 | `compressImage` | Redimension + JPEG avant envoi (`{max, q}`) |
 | `compressLogo` / `persistGameLogo` | Logo du lieu : PNG 600 px (alpha conservé) + envoi au bucket |
 | `setTeamPrintChoice` / `choosePrintPhoto` | Choix de la photo souvenir (équipe) |
-| `buildPrintCanvas` / `downloadPrint` / `downloadAllPrints` | Composition du cadre et récupération des tirages |
+| `buildPrintCanvas` / `downloadPrint` / `downloadAllPrints` | Composition du cadre et récupération des tirages (admin) |
+| `buildProofCanvas` / `openPrintPreview(id,'team')` | Épreuve filigranée 700 px montrée aux équipes (sans téléchargement) |
 | `loadGamesForDuplicate` / `duplicateFromCode` | Liste de mes chasses + duplication |
 | `purgeGamePhotos` + `purgeCurrentGame` / `admin_purge_game` | Effacement RGPD in-app : fichiers par l'API Storage **puis** lignes (RPC SECURITY DEFINER) |
 | `renderLeaderboard` | Classement (points d'indice + vote) |
@@ -240,7 +242,7 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 
 ## Roadmap
 
-- **Lot Edge Functions** (`service_role`) : verrouiller les écritures `teams`/`submissions`, servir à chaque équipe seulement ses indices autorisés (ferme la fuite des textes/GPS d'indices), et **purger les fichiers du Storage** à l'échéance des 90 j (le cron ne sait plus le faire).
+- **Lot Edge Functions** (`service_role`) : verrouiller les écritures `teams`/`submissions`, servir à chaque équipe seulement ses indices autorisés (ferme la fuite des textes/GPS d'indices), **purger les fichiers du Storage** à l'échéance des 90 j (le cron ne sait plus le faire), et — si le tirage devient une vraie source de revenu — passer le bucket en **privé + URLs signées** avec rendu du cadre côté serveur (aujourd'hui les photos brutes sont publiques et l'épreuve filigranée n'est qu'un frein).
 - **Supabase Pro** : plus de pause, backups quotidiens (remplace le keep-alive).
 - **App native** (Expo/React Native) : le schéma et la logique ne changent pas.
 - Notifications push quand le jury vote ; replay animé ; etc.
@@ -266,4 +268,4 @@ select public.purge_game('XXXX');
 
 ## Historique des évolutions
 
-Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** et **photos 1600 px**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
+Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu et **épreuve filigranée**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
