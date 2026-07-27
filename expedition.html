@@ -412,7 +412,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-27.1';
+const BUILD = '2026-07-27.2';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -3241,24 +3241,39 @@ async function buildPrintCanvas(sub, team){
   const textX = pad + lockW + foot*0.16;
   const leftMax = (W - pad) - rightW - textX;
 
-  // Ligne 1 : l'équipe
-  const mkTeam = s => `800 ${s}px Fraunces, Georgia, serif`;
-  const tSize = fitFont(ctx, team?.name || '', leftMax, mkTeam, foot*0.30, foot*0.15);
-  ctx.font = mkTeam(tSize); ctx.fillStyle = '#1a1815'; ctx.textAlign = 'left';
-  ctx.fillText(ellipsize(ctx, team?.name || 'Équipe', leftMax), textX, y0 + foot*0.41);
+  // Bloc de texte : équipe / chasse / lieu / date — le lieu a SA propre ligne (accolé au
+  // nom de chasse, il se faisait tronquer dès qu'un logo mangeait de la largeur).
+  // On mesure la hauteur totale avant de dessiner et on met le bloc à l'échelle s'il
+  // déborde : quatre lignes ne tiennent pas aux tailles nominales dans le cartouche
+  // paysage (230 px contre 300 en portrait).
+  const lines = [
+    { t: team?.name || 'Équipe', size: foot*0.30,  min: foot*0.13, color:'#1a1815', gap: foot*0.055,
+      font: s=>`800 ${s}px Fraunces, Georgia, serif` },
+    { t: g.name || '',           size: foot*0.175, min: foot*0.09, color:'#4a4438', gap: foot*0.035,
+      font: s=>`italic 600 ${s}px Fraunces, Georgia, serif` }
+  ];
+  if(g.location) lines.push(
+    { t: g.location,             size: foot*0.145, min: foot*0.08, color:'#6e6552', gap: foot*0.045,
+      font: s=>`italic 500 ${s}px Fraunces, Georgia, serif` });
+  lines.push(
+    { t: printDateStr(g).toUpperCase(), size: foot*0.125, min: foot*0.07, color:'#6e6552', gap: 0,
+      font: s=>`500 ${s}px "Geist Mono", monospace`, spaced: true });
 
-  // Ligne 2 : la chasse (+ lieu)
-  const sub2 = g.name + (g.location ? ' · ' + g.location : '');
-  const mkHunt = s => `italic 600 ${s}px Fraunces, Georgia, serif`;
-  const hSize = fitFont(ctx, sub2, leftMax, mkHunt, foot*0.165, foot*0.10);
-  ctx.font = mkHunt(hSize); ctx.fillStyle = '#4a4438';
-  ctx.fillText(ellipsize(ctx, sub2, leftMax), textX, y0 + foot*0.615);
-
-  // Ligne 3 : la date
-  const dSize = foot*0.125;
-  ctx.font = `500 ${dSize}px "Geist Mono", monospace`;
-  ctx.fillStyle = '#6e6552';
-  drawSpaced(ctx, printDateStr(g).toUpperCase(), textX, y0 + foot*0.78, dSize*0.10, 'left');
+  const usableTop = y0 + foot*0.09, usableBot = y0 + foot - i2 - 10;
+  const usableH = usableBot - usableTop;
+  const total = lines.reduce((a,l)=>a + l.size + l.gap, 0);
+  const k = Math.min(1, usableH/total);
+  let cursor = usableTop + Math.max(0, (usableH - total*k)/2);
+  ctx.textAlign = 'left';
+  for(const l of lines){
+    const start = l.size*k;
+    const size = fitFont(ctx, l.t, leftMax, l.font, start, Math.min(l.min, start));
+    ctx.font = l.font(size); ctx.fillStyle = l.color;
+    const baseline = cursor + start*0.80;
+    if(l.spaced) drawSpaced(ctx, l.t, textX, baseline, size*0.10, 'left');
+    else ctx.fillText(ellipsize(ctx, l.t, leftMax), textX, baseline);
+    cursor += start + l.gap*k;
+  }
 
   return cv;
 }
