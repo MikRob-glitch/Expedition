@@ -3,9 +3,10 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-27, commit `952b779`+docs, `BUILD` `2026-07-27.4`,
-> `CACHE` `expedition-v17`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
-> À ce jour, aucun écart : local et distant alignés (vérifié par re-clonage + `diff`).
+> **réellement poussé sur GitHub** (HEAD = 2026-07-27, commit `22d69d8`+docs, `BUILD` `2026-07-27.5`,
+> `CACHE` `expedition-v18`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> À ce jour, aucun écart applicatif : local et distant alignés (vérifié par re-clonage + `diff`).
+> Seul le dossier `commercial/` (support de vente) reste volontairement hors dépôt.
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
 > § « État des migrations SQL » si une migration est ajoutée, et une entrée dans le journal.
@@ -119,8 +120,11 @@ dissocier les deux.
   **optionnel** (`capture="user"`, façade selfie). Capturée via `compressImage`, uploadée par
   `uploadTeamPhoto` dans `{game_code}/team_{team_id}.jpg`, puis `setTeamPhoto` écrit l'URL
   (cache-bustée) dans `teams.photo_url`. N'empêche jamais l'inscription si l'upload échoue.
-  Affichée en pastille (`teamAva`, repli sur l'initiale) dans le lobby admin, le lobby équipe
-  et le classement.
+  Affichée en pastille (`teamAva`, repli sur l'initiale) dans le lobby admin, le lobby équipe,
+  le classement et — depuis #48 — **en en-tête d'équipe** sur les écrans du maître du jeu (suivi
+  live, cartes de validation/vote, liste des tirages), cliquable pour l'ouvrir en grand
+  (`teamAvaLink`). Depuis #48 elle est aussi une **photo à part entière** : proposée en premier
+  dans le choix du tirage souvenir et jointe en tête du dossier de l'équipe dans l'export ZIP.
 - **Géolocalisation des indices + carte d'orientation (Leaflet)** : chaque indice porte des
   coordonnées **optionnelles** (`clues[].lat`/`lng`, jsonb — aucune migration). **Admin** : dans
   l'éditeur d'indices (`renderClueListEdit`), boutons « 📍 Placer sur la carte »
@@ -604,8 +608,9 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     en `imageSmoothingQuality:'high'`, jamais d'agrandissement, et le filet de sécurité baisse
     désormais la **qualité** (plancher 0,45) plutôt que la définition si une photo dépasse
     ~3 Mo de dataURL. Rendu à l'impression : 10×15 cm ~300 dpi, 13×18 ~225 dpi, A5 ~190 dpi.
-    La **photo d'équipe** (pastille de 40 px à l'écran) reste volontairement basse définition :
-    `compressImage(file, {max:800, q:0.8})` — inutile de payer 1600 px pour un avatar.
+    La **photo d'équipe** était volontairement basse définition (`{max:800, q:0.8}` — inutile
+    de payer 1600 px pour un avatar de 40 px). ⚠️ **Annulé par #48** : devenue imprimable
+    (choix du tirage souvenir), elle passe au régime commun `compressImage(file)`.
     `BUILD` → `2026-07-26.7`, `CACHE` **v10→v11**.
     ⚠️ **Contrepartie à surveiller** : ~350–450 Ko par preuve au lieu de ~200 Ko, soit **~2×**
     en upload le jour J (l'outbox + le retry idempotent couvrent les échecs) et **~2×** en
@@ -709,6 +714,40 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     Le filigrane + la basse définition rendent le fichier **inutilisable à l'impression** ;
     ils n'empêchent pas de le copier. Une vraie protection supposerait des URLs signées et un
     rendu du cadre côté serveur (Edge Function) — non fait.
+
+### Poussés sur GitHub (2026-07-27, commit `22d69d8`) — La photo d'équipe devient une photo à part entière
+
+48. **Selfie d'inscription traité comme une preuve virtuelle.** Constat terrain : la photo prise
+    à l'inscription n'existait **qu'en pastille de 26–40 px** — invisible à la fin, absente du
+    choix du tirage et de l'export. Or c'est souvent la seule photo où l'équipe est au complet.
+    (1) **Cœur** : `teamPhotoSub(team)` fabrique un objet de la forme d'une submission
+    (`photoUrl`/`photoDataUrl`, `clueId:null`, `points:0`) portant l'id sentinelle
+    **`team:<teamId>`** ; `findAnySub(id)` résout indifféremment une preuve réelle ou cette
+    photo ; `teamPhotos(teamId)` retourne toutes les photos d'une équipe, **selfie en tête**.
+    **Aucune migration** : rien n'est écrit en base, l'objet est reconstruit à chaque rendu
+    depuis `teams.photo_url`. Le score est intact — la photo n'entre jamais dans
+    `STATE.submissions`, seule source du calcul.
+    (2) **Tirage** : première vignette de `renderPrintGrid` (badge « ÉQUIPE »), côté équipe
+    **et** dans le sélecteur de secours admin ; `teamPrintSub` reconnaît la sentinelle, donc
+    `buildPrintCanvas`/`buildProofCanvas`/`downloadPrint`/`downloadAllPrints` fonctionnent sans
+    modification. L'id sentinelle est stocké tel quel dans `teams.print_submission_id`
+    (colonne `text` **sans FK**, cf. #39 — c'est précisément ce qui rend l'astuce possible) ;
+    il ne peut pas entrer en collision avec un id de submission (`uid()` = 7 caractères
+    `[a-z0-9]`, sans `:`).
+    (3) **Export ZIP** : la photo d'équipe **échappe aux filtres de statut** (elle n'en a pas)
+    et ouvre le dossier de son équipe sous `00_photo-equipe.jpg` (le préfixe `00_` la garde en
+    tête au tri). Le modal annonce le nombre de photos d'équipe jointes.
+    (4) **En-tête d'équipe côté maître du jeu** : `teamAvaLink` (pastille cliquable →
+    `openPhoto('team:<id>')`, zoomable) sur le suivi live, les cartes de validation/vote et la
+    liste des tirages. `openPhoto` accepte désormais la sentinelle.
+    (5) **Définition** : `handleJoinCapture` ne bride plus la capture à 800 px — la photo étant
+    imprimable, elle passe au régime commun `PHOTO_MAX` 1600 px / q 0,82 (annule la note de #40).
+    ⚠️ **Contrepartie** : ~350 Ko par équipe au lieu de ~80 Ko dans le bucket. Négligeable
+    (une photo par équipe, pas par indice) mais à compter avec le plafond de 1 Go.
+    `BUILD` → `2026-07-27.5`, `CACHE` **v17→v18**.
+    ⚠️ **Photos d'équipe des chasses déjà jouées** : elles restent en 800 px — imprimables en
+    10×15 à ~200 dpi, correct mais en deçà des preuves. Seules les inscriptions postérieures au
+    déploiement bénéficient de la pleine définition.
 
 ## Dette technique / points de vigilance connus
 
