@@ -168,6 +168,7 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 .print-grid .p-item{position:relative;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:8px;overflow:hidden;background:#000;cursor:pointer}
 .print-grid .p-item img{width:100%;height:100%;object-fit:contain;display:block}
 .print-grid .p-item.sel{border-color:var(--gold-dark);box-shadow:0 0 0 3px rgba(201,165,90,.4)}
+.print-grid .p-item.p-team::before{content:'\00c9quipe';position:absolute;top:0;left:0;z-index:2;padding:2px 7px;border-bottom-right-radius:8px;background:var(--oxblood,#6e1f1f);color:#f4ede0;font-family:'Geist Mono',monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase}
 .print-grid .p-item.sel::after{content:'\2726';position:absolute;top:2px;right:5px;color:var(--gold);font-size:16px;text-shadow:0 1px 3px rgba(0,0,0,.9)}
 .print-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
 .print-row:last-of-type{border-bottom:0}
@@ -414,7 +415,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-27.4';
+const BUILD = '2026-07-27.5';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -728,6 +729,12 @@ function teamAva(t, size){
     return `<span style="${base}"><img src="${escapeHtml(t.photoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover" loading="lazy"></span>`;
   }
   return `<span style="${base}">${escapeHtml(init)}</span>`;
+}
+// Même pastille, cliquable : ouvre la photo d'équipe en grand (zoomable). Repli silencieux
+// sur la pastille inerte si l'équipe n'a pas joint de photo à l'inscription.
+function teamAvaLink(t, size){
+  if(!t || !t.photoUrl) return teamAva(t, size);
+  return `<span style="cursor:zoom-in;display:inline-flex" title="Voir la photo d'\u00e9quipe" onclick="event.stopPropagation();openPhoto('${TEAMPHOTO_PREFIX}${t.id}')">${teamAva(t,size)}</span>`;
 }
 function fmtTime(secs){
   if(secs<=0) return '00:00';
@@ -1912,7 +1919,7 @@ function screenAdminLive(){
           const ts = subs.filter(s=>s.teamId===t.id);
           return `<div class="row">
             <div class="rank">·</div>
-            <div class="name">${escapeHtml(t.name)}</div>
+            <div class="name" style="display:flex;align-items:center;gap:8px;min-width:0">${teamAvaLink(t,30)}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</span></div>
             <div class="pts" style="font-size:18px">${ts.length}<span style="font-size:11px;color:var(--ink-mute);font-family:'Geist Mono',monospace"> photos</span></div>
           </div>`;
         }).join('') || '<div class="empty">Aucune équipe</div>'}
@@ -1959,7 +1966,7 @@ function renderSubmissionCard(s, ctx){
     <div class="meta">
       <div class="row1">
         <div>
-          <div class="team">${escapeHtml(team?.name||'?')}</div>
+          <div class="team" style="display:flex;align-items:center;gap:7px">${teamAvaLink(team,26)}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${escapeHtml(team?.name||'?')}</span></div>
           <div class="clue-ref">${escapeHtml(clue?.title||'?')}</div>
         </div>
         ${(ctx==='validation' && status!=='pending') || ctx==='vote' ? `<span class="status-badge ${status}">${status==='approved'?'Conforme':status==='rejected'?'Refusée':'En attente'}</span>` : ''}
@@ -2462,7 +2469,9 @@ async function handleJoinCapture(e){
   STATE.joinConsent = $('#join-consent')?.checked || false;
   toast('Compression de la photo…');
   try{
-    STATE.joinPhoto = await compressImage(file, { max:800, q:0.8 });  // pastille : 800 px suffisent
+    // Pleine définition (PHOTO_MAX) : depuis 2026-07-27 cette photo est imprimable au même
+    // titre qu'une preuve (choix du tirage souvenir) — 800 px n'y suffisaient pas.
+    STATE.joinPhoto = await compressImage(file);
     render();
     // restaure les champs après re-render
     if($('#join-code')) $('#join-code').value = STATE.joinDraftCode;
@@ -2885,10 +2894,13 @@ function initPhotoZoom(box, img){
 }
 
 function openPhoto(subId){
-  const s = STATE.submissions.find(x=>x.id===subId);
+  const s = findAnySub(subId);
   if(!s) return;
   const team = STATE.game.teams.find(t=>t.id===s.teamId);
   const clue = STATE.game.clues.find(c=>c.id===s.clueId);
+  const caption = s.isTeamPhoto
+    ? `${escapeHtml(team?.name||'?')} \u00b7 Photo d'\u00e9quipe`
+    : `${escapeHtml(team?.name||'?')} \u00b7 ${escapeHtml(clue?.title||'?')} \u00b7 ${(s.points||0)+(s.bonusPoints||0)} pts${(s.bonusPoints||0)>0?` (dont +${s.bonusPoints} bonus)`:''}`;
   $('#modal .modal-inner').innerHTML = `
     <div class="zoomv"><img src="${s.photoDataUrl}" draggable="false" alt=""></div>
     <div class="zoom-ctrl">
@@ -2896,7 +2908,7 @@ function openPhoto(subId){
       <button type="button" onclick="PZOOM&&PZOOM.btn('reset')" aria-label="Réinitialiser">⟲</button>
       <button type="button" onclick="PZOOM&&PZOOM.btn('in')" aria-label="Zoomer">+</button>
     </div>
-    <div class="info">${escapeHtml(team?.name||'?')} · ${escapeHtml(clue?.title||'?')} · ${(s.points||0)+(s.bonusPoints||0)} pts${(s.bonusPoints||0)>0?` (dont +${s.bonusPoints} bonus)`:''}</div>
+    <div class="info">${caption}</div>
   `;
   $('#modal').classList.add('open');
   const box=$('#modal .zoomv'), img=box.querySelector('img');
@@ -2931,7 +2943,8 @@ function openExportZip(){
   if(!STATE.game){ toast('Aucune chasse chargée','error'); return; }
   if(typeof JSZip === 'undefined'){ toast('JSZip non chargé (réseau ?)','error',4500); return; }
   const subs = STATE.submissions || [];
-  if(!subs.length){ toast('Aucune photo à exporter','error'); return; }
+  const shots = (STATE.game?.teams || []).filter(t=>t.photoUrl).length;
+  if(!subs.length && !shots){ toast('Aucune photo à exporter','error'); return; }
   const ok = subs.filter(s=>s.status==='approved').length;
   const ko = subs.filter(s=>s.status==='rejected').length;
   const pending = subs.filter(s=>s.status==='pending').length;
@@ -2939,7 +2952,8 @@ function openExportZip(){
     <div class="export-stat"><span class="n">${subs.length}</span><span class="l">Total</span></div>
     <div class="export-stat ok"><span class="n">${ok}</span><span class="l">Conformes</span></div>
     <div class="export-stat ko"><span class="n">${ko}</span><span class="l">Refusées</span></div>
-    <div class="export-stat pending"><span class="n">${pending}</span><span class="l">En attente</span></div>`;
+    <div class="export-stat pending"><span class="n">${pending}</span><span class="l">En attente</span></div>
+    ${shots ? `<div class="help-text" style="grid-column:1/-1;margin:0">+ ${shots} photo${shots>1?'s':''} d'équipe (prise${shots>1?'s':''} à l'inscription), jointe${shots>1?'s':''} d'office en tête du dossier de chaque équipe.</div>` : ''}`;
   $('#export-progress').hidden = true;
   $('#export-log').innerHTML = '';
   $('#export-bar-fill').style.width = '0';
@@ -2959,7 +2973,10 @@ async function runExportZip(){
     pending:  $('#export-f-pending').checked,
   };
   const subs = (STATE.submissions || []).filter(s => want[s.status]);
-  if(!subs.length){ toast('Aucune photo sélectionnée','error'); return; }
+  // La photo d'équipe n'a pas de statut : elle échappe aux filtres et ouvre toujours le
+  // dossier de son équipe (préfixe « 00_ » pour rester en tête au tri alphabétique).
+  const items = [...(STATE.game?.teams || []).map(teamPhotoSub).filter(Boolean), ...subs];
+  if(!items.length){ toast('Aucune photo sélectionnée','error'); return; }
 
   const btn = $('#export-run');
   btn.disabled = true;
@@ -2973,7 +2990,7 @@ async function runExportZip(){
   const clueOf = id => (STATE.game.clues||[]).find(c=>c.id===id)?.title || id || 'indice';
   const logLine = (msg, cls='') => { const d = document.createElement('div'); if(cls) d.className = cls; d.textContent = msg; log.appendChild(d); log.scrollTop = 1e9; };
 
-  const total = subs.length;
+  const total = items.length;
   let done = 0, errors = 0;
   const t0 = performance.now();
   const update = () => {
@@ -2983,13 +3000,15 @@ async function runExportZip(){
   };
 
   const zip = new JSZip();
-  const queue = subs.slice();
+  const queue = items.slice();
   const worker = async () => {
     while(queue.length){
       const s = queue.shift(); if(!s) break;
       const team = teamOf(s.teamId);
       const clue = clueOf(s.clueId);
-      const path = `${safeName(team)}/${hhmm(s.submittedAt)}_${s.status}_${safeName(clue)}_${s.id}.jpg`;
+      const path = s.isTeamPhoto
+        ? `${safeName(team)}/00_photo-equipe.jpg`
+        : `${safeName(team)}/${hhmm(s.submittedAt)}_${s.status}_${safeName(clue)}_${s.id}.jpg`;
       try{
         const r = await fetch(s.photoUrl);
         if(!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -3043,8 +3062,40 @@ function printDateStr(g){
 }
 function safeFile(s){ return (s||'').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,'_').trim() || '_'; }
 function myTeam(){ return STATE.game?.teams.find(t=>t.id===STATE.me?.teamId) || null; }
+
+// ────── Photo d'équipe = preuve virtuelle ──────
+// Le selfie pris à l'inscription vit dans `teams.photo_url` : ce n'est pas une submission
+// (ni indice, ni statut, ni points — il ne doit JAMAIS peser au score). Pour qu'il apparaisse
+// partout où l'on liste « les photos d'une équipe » (choix du tirage, export ZIP, visionneuse),
+// on fabrique un objet de même forme, d'id sentinelle `team:<teamId>`. Cet id est stockable tel
+// quel dans `teams.print_submission_id` (colonne texte sans FK, cf. #39) — d'où le préfixe,
+// qui ne peut pas entrer en collision avec un id de submission (uid() = 7 car. [a-z0-9]).
+const TEAMPHOTO_PREFIX = 'team:';
+function isTeamPhotoId(id){ return typeof id === 'string' && id.startsWith(TEAMPHOTO_PREFIX); }
+function teamPhotoSub(team){
+  if(!team || !team.photoUrl) return null;
+  return { id: TEAMPHOTO_PREFIX + team.id, gameCode: STATE.game?.code, teamId: team.id,
+           clueId: null, photoUrl: team.photoUrl, photoDataUrl: team.photoUrl,
+           status: 'approved', points: 0, bonusPoints: 0,
+           submittedAt: team.joinedAt || 0, isTeamPhoto: true };
+}
+// Résout un id de photo : preuve réelle OU photo d'équipe. À utiliser partout où un id
+// arrive d'un `onclick` (la photo d'équipe n'est pas dans STATE.submissions).
+function findAnySub(id){
+  if(isTeamPhotoId(id)){
+    return teamPhotoSub(STATE.game?.teams.find(t=>t.id === id.slice(TEAMPHOTO_PREFIX.length)));
+  }
+  return STATE.submissions.find(s=>s.id===id) || null;
+}
+// Toutes les photos d'une équipe, selfie d'inscription EN TÊTE.
+function teamPhotos(teamId){
+  const first = teamPhotoSub(STATE.game?.teams.find(t=>t.id===teamId));
+  const subs = STATE.submissions.filter(s=>s.teamId===teamId && s.photoUrl);
+  return first ? [first, ...subs] : subs;
+}
 function teamPrintSub(team){
   if(!team?.printSubId) return null;
+  if(isTeamPhotoId(team.printSubId)) return teamPhotoSub(team);
   return STATE.submissions.find(s=>s.id===team.printSubId && s.photoUrl) || null;
 }
 
@@ -3370,12 +3421,13 @@ async function downloadPrint(teamId){
 
 // ────── Sélecteur de photo (équipe : grille dans l'écran ; admin : modal) ──────
 function renderPrintGrid(teamId, currentId, handler, mode){
-  const subs = STATE.submissions.filter(s=>s.teamId===teamId && s.photoUrl);
+  const subs = teamPhotos(teamId);   // photo d'équipe en premier
   if(!subs.length) return '<div class="empty" style="padding:18px;font-size:14px">Aucune photo envoyée.</div>';
   return `<div class="print-grid">${subs.map(s=>{
     const clue = STATE.game.clues.find(c=>c.id===s.clueId);
-    return `<button type="button" class="p-item${currentId===s.id?' sel':''}" onclick="${handler}('${s.id}')" title="${escapeHtml(clue?.title||'')}">
-      <img src="${s.photoDataUrl}" alt="${escapeHtml(clue?.title||'photo')}" loading="lazy">
+    const label = s.isTeamPhoto ? "Photo d'\u00e9quipe" : (clue?.title||'');
+    return `<button type="button" class="p-item${currentId===s.id?' sel':''}${s.isTeamPhoto?' p-team':''}" onclick="${handler}('${s.id}')" title="${escapeHtml(label)}">
+      <img src="${s.photoDataUrl}" alt="${escapeHtml(label||'photo')}" loading="lazy">
       <span class="p-zoom" role="button" aria-label="Agrandir" onclick="event.stopPropagation();openPrintZoom('${s.id}','${mode}')">🔍</span>
     </button>`;
   }).join('')}</div>`;
@@ -3402,7 +3454,7 @@ async function pickPrintForTeam(subId){
 // En mode admin la visionneuse remplace le contenu du sélecteur : « ← Retour » le rouvre,
 // sinon un simple aperçu ferait perdre la liste des photos de l'équipe.
 function openPrintZoom(subId, mode){
-  const s = STATE.submissions.find(x=>x.id===subId); if(!s) return;
+  const s = findAnySub(subId); if(!s) return;
   const clue = STATE.game?.clues.find(c=>c.id===s.clueId);
   const chosen = mode==='admin'
     ? STATE.game?.teams.find(t=>t.id===STATE.printPickTeam)?.printSubId
@@ -3414,7 +3466,7 @@ function openPrintZoom(subId, mode){
       <button type="button" onclick="PZOOM&&PZOOM.btn('reset')" aria-label="Réinitialiser">⟲</button>
       <button type="button" onclick="PZOOM&&PZOOM.btn('in')" aria-label="Zoomer">+</button>
     </div>
-    <div class="info">${escapeHtml(clue?.title || 'Photo')}${s.status==='rejected'?' · refusée (mais imprimable)':''}</div>
+    <div class="info">${s.isTeamPhoto ? "Photo d'\u00e9quipe \u00b7 prise \u00e0 l'inscription" : escapeHtml(clue?.title || 'Photo')}${s.status==='rejected'?' · refusée (mais imprimable)':''}</div>
     <div class="print-actions">
       ${mode==='admin' ? '<button class="btn ghost sm" onclick="backToPrintPicker()">← Retour</button>' : ''}
       <button class="btn ${chosen===subId?'ghost':'gold'} sm" onclick="pickPrintFromZoom('${subId}','${mode}')">
@@ -3436,13 +3488,13 @@ async function pickPrintFromZoom(subId, mode){
 // ────── Écran équipe : la carte de choix ──────
 function renderTeamPrintCard(){
   const t = myTeam(); if(!t) return '';
-  const mine = STATE.submissions.filter(s=>s.teamId===t.id && s.photoUrl);
+  const mine = teamPhotos(t.id);
   if(!mine.length) return '';
   const chosen = t.printSubId && mine.some(s=>s.id===t.printSubId) ? t.printSubId : null;
   return `
     <div class="card" style="margin-top:20px;border-color:var(--gold-dark)">
       <h3 style="margin-bottom:6px">🖨 Votre photo souvenir</h3>
-      <p class="help-text" style="margin:0 0 12px">Choisissez la photo que vous voulez emporter : le maître du jeu l'imprimera encadrée aux couleurs d'Expédition et vous la remettra.</p>
+      <p class="help-text" style="margin:0 0 12px">Choisissez la photo que vous voulez emporter : le maître du jeu l'imprimera encadrée aux couleurs d'Expédition et vous la remettra. Votre <strong>photo d'équipe</strong> (prise à l'inscription) est proposée en premier.</p>
       ${renderPrintGrid(t.id, chosen, 'choosePrintPhoto', 'team')}
       ${chosen ? `
         <p class="mono" style="font-size:11px;color:var(--forest);margin:12px 0 8px">✓ Choix enregistré — le maître du jeu le voit de son côté.</p>
@@ -3465,7 +3517,7 @@ function renderAdminPrintCard(){
         const nm = (t.name||'').replace(/'/g,'’');
         return `<div class="print-row">
           ${sub ? `<img class="thumb" src="${sub.photoDataUrl}" alt="">` : '<div class="thumb empty-thumb">—</div>'}
-          <div class="nm"><b>${escapeHtml(t.name)}</b><span>${sub ? 'photo choisie' : 'en attente du choix'}</span></div>
+          <div class="nm"><b style="display:flex;align-items:center;gap:7px">${teamAvaLink(t,24)}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</span></b><span>${sub ? (sub.isTeamPhoto ? "photo d'\u00e9quipe choisie" : 'photo choisie') : 'en attente du choix'}</span></div>
           ${sub ? `<button class="btn sm ghost" onclick="openPrintPreview('${t.id}')" title="Aperçu">👁</button>
                    <button class="btn sm" onclick="downloadPrint('${t.id}')" title="Télécharger">⬇</button>`
                 : `<button class="btn sm ghost" onclick="openPrintPicker('${t.id}')">Choisir</button>`}
