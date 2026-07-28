@@ -415,7 +415,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-27.5';
+const BUILD = '2026-07-27.6';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -2399,13 +2399,50 @@ async function reconnectToTeam(code, teamId){
   if(!t){ toast('Équipe introuvable','error'); return; }
   STATE.me = { role:'team', id: STATE.me?.id||uid(), gameCode:code, teamId:t.id, teamName:t.name };
   await saveMe();
-  STATE.joinPhoto=null; STATE.joinConsent=false;
+  STATE.joinPhoto=null; clearJoinDraft();
   startRealtime();
   toast('Reconnecté à « '+t.name+' »','success');
   render();
 }
 
+// ────── Brouillon d'inscription ──────
+// Le formulaire ne doit RIEN perdre à un re-rendu : `render()` est asynchrone et peut être
+// déclenché à tout moment (realtime, poll 15 s, prise de la photo d'équipe). Restaurer les
+// champs après coup ne marche pas — la restauration écrit dans le DOM que `render()` va
+// remplacer. Les champs sont donc réémis depuis STATE, tenu à jour à chaque frappe.
+// Doublé en sessionStorage : sur un téléphone peu doté, ouvrir l'appareil photo peut faire
+// recharger la page, ce qui viderait STATE. (La photo elle-même n'y est pas mise : une
+// dataURL de ~350 Ko frôlerait le quota. Un rechargement pendant la capture perd la photo,
+// jamais le nom d'équipe.)
+const JOIN_DRAFT_KEY = 'join_draft';
+function saveJoinDraft(){
+  try{ sessionStorage.setItem(JOIN_DRAFT_KEY, JSON.stringify({
+    code: STATE.joinDraftCode||'', team: STATE.joinDraftTeam||'', consent: !!STATE.joinConsent
+  })); }catch(_){}
+}
+function loadJoinDraft(){
+  try{
+    const d = JSON.parse(sessionStorage.getItem(JOIN_DRAFT_KEY)||'null'); if(!d) return;
+    if(!STATE.joinDraftCode) STATE.joinDraftCode = d.code||null;   // ?join=CODE reste prioritaire
+    if(!STATE.joinDraftTeam) STATE.joinDraftTeam = d.team||null;
+    if(d.consent) STATE.joinConsent = true;
+  }catch(_){}
+}
+function clearJoinDraft(){
+  STATE.joinDraftCode = null; STATE.joinDraftTeam = null; STATE.joinConsent = false;
+  try{ sessionStorage.removeItem(JOIN_DRAFT_KEY); }catch(_){}
+}
+// Champs → STATE, à chaque frappe. Appelé aussi avant toute action qui provoque un re-rendu.
+function syncJoinDraft(){
+  const c = $('#join-code'), t = $('#join-team'), k = $('#join-consent');
+  if(c) STATE.joinDraftCode = c.value;
+  if(t) STATE.joinDraftTeam = t.value;
+  if(k) STATE.joinConsent = k.checked;
+  saveJoinDraft();
+}
+
 function screenTeamJoin(){
+  loadJoinDraft();
   app().innerHTML = `
     <div class="screen" data-screen="team-join">
       <div class="topbar">
@@ -2421,12 +2458,12 @@ function screenTeamJoin(){
       </div>
       <div class="field">
         <label>Nom de votre équipe</label>
-        <input id="join-team" class="input" placeholder="Les Aventuriers">
+        <input id="join-team" class="input" placeholder="Les Aventuriers" value="${escapeHtml(STATE.joinDraftTeam||'')}" oninput="syncJoinDraft()">
       </div>
 
       <div class="field">
         <label>Photo d'équipe <span class="muted" style="font-weight:400">(optionnelle)</span></label>
-        <p class="help-text" style="margin:0 0 10px">Une photo de toute l'équipe pour personnaliser le classement. Vous pourrez la refaire.</p>
+        <p class="help-text" style="margin:0 0 10px">Une photo de toute l'équipe : elle personnalise le classement et pourra être choisie comme <strong>tirage souvenir</strong> à la fin. Vous pourrez la refaire.</p>
         <label class="photo-preview" for="join-photo-input">
           ${STATE.joinPhoto
             ? `<img src="${STATE.joinPhoto}" alt=""><div class="retake">Refaire</div>`
@@ -2437,7 +2474,7 @@ function screenTeamJoin(){
 
       <div class="field">
         <label style="display:flex;gap:10px;align-items:flex-start;font-weight:400;cursor:pointer">
-          <input id="join-consent" type="checkbox" style="margin-top:3px;flex:none" ${STATE.joinConsent ? 'checked' : ''}>
+          <input id="join-consent" type="checkbox" style="margin-top:3px;flex:none" ${STATE.joinConsent ? 'checked' : ''} onchange="syncJoinDraft()">
           <span class="help-text" style="margin:0">
             J'accepte que les photos prises pendant le jeu (dont l'éventuelle photo d'équipe) soient
             utilisées pour le déroulement de la chasse et le classement, et j'ai lu la
@@ -2457,29 +2494,27 @@ function screenTeamJoin(){
         <button class="btn oxblood" onclick="joinGame()">Rejoindre la chasse →</button>
       </div>
     </div>`;
-  $('#join-code').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
+  $('#join-code').addEventListener('input', e=>{
+    e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+    syncJoinDraft();
+  });
 }
 
 async function handleJoinCapture(e){
   const file = e.target.files?.[0];
   if(!file) return;
-  // Preserve les champs déjà saisis (render() réaffiche l'écran depuis STATE)
-  STATE.joinDraftCode = $('#join-code')?.value || '';
-  STATE.joinDraftTeam = $('#join-team')?.value || '';
-  STATE.joinConsent = $('#join-consent')?.checked || false;
+  syncJoinDraft();          // fige les champs saisis AVANT le re-rendu
   toast('Compression de la photo…');
   try{
     // Pleine définition (PHOTO_MAX) : depuis 2026-07-27 cette photo est imprimable au même
     // titre qu'une preuve (choix du tirage souvenir) — 800 px n'y suffisaient pas.
     STATE.joinPhoto = await compressImage(file);
-    render();
-    // restaure les champs après re-render
-    if($('#join-code')) $('#join-code').value = STATE.joinDraftCode;
-    if($('#join-team')) $('#join-team').value = STATE.joinDraftTeam;
-  }catch(err){ toast('Erreur image','error'); }
+    await render();         // les champs se réaffichent depuis STATE : rien à restaurer
+  }catch(err){ toast('Erreur image','error'); reportError(err,'photo équipe'); }
 }
 
 async function joinGame(){
+  syncJoinDraft();
   const code = $('#join-code').value.trim().toUpperCase();
   const teamName = $('#join-team').value.trim();
   if(code.length!==4){ toast('Code invalide','error'); return; }
@@ -2503,9 +2538,7 @@ async function joinGame(){
     if(url) await setTeamPhoto(teamId, url);
   }
   STATE.joinPhoto = null;
-  STATE.joinConsent = false;
-  STATE.joinDraftCode = null;
-  STATE.joinDraftTeam = null;
+  clearJoinDraft();
   STATE.me.gameCode = code;
   STATE.me.teamId = teamId;
   STATE.me.teamName = teamName;
@@ -3564,6 +3597,7 @@ async function logout(){
   // Déconnexion de l'auth admin si présente (sans bloquer en cas d'erreur réseau).
   try{ if(sb) await sb.auth.signOut(); }catch(_){}
   await clearMe(); STATE.game=null; STATE.submissions=[]; STATE.otpEmail=null;
+  STATE.joinPhoto=null; clearJoinDraft();   // sinon le brouillon ressurgit à l'inscription suivante
   render();
 }
 
