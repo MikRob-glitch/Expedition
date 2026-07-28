@@ -11,7 +11,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 
 | Couche | Choix | Pourquoi |
 |---|---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique (~3620 lignes) | Zéro build, démarrage instantané, debug trivial |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~3710 lignes) | Zéro build, démarrage instantané, debug trivial |
 | Backend | Supabase (Postgres + Realtime + Storage + Auth) | Synchro websockets, photos hébergées, auth OTP, tier gratuit |
 | Caméra | `<input type="file" capture>` | Caméra native iOS/Android sans permission custom |
 | Carte | Leaflet 1.9.4 + tuiles OpenStreetMap | Carte d'orientation des indices (géoloc optionnelle) |
@@ -27,7 +27,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 ## Fichiers du projet
 
 ```
-expedition.html            ← app complète, single-file SPA (~3620 lignes)
+expedition.html            ← app complète, single-file SPA (~3710 lignes)
 sw.js                      ← service worker (app-shell offline, cache, tuiles OSM)
 confidentialite.html       ← politique de confidentialité RGPD (servie par Pages)
 manifest.json              ← manifeste PWA (icônes any + maskable)
@@ -139,7 +139,17 @@ score équipe = Σ points d'indice (photos CONFORMES uniquement)
 Le modal photo (vote / validation / galerie) est zoomable : **pincer**, **molette**, **double-clic** (1×↔2,5×), **glisser**, boutons +/−/⟲ (`initPhotoZoom`, Pointer Events, 1–6×).
 
 ### Photo d'équipe
-Selfie **optionnel** à l'inscription (`capture="user"`), uploadé dans `{game_code}/team_{id}.jpg`, affiché en pastille au lobby et au classement. N'empêche jamais l'inscription si l'upload échoue.
+Selfie **optionnel** à l'inscription (`capture="user"`), uploadé dans `{game_code}/team_{id}.jpg`. N'empêche jamais l'inscription si l'upload échoue. C'est souvent la **seule photo où l'équipe est au complet** : elle est donc traitée comme une **photo à part entière**, pas comme un simple avatar.
+
+- **Pastille** au lobby, au classement et **en en-tête d'équipe** sur les écrans du maître du jeu (suivi live, cartes de validation/vote, liste des tirages) — cliquable (`teamAvaLink`) pour l'ouvrir en grand et zoomer.
+- **Preuve virtuelle** : `teamPhotoSub(team)` fabrique un objet de la forme d'une submission, d'id sentinelle **`team:<teamId>`** ; `findAnySub(id)` résout indifféremment une preuve réelle ou cette photo, `teamPhotos(teamId)` liste les photos d'une équipe **selfie en tête**. **Aucune migration** : rien n'est écrit en base, l'objet est reconstruit à chaque rendu depuis `teams.photo_url`.
+- **Score intact** : cette photo n'entre jamais dans `STATE.submissions`, seule source du calcul des points.
+- Proposée **en premier** dans le choix du tirage souvenir (badge « ÉQUIPE ») et jointe en tête du dossier de l'équipe dans l'export ZIP.
+
+⚠️ L'id sentinelle est stocké tel quel dans `teams.print_submission_id` — possible parce que la colonne est du `text` **sans FK**. Pas de collision possible avec un id de submission (`uid()` = 7 caractères `[a-z0-9]`, sans `:`).
+
+### Brouillon d'inscription
+`render()` est **asynchrone** et réécrit tout l'écran ; il peut se déclencher à tout moment (realtime, poll 15 s, prise de la photo d'équipe). Les champs de `screenTeamJoin` sont donc **réémis depuis `STATE`**, tenu à jour à chaque frappe par `syncJoinDraft()` (`oninput`/`onchange`), et doublés en `sessionStorage` (`join_draft`) au cas où l'ouverture de l'appareil photo ferait recharger la page. `clearJoinDraft()` à l'inscription, à la reconnexion et au `logout`. ⚠️ La photo n'est **pas** mise en `sessionStorage` (dataURL ~350 Ko, quota trop juste) : un rechargement pendant la capture perd la photo, jamais le nom. Corrige le bug où prendre la photo effaçait le nom d'équipe (voir `CLAUDE.md` #49).
 
 ### Reconnexion sans doublon
 « Se déconnecter » ne supprime plus l'équipe une fois la chasse démarrée (détachement de l'appareil, preuves conservées). Reconnexion par **choix dans la liste** des équipes ; `joinGame` bloque un nom déjà pris.
@@ -148,13 +158,13 @@ Selfie **optionnel** à l'inscription (`capture="user"`), uploadé dans `{game_c
 `sw.js` : navigation HTML **network-first** (hotfix en ligne toujours servi ; hors-ligne → dernière version cachée), CDN/Leaflet + polices **cache-first**, tuiles OSM en cache runtime, **appels Supabase toujours réseau**. Une photo prise hors-ligne est mise en **file IndexedDB** (`enqueueSubmission`), survit rechargement/fermeture, et est **ré-émise automatiquement** au retour du réseau (`flushOutbox`, insert idempotent). ⚠️ Limite iOS : pas de Background Sync → flush appli ouverte/réouverte. ⚠️ Bumper `CACHE` de `sw.js` à chaque changement d'app-shell.
 
 ### Compression des photos
-`compressImage(file, {max, q})` — plus grand côté ramené à **1600 px**, JPEG **0,82**, rééchantillonnage `high`, jamais d'agrandissement ; si la dataURL dépasse ~3 Mo, la **qualité** baisse par paliers (plancher 0,45) et non la définition. Photo d'équipe : `{max:800, q:0.8}` (simple pastille). Compromis : ~350–450 Ko par preuve (≈2× l'ancien plafond de 1000 px) contre un tirage net en 10×15 cm (~300 dpi) et 13×18 (~225 dpi).
+`compressImage(file, {max, q})` — plus grand côté ramené à **1600 px**, JPEG **0,82**, rééchantillonnage `high`, jamais d'agrandissement ; si la dataURL dépasse ~3 Mo, la **qualité** baisse par paliers (plancher 0,45) et non la définition. La photo d'équipe suit le **même régime** depuis qu'elle est imprimable (~350 Ko par équipe, contre ~80 Ko en 800 px auparavant). ⚠️ Les photos d'équipe **enregistrées avant** ce changement restent en 800 px : imprimables en 10×15 à ~200 dpi, correct mais en deçà des preuves. Compromis : ~350–450 Ko par preuve (≈2× l'ancien plafond de 1000 px) contre un tirage net en 10×15 cm (~300 dpi) et 13×18 (~225 dpi).
 
 ### Tirage souvenir encadré
-Écran de fin **équipe** : l'équipe choisit **une** photo parmi les siennes (`teams.print_submission_id`), avec une **loupe sur chaque vignette** pour l'ouvrir en grand et zoomer (pincer / molette / double-clic) avant de trancher. Écran de fin **admin** : liste des choix, choix de secours pour une équipe absente, aperçu, téléchargement à l'unité ou en ZIP `{CODE}_tirages.zip`. Le cadre (parchemin, double filet, lockup logo « rose des vents + EXPÉDITION », puis **une ligne par information** — équipe, chasse, lieu, date — et le **logo du lieu** à droite s'il a été joint à la chasse) est composé **en canvas** (`buildPrintCanvas`) — la photo passe par `fetch → blob → objectURL` pour ne pas souiller le canvas. **Sortie au format fixe 10×15 cm** (1200×1800 portrait / 1800×1200 paysage, ~300 dpi) selon l'orientation de la photo : le labo imprime plein format, sans recadrage ; la photo est posée entière (jamais rognée), le parchemin absorbe l'écart de ratio. Migration : `migration-print-choice.sql`.
+Écran de fin **équipe** : l'équipe choisit **une** photo parmi les siennes (`teams.print_submission_id`) — sa **photo d'équipe est proposée en première vignette** —, avec une **loupe sur chaque vignette** pour l'ouvrir en grand et zoomer (pincer / molette / double-clic) avant de trancher. Écran de fin **admin** : liste des choix, choix de secours pour une équipe absente, aperçu, téléchargement à l'unité ou en ZIP `{CODE}_tirages.zip`. Le cadre (parchemin, double filet, lockup logo « rose des vents + EXPÉDITION », puis **une ligne par information** — équipe, chasse, lieu, date — et le **logo du lieu** à droite s'il a été joint à la chasse) est composé **en canvas** (`buildPrintCanvas`) — la photo passe par `fetch → blob → objectURL` pour ne pas souiller le canvas. **Sortie au format fixe 10×15 cm** (1200×1800 portrait / 1800×1200 paysage, ~300 dpi) selon l'orientation de la photo : le labo imprime plein format, sans recadrage ; la photo est posée entière (jamais rognée), le parchemin absorbe l'écart de ratio. Migration : `migration-print-choice.sql`.
 
 ### Export ZIP des photos
-Écrans **Jury** et **Fin** : télécharge **toutes les photos** d'une partie (filtrable par statut) en `{CODE}_photos.zip`, organisé `Équipe/HHhMM_statut_indice_id.jpg` (JSZip, pool de 8 requêtes).
+Écrans **Jury** et **Fin** : télécharge **toutes les photos** d'une partie (filtrable par statut) en `{CODE}_photos.zip`, organisé `Équipe/HHhMM_statut_indice_id.jpg` (JSZip, pool de 8 requêtes). La **photo d'équipe** n'a pas de statut : elle échappe aux filtres et ouvre le dossier de son équipe sous `00_photo-equipe.jpg` (le préfixe la garde en tête au tri).
 
 ### Dupliquer une chasse passée
 Voie principale : **liste de toutes mes chasses** (`loadGamesForDuplicate`, tout statut, tri par date) → sélection → « Dupliquer cette chasse ». Repli replié : **par code** (`duplicateByCode`), seul moyen de dupliquer la chasse d'un autre compte. Les deux passent par `duplicateFromCode` : indices (nouveaux `id`) + réglages (dont `location`) copiés dans le formulaire → **nouvelle session vierge**. La source n'est jamais modifiée.
@@ -181,7 +191,10 @@ Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Doub
 | `setVote` | Vote jury 50/30/10, unicité par indice |
 | `openClueMapPicker` / `openTeamMap` | Carte Leaflet (admin place / équipe s'oriente) |
 | `showQR` / `closeQR` | QR d'accès joueurs (deep-link `?join=CODE`) |
-| `openPhoto` / `initPhotoZoom` | Modal photo + zoom/pan |
+| `openPhoto` / `initPhotoZoom` | Modal photo + zoom/pan (accepte l'id sentinelle `team:<id>`) |
+| `teamPhotoSub` / `findAnySub` / `teamPhotos` | Photo d'équipe traitée comme une preuve virtuelle |
+| `teamAva` / `teamAvaLink` | Pastille d'équipe, inerte ou cliquable (ouvre la photo en grand) |
+| `syncJoinDraft` / `clearJoinDraft` | Brouillon d'inscription : champs ↔ `STATE` ↔ `sessionStorage` |
 | `openPrintZoom` / `backToPrintPicker` | Voir une photo en grand avant de choisir le tirage |
 | `openExportZip` / `runExportZip` | Export ZIP des photos |
 | `compressImage` | Redimension + JPEG avant envoi (`{max, q}`) |

@@ -19,7 +19,7 @@ des photos comme preuves ; un maître du jeu (admin) valide puis fait juger les 
 
 - **Repo** : `MikRob-glitch/Expedition`
 - **Déploiement** : GitHub Pages → `https://mikrob-glitch.github.io/Expedition/expedition.html`
-- **Fichier principal** : `expedition.html` (application mono-fichier, ~2040 lignes)
+- **Fichier principal** : `expedition.html` (application mono-fichier, ~3710 lignes)
 
 ## Stack & conventions
 
@@ -94,7 +94,8 @@ dissocier les deux.
   les photos, refusées incluses).
 - **Export ZIP** : modal sur les écrans Jury et Fin, télécharge toutes les photos d'une partie
   (filtrables par statut) en archive `{CODE}_photos.zip`, organisée `Équipe/HHhMM_statut_indice_id.jpg`
-  (JSZip, pool de 8 requêtes parallèles).
+  (JSZip, pool de 8 requêtes parallèles). La photo d'équipe échappe aux filtres de statut et
+  ouvre le dossier de son équipe sous `00_photo-equipe.jpg` (voir #48).
 - **Dupliquer une chasse passée** : dans l'écran admin de préparation, section « Dupliquer une
   chasse ». Voie principale = **liste de toutes MES chasses** (`loadGamesForDuplicate` : chasses
   dont `admin_id = auth.uid()` **ou** dont l'`admin_id` n'est pas un UUID — voir #32 et le
