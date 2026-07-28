@@ -3,13 +3,10 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-28, commit `b1ecc26` + #51, `BUILD` `2026-07-28.2`,
-> `CACHE` `expedition-v21`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-28, commit `d7ea340` + #52, `BUILD` `2026-07-28.3`,
+> `CACHE` `expedition-v22`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > ⚠️ **Écart en cours** : le dossier `commercial/` (plaquette de vente, #47) est **local, non
 > poussé**. Aucun impact applicatif — `BUILD`/`CACHE` inchangés.
-> ⚠️ **Écart en cours** : #52 (retour au menu depuis le lobby, `BUILD` `2026-07-28.3`,
-> `CACHE` `expedition-v22`) est **écrit dans le dossier local, non poussé** — aucun PAT
-> disponible dans l'environnement. À pousser avant de tester sur Pages.
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
 > § « État des migrations SQL » si une migration est ajoutée, et une entrée dans le journal.
@@ -872,7 +869,7 @@ présent dans le bucket, pastille affichée, photo proposée au choix du tirage.
     direct de `validation` à `ended`) au lieu d'être grisé — l'écran de fin, et donc la
     corbeille RGPD, redevient accessible. `BUILD` → `2026-07-28.2`, `CACHE` **v20→v21**.
 
-### Local, non poussé (2026-07-28) — Retour au menu de préparation depuis le lobby
+### Poussés sur GitHub (2026-07-28, commit `d7ea340`) — Retour au menu de préparation depuis le lobby
 
 52. **`backToSetup()` — préparer plusieurs chasses d'affilée.** Besoin : créer une chasse à
     l'avance puis y revenir plus tard, sans la lancer ni la perdre. Le lobby (`setup`) n'offrait
