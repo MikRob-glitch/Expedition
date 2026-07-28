@@ -19,7 +19,7 @@ des photos comme preuves ; un maître du jeu (admin) valide puis fait juger les 
 
 - **Repo** : `MikRob-glitch/Expedition`
 - **Déploiement** : GitHub Pages → `https://mikrob-glitch.github.io/Expedition/expedition.html`
-- **Fichier principal** : `expedition.html` (application mono-fichier, ~3710 lignes)
+- **Fichier principal** : `expedition.html` (application mono-fichier, ~3770 lignes)
 
 ## Stack & conventions
 

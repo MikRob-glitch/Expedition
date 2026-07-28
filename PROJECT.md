@@ -107,7 +107,7 @@ setup → active → validation → judging → ended
 
 | Statut | Phase | Qui agit |
 |---|---|---|
-| `setup` | Lobby : indices, équipes, indices de départ, **QR d'accès** | Admin |
+| `setup` | Lobby : indices, équipes, indices de départ, **QR d'accès**. Quittable par « ← Menu » **sans rien supprimer** | Admin |
 | `active` | Les équipes capturent et envoient leurs preuves photo | Équipes |
 | `validation` | Marquer chaque photo **conforme / refusée** (→ points d'indice) | Admin |
 | `judging` | **Vote du jury** : 50/30/10 par indice (toutes photos) | Jury/Admin |
@@ -119,6 +119,7 @@ setup → active → validation → judging → ended
 
 - `judging → validation` : bouton « ← Validation » (`backToValidation`).
 - `validation → active` : bouton « ↩︎ Reprendre la chasse » (`resumeHunt`) — remet `ended_at` à `null` et **décale `started_at`** pour restituer exactement le temps qui restait ; si le chrono était épuisé, un prompt demande les minutes à ajouter (défaut 15) et la durée n'est allongée que si l'ajout dépasse la durée initiale. ⚠️ Sans ce décalage, le contrôle de chrono en tête de `render()` rebasculerait aussitôt en `validation`. Les équipes repassent de l'écran d'attente à l'écran de jeu par realtime.
+- `setup → menu de préparation` : bouton « ← Menu » (`backToSetup`) — **détache seulement l'appareil** (`me.gameCode = null`, realtime coupé, brouillons remis à zéro) ; la chasse reste en `setup` et se retrouve dans « Reprendre une session ». Avant, sortir du lobby imposait « Annuler » (= suppression) ou `logout()`. Le bouton de suppression est désormais libellé « Supprimer 🗑 ». Voir `CLAUDE.md` #52.
 - `validation → ended` **sans aucune photo** : le bouton principal devient « Clôturer la chasse → » (`finalizeGame`, saut direct par-dessus `judging`) au lieu d'être grisé. Sans lui, une chasse terminée à vide était un cul-de-sac : ni jury, ni fin, donc **ni corbeille RGPD** (le bouton de purge vit sur l'écran de fin). Voir `CLAUDE.md` #51.
 
 ### Routeur `render()`
@@ -137,6 +138,9 @@ SPA mono-fichier sans framework. `render()` lit `STATE` et choisit l'écran : co
 
 ### Indices de départ (dispersion)
 Dans le **lobby**, l'admin assigne un **indice de départ distinct par équipe** (menu + « Répartir auto »). Chaque équipe ne voit **que son indice de départ** ; dès qu'elle l'a **réalisé (photo envoyée)**, les autres se débloquent. Optionnel (`teams.start_clue_id`, « — Aucun — »).
+
+### Préparer plusieurs chasses à l'avance
+Une chasse créée est **enregistrée immédiatement** (statut `setup`). Depuis le lobby, « ← Menu » ramène à l'écran de préparation pour en créer une autre ; le picker « Reprendre une session » (`loadSessionsForPicker` : `status='setup'` + `admin_id`) liste les chasses en attente et reprend directement au lobby. Aucune donnée n'est écrite ni effacée au passage.
 
 ### Accès joueurs par QR code (deep-link)
 Écran maître du jeu (lobby + live) : bouton « 📱 QR code d'accès » → overlay avec un QR encodant `…/expedition.html?join=CODE`. Au scan, le joueur arrive **directement sur l'inscription équipe, code pré-rempli**. Lib `qrcode-generator` (CDN, cachée par le SW).
@@ -224,6 +228,7 @@ Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Doub
 | `compressImage` | Redimension + JPEG avant envoi (`{max, q}`) |
 | `compressLogo` / `persistGameLogo` | Logo du lieu : PNG 600 px (alpha conservé) + envoi au bucket |
 | `setTeamPrintChoice` / `choosePrintPhoto` | Choix de la photo souvenir (équipe) |
+| `backToSetup` / `loadSessionsForPicker` | Quitter le lobby sans supprimer, puis retrouver la chasse en attente |
 | `buildPrintCanvas` / `downloadPrint` / `downloadAllPrints` | Composition du cadre et récupération des tirages (admin) |
 | `buildProofCanvas` / `openPrintPreview(id,'team')` | Épreuve filigranée 700 px montrée aux équipes (sans téléchargement) |
 | `loadGamesForDuplicate` / `duplicateFromCode` | Liste de mes chasses + duplication |

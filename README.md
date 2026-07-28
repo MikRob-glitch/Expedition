@@ -10,6 +10,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 - **Preuve par photo** — caméra native, compression côté client (1600 px, qualité adaptée à l'impression 10×15).
 - **Accès joueurs par QR code** — l'admin affiche un QR ; au scan, l'appli s'ouvre sur l'inscription avec le code **pré-rempli** (`?join=CODE`).
 - **Jugement live** — validation conforme/refusée par l'admin, puis vote du jury 50/30/10.
+- **Préparer à l'avance** — créez vos chasses quand vous voulez, quittez le lobby par « ← Menu » sans rien perdre, retrouvez-les dans « Reprendre une session » le jour J.
 - **Marche arrière** — chasse terminée trop tôt ou par erreur ? Le maître du jeu la **reprend** en un bouton, avec le temps restant restitué ; et une chasse finie sans aucune photo peut être clôturée (donc supprimée) au lieu de rester bloquée.
 - **Zoom sur les photos** — pincer / molette / double-clic / glisser pour juger les détails.
 - **Indices de départ** — dispersion des équipes (un indice de départ distinct par équipe).
