@@ -97,6 +97,7 @@ submissions  (id PK, game_code FK, team_id FK, clue_id, photo_url,
 - `submissions.id` = **nom du fichier** dans le Storage (`{game_code}/{id}.jpg`) — ne jamais dissocier.
 - `submissions.lat/lng` : colonnes héritées du prototype GPS, plus renseignées.
 - Toutes les FK ont `on delete cascade`.
+- **`games.is_template`** — chasse type (modèle) : ligne vierge jamais jouée, exclue des pickers de jeu **et** de la purge 90 j. Voir « Tiroir de chasses types ».
 - **Storage** : bucket public `photos`, `{game_code}/{id}.jpg` (preuves), `{game_code}/team_{id}.jpg` (photos d'équipe), `{game_code}/logo.png` (logo du lieu).
 
 ### Machine à états (`games.status`)
@@ -138,6 +139,15 @@ SPA mono-fichier sans framework. `render()` lit `STATE` et choisit l'écran : co
 
 ### Indices de départ (dispersion)
 Dans le **lobby**, l'admin assigne un **indice de départ distinct par équipe** (menu + « Répartir auto »). Chaque équipe ne voit **que son indice de départ** ; dès qu'elle l'a **réalisé (photo envoyée)**, les autres se débloquent. Optionnel (`teams.start_clue_id`, « — Aucun — »).
+
+### Tiroir de chasses types
+Un scénario prêt à rejouer se range au tiroir : étoile ☆ dans la liste des chasses, ou « ☆ Enregistrer comme chasse type » depuis le lobby. Le tiroir vit sur l'écran de préparation ; « Utiliser cette chasse type → » remplit le formulaire de création (indices, durées, lieu, logo) sans consommer le modèle.
+
+Une chasse type est une ligne `games` avec `is_template=true` : **copie vierge**, aucune équipe, aucune preuve, jamais lancée. Elle est exclue des pickers de reprise et de duplication, et `resumeByCode` refuse son code.
+
+⚠️ **Pourquoi une copie et non un drapeau sur une chasse jouée** : les modèles échappent à la rétention 90 j. Marquer une chasse déjà jouée immobiliserait hors purge les photos et les noms de ses participants. `saveAsTemplate` crée donc toujours une copie neuve ; la source reste soumise à la rétention. Migration : `migration-templates.sql`.
+
+⚠️ **Un modèle ne s'édite pas en place** : utilisez-le, ajustez le formulaire, créez la chasse, rangez la nouvelle version et retirez l'ancienne.
 
 ### Préparer plusieurs chasses à l'avance
 Une chasse créée est **enregistrée immédiatement** (statut `setup`). Depuis le lobby, « ← Menu » ramène à l'écran de préparation pour en créer une autre ; le picker « Reprendre une session » (`loadSessionsForPicker` : `status='setup'` + `admin_id`) liste les chasses en attente et reprend directement au lobby. Aucune donnée n'est écrite ni effacée au passage.
@@ -229,6 +239,7 @@ Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Doub
 | `compressLogo` / `persistGameLogo` | Logo du lieu : PNG 600 px (alpha conservé) + envoi au bucket |
 | `setTeamPrintChoice` / `choosePrintPhoto` | Choix de la photo souvenir (équipe) |
 | `backToSetup` / `loadSessionsForPicker` | Quitter le lobby sans supprimer, puis retrouver la chasse en attente |
+| `saveAsTemplate` / `loadTemplates` / `useTemplate` | Tiroir de chasses types (copie vierge réutilisable, hors purge 90 j) |
 | `buildPrintCanvas` / `downloadPrint` / `downloadAllPrints` | Composition du cadre et récupération des tirages (admin) |
 | `buildProofCanvas` / `openPrintPreview(id,'team')` | Épreuve filigranée 700 px montrée aux équipes (sans téléchargement) |
 | `loadGamesForDuplicate` / `duplicateFromCode` | Liste de mes chasses + duplication |

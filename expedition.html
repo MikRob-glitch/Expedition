@@ -281,6 +281,10 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 .sp-del{flex-shrink:0;border:1px solid var(--line-strong);background:transparent;border-radius:8px;padding:6px 9px;font-size:14px;line-height:1;cursor:pointer;opacity:.55;transition:opacity .15s,background .15s,border-color .15s;color:inherit;font-family:inherit}
 .sp-del:hover{opacity:1;background:rgba(122,29,32,.10);border-color:var(--oxblood);color:var(--oxblood)}
 .sp-del:disabled{opacity:.25;cursor:not-allowed}
+.sp-star{flex-shrink:0;border:1px solid var(--line-strong);background:transparent;border-radius:8px;padding:6px 9px;font-size:14px;line-height:1;cursor:pointer;opacity:.55;transition:opacity .15s,background .15s,border-color .15s;color:inherit;font-family:inherit}
+.sp-star:hover{opacity:1;background:rgba(201,165,90,.14);border-color:var(--gold-dark);color:var(--gold-dark)}
+.sp-star:disabled{opacity:.25;cursor:not-allowed}
+.session-picker-item.selected .sp-star{border-color:rgba(255,255,255,.35)}
 .session-picker-item.selected .sp-del{border-color:rgba(255,255,255,.35)}
 
 /* ============ Export ZIP modal ============ */
@@ -415,7 +419,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-28.3';
+const BUILD = '2026-07-28.4';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -474,7 +478,8 @@ function rowToGame(row, teamsRows){
     createdAt: new Date(row.created_at).getTime(),
     startedAt: row.started_at ? new Date(row.started_at).getTime() : null,
     endedAt: row.ended_at ? new Date(row.ended_at).getTime() : null,
-    adminId: row.admin_id
+    adminId: row.admin_id,
+    isTemplate: !!row.is_template
   };
 }
 function rowToSub(row){
@@ -506,6 +511,9 @@ async function loadGame(code){
   return rowToGame(g, teams||[]);
 }
 
+// ⚠️ `is_template` est volontairement ABSENT du payload : l'upsert ne met à jour que les
+// colonnes fournies, le drapeau du tiroir survit donc à toute sauvegarde ordinaire et ne
+// peut pas être effacé par accident. Il ne s'écrit que dans `saveAsTemplate`.
 async function saveGame(game){
   if(!sb) return;
   const { error } = await sb.from('games').upsert({
@@ -855,17 +863,20 @@ async function persistGameLogo(code){
     const res = await fetch(d.data);
     return await uploadGameLogoBlob(await res.blob(), code);
   }
-  if(d.url){
-    if(d.url.includes(`/${code}/logo.png`)) return d.url;   // déjà en place
-    // Logo hérité d'une chasse dupliquée : on RECOPIE le fichier sous le nouveau code.
-    // Garder l'URL d'origine ferait pointer la copie sur un fichier qui disparaît avec sa chasse.
-    try{
-      const r = await fetch(d.url);
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      return await uploadGameLogoBlob(await r.blob(), code);
-    }catch(e){ toast('Logo du lieu non recopié : '+e.message, 'error', 4500); return null; }
-  }
+  if(d.url) return await copyLogoTo(d.url, code);
   return null;
+}
+
+// Logo hérité d'une chasse dupliquée : on RECOPIE le fichier sous le nouveau code.
+// Garder l'URL d'origine ferait pointer la copie sur un fichier qui disparaît avec sa chasse.
+async function copyLogoTo(srcUrl, code){
+  if(!srcUrl) return null;
+  if(srcUrl.includes(`/${code}/logo.png`)) return srcUrl;   // déjà en place
+  try{
+    const r = await fetch(srcUrl);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return await uploadGameLogoBlob(await r.blob(), code);
+  }catch(e){ toast('Logo du lieu non recopié : '+e.message, 'error', 4500); return null; }
 }
 
 // ── UI du champ logo (écrans de création et de modification) ──
@@ -1233,9 +1244,15 @@ function screenAdminSetup(){
       <div id="session-picker" class="session-picker"><div class="empty" style="padding:20px;font-size:14px">Chargement…</div></div>
       <button id="btn-load-session" class="btn ghost" onclick="loadAndEditGameFromPicker()" disabled style="margin-top:10px;margin-bottom:16px;opacity:.4">Reprendre cette session →</button>
 
+      <div class="divider-stars">✦ chasses types ✦</div>
+      <h3 style="margin-bottom:4px">Tiroir des chasses types</h3>
+      <p class="help-text" style="margin:0 0 12px">Vos scénarios prêts à rejouer. Une chasse type n'est jamais lancée, n'a ni équipe ni photo, reste intacte à chaque duplication et <strong>échappe au ménage automatique des vieilles chasses</strong> — elle ne disparaîtra pas. Pour en ajouter une : l'étoile ☆ dans la liste ci-dessous, ou le bouton du lobby après avoir monté vos indices.</p>
+      <div id="tpl-picker" class="session-picker"><div class="empty" style="padding:20px;font-size:14px">Chargement…</div></div>
+      <button id="btn-use-tpl" class="btn ghost" onclick="useTemplate()" disabled style="margin-top:10px;margin-bottom:16px;opacity:.4">Utiliser cette chasse type →</button>
+
       <div class="divider-stars">✦ réutiliser une chasse ✦</div>
       <h3 style="margin-bottom:4px">Dupliquer une chasse</h3>
-      <p class="help-text" style="margin:0 0 12px">Choisissez une de vos chasses (même terminée) pour la rejouer avec un nouveau groupe. Les indices et réglages sont copiés dans une nouvelle session vierge — nouveau code, aucune équipe ni photo. La chasse d'origine n'est jamais modifiée.</p>
+      <p class="help-text" style="margin:0 0 12px">Choisissez une de vos chasses (même terminée) pour la rejouer avec un nouveau groupe. Les indices et réglages sont copiés dans une nouvelle session vierge — nouveau code, aucune équipe ni photo. La chasse d'origine n'est jamais modifiée. L'étoile ☆ range une copie de son scénario dans le tiroir ci-dessus.</p>
       <div id="dup-picker" class="session-picker"><div class="empty" style="padding:20px;font-size:14px">Chargement…</div></div>
       <button id="btn-dup-session" class="btn ghost" onclick="duplicateSelected()" disabled style="margin-top:10px;opacity:.4">Dupliquer cette chasse →</button>
       <details style="margin:10px 0 16px">
@@ -1271,7 +1288,9 @@ function screenAdminSetup(){
   renderClueListEdit();
   STATE.selectedSessionCode = null;
   STATE.selectedDupCode = null;
+  STATE.selectedTplCode = null;
   loadSessionsForPicker();
+  loadTemplates();
   loadGamesForDuplicate();
 }
 
@@ -1509,14 +1528,15 @@ async function createGame(){
 // ────── Dupliquer une chasse existante (toute statut) vers une nouvelle session ──────
 // Cœur partagé : charge la chasse source et remplit le brouillon de création.
 // La chasse d'origine n'est jamais modifiée (nouveaux `id` d'indices, nouveau code à la création).
-async function duplicateFromCode(code){
+async function duplicateFromCode(code, opts){
   const src = await loadGame(code);
   if(src === undefined){ toast('Réseau indisponible, réessayez','error'); return; }
   if(!src){ toast('Chasse introuvable','error'); return; }
   if(!src.clues || src.clues.length === 0){ toast('Cette chasse n\'a aucun indice à copier','error'); return; }
   STATE.draftClues = src.clues.map(c=>({ id:uid(), title:c.title||'', text:c.text||'', points:c.points||0, lat:(c.lat??null), lng:(c.lng??null) }));
+  const suffix = !(opts && opts.suffix === false);   // depuis le tiroir : pas de « (copie) »
   STATE.draftMeta = {
-    name: (src.name || 'Chasse') + ' (copie)',
+    name: (src.name || 'Chasse') + (suffix ? ' (copie)' : ''),
     date: new Date().toISOString().slice(0,10),
     location: src.location || '',
     logoUrl: src.logoUrl || null,
@@ -1524,7 +1544,7 @@ async function duplicateFromCode(code){
     perClue: src.perClueMinutes || 15
   };
   STATE.logoDraft = { data:null, url: src.logoUrl || null };   // recopié sous le nouveau code à la création
-  toast(`Chasse « ${src.name} » copiée — vérifiez puis créez la nouvelle session`,'success',4000);
+  toast(`${suffix ? 'Chasse' : 'Chasse type'} « ${src.name} » copiée — vérifiez puis créez la nouvelle session`,'success',4000);
   screenAdminSetup();
 }
 
@@ -1533,6 +1553,109 @@ async function duplicateSelected(){
   const code = STATE.selectedDupCode;
   if(!code){ toast('Sélectionnez une chasse à dupliquer','error'); return; }
   await duplicateFromCode(code);
+}
+
+// ══════════════ Tiroir de chasses types ══════════════
+// Une chasse type est une COPIE VIERGE (indices + réglages + logo) : aucune équipe,
+// aucune preuve, jamais lancée. Elle sert uniquement de moule à dupliquer.
+// ⚠️ On ne MARQUE jamais une chasse déjà jouée : ça immobiliserait les photos de ses
+// participants hors de la rétention 90 j (les modèles sont exclus de la purge auto).
+// Marquer = créer une copie neuve, la chasse d'origine n'est pas touchée.
+async function saveAsTemplate(code, btn){
+  if(!sb) return;
+  const u = await currentUser();
+  if(!u){ toast('Connectez-vous d\'abord','error'); return; }
+  const src = await loadGame(code);
+  if(src === undefined){ toast('Réseau indisponible, réessayez','error'); return; }
+  if(!src){ toast('Chasse introuvable','error'); return; }
+  if(!src.clues || src.clues.length === 0){ toast('Cette chasse n\'a aucun indice à conserver','error'); return; }
+  if(btn){ btn.disabled = true; btn.textContent = '…'; }
+  const tplCode = genCode();
+  const { error } = await sb.from('games').insert({
+    code: tplCode,
+    name: src.name || 'Chasse type',
+    hunt_date: null,                       // un modèle n'a pas de date
+    location: src.location || null,
+    status: 'setup',
+    duration_minutes: src.durationMinutes,
+    per_clue_minutes: src.perClueMinutes,
+    clues: src.clues.map(c=>({ id:uid(), title:c.title||'', text:c.text||'', points:c.points||0, lat:(c.lat??null), lng:(c.lng??null) })),
+    admin_id: u.id,
+    is_template: true
+  });
+  if(btn){ btn.disabled = false; btn.innerHTML = '&#9734;'; }
+  if(error){ toast('Enregistrement impossible : '+error.message,'error',6000); return; }
+  // Le logo part APRÈS l'insert : la policy de suppression du bucket vérifie que le code
+  // qui ouvre le chemin appartient bien à auth.uid().
+  const logo = await copyLogoTo(src.logoUrl, tplCode);
+  if(logo) await sb.from('games').update({ logo_url: logo }).eq('code', tplCode);
+  toast(`« ${src.name} » ajoutée au tiroir des chasses types`,'success',4500);
+  loadTemplates(); loadGamesForDuplicate(); loadSessionsForPicker();
+}
+
+async function loadTemplates(){
+  const picker = $('#tpl-picker'); if(!picker) return;
+  const msg = (t)=>{ picker.innerHTML='<div class="empty" style="padding:24px 16px;font-size:14px">'+t+'</div>'; };
+  if(!sb){ msg('Supabase non connecté'); return; }
+  const u = await currentUser();
+  if(!u){ msg('Connectez-vous pour voir vos chasses types'); return; }
+  const { data, error } = await sb.from('games')
+    .select('code,name,location,clues,duration_minutes')
+    .eq('admin_id', u.id).eq('is_template', true)
+    .order('name');
+  if(error){ msg('Erreur chargement : '+escapeHtml(error.message)); return; }
+  if(!data || data.length===0){ msg('Tiroir vide — ajoutez une chasse avec l\'étoile ☆'); return; }
+  picker.innerHTML = data.map(g=>{
+    const n = (g.clues||[]).length;
+    const meta = [n+' indice'+(n>1?'s':''), (g.duration_minutes||0)+' min', g.location || null]
+      .filter(Boolean).map(escapeHtml).join(' · ');
+    const nameAttr = escapeHtml((g.name||'').replace(/'/g,'’'));
+    return `<div class="session-picker-item" role="button" tabindex="0" data-code="${escapeHtml(g.code)}"
+        onclick="selectTemplate('${escapeHtml(g.code)}')"
+        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectTemplate('${escapeHtml(g.code)}')}">
+      <div class="sp-date-col"><div class="sp-day">${n}</div><div class="sp-month">indice${n>1?'s':''}</div></div>
+      <div style="flex:1;min-width:0">
+        <div class="sp-name">${escapeHtml(g.name)}</div>
+        <div class="sp-date">${meta}</div>
+      </div>
+      <button class="sp-del" title="Retirer cette chasse type du tiroir"
+        aria-label="Supprimer la chasse type ${escapeHtml(g.name)}"
+        onclick="event.stopPropagation();deleteTemplate('${escapeHtml(g.code)}','${nameAttr}',this)">&#128465;</button>
+    </div>`;
+  }).join('');
+}
+
+function selectTemplate(code){
+  STATE.selectedTplCode = code;
+  $$('#tpl-picker .session-picker-item').forEach(el=>el.classList.toggle('selected', el.dataset.code===code));
+  const btn = $('#btn-use-tpl');
+  if(btn){ btn.disabled=false; btn.style.opacity='1'; }
+}
+
+// Utiliser un modèle = duplication ordinaire. Le modèle n'est jamais modifié ni consommé.
+async function useTemplate(){
+  const code = STATE.selectedTplCode;
+  if(!code){ toast('Sélectionnez une chasse type','error'); return; }
+  await duplicateFromCode(code, { suffix:false });
+}
+
+// Un modèle n'a ni équipe ni preuve : seul son logo occupe le Storage.
+async function deleteTemplate(code, name, btn){
+  if(!sb) return;
+  if(!confirm(`Retirer « ${name} » du tiroir des chasses types ?\n\nLes chasses déjà créées à partir d'elle ne sont pas touchées.`)) return;
+  if(btn){ btn.disabled = true; btn.textContent = '…'; }
+  try{ await sb.storage.from('photos').remove([`${code}/logo.png`]); }catch(_){}
+  const { error } = await sb.rpc('admin_purge_game', { p_code: code });
+  if(error){
+    if(btn){ btn.disabled = false; btn.innerHTML = '&#128465;'; }
+    toast('Suppression impossible : '+error.message,'error',6000); return;
+  }
+  if(STATE.selectedTplCode === code){
+    STATE.selectedTplCode = null;
+    const b = $('#btn-use-tpl'); if(b){ b.disabled = true; b.style.opacity = '.4'; }
+  }
+  toast('Chasse type retirée du tiroir','success');
+  loadTemplates();
 }
 
 // Duplication par code (repli : chasse appartenant à un autre compte admin).
@@ -1559,7 +1682,8 @@ async function loadGamesForDuplicate(){
   const u = await currentUser();
   if(!u){ msg('Connectez-vous pour voir vos chasses'); return; }
   const { data, error } = await sb.from('games')
-    .select('code,name,hunt_date,location,status,created_at,admin_id')
+    .select('code,name,hunt_date,location,status,created_at,admin_id,is_template')
+    .eq('is_template', false)              // les modèles vivent dans leur propre tiroir
     .order('created_at', { ascending:false })
     .limit(200);
   if(error){ msg('Erreur chargement : '+escapeHtml(error.message)); return; }
@@ -1593,6 +1717,9 @@ async function loadGamesForDuplicate(){
         <div class="sp-date">${meta}</div>
       </div>
       <div class="sp-code">${escapeHtml(g.code)}</div>
+      <button class="sp-star" title="Ranger une copie de ce scénario dans le tiroir des chasses types"
+        aria-label="Enregistrer la chasse ${escapeHtml(g.code)} comme chasse type"
+        onclick="event.stopPropagation();saveAsTemplate('${escapeHtml(g.code)}',this)">&#9734;</button>
       <button class="sp-del" title="Supprimer définitivement cette chasse et ses photos"
         aria-label="Supprimer la chasse ${escapeHtml(g.code)}"
         onclick="event.stopPropagation();deleteGameFromPicker('${escapeHtml(g.code)}','${nameAttr}',this)">&#128465;</button>
@@ -1677,6 +1804,7 @@ async function loadSessionsForPicker(){
   const { data, error } = await sb.from('games')
     .select('code,name,hunt_date,location,status')
     .eq('status','setup')
+    .eq('is_template', false)              // un modèle ne se joue pas : il se duplique
     .eq('admin_id', u.id)
     .order('hunt_date', { ascending:true, nullsFirst:false });
   if(error){ picker.innerHTML='<div class="empty" style="padding:20px;font-size:14px">Erreur chargement</div>'; return; }
@@ -1715,6 +1843,7 @@ async function loadAndEditGameFromPicker(){
   const game = await loadGame(code);
   if(!game){ toast('Session introuvable','error'); return; }
   if(game.status !== 'setup'){ toast('Cette session a déjà démarré','error'); return; }
+  if(game.isTemplate){ toast('C\'est une chasse type : utilisez le tiroir pour la dupliquer','error',5000); return; }
   if(game.adminId && game.adminId !== u.id){ toast('Cette chasse ne vous appartient pas','error',5000); return; }
   STATE.game = game;
   STATE.me.gameCode = code;
@@ -1733,6 +1862,7 @@ async function resumeByCode(){
   const game = await loadGame(code);
   if(game === undefined){ toast('Erreur réseau — réessayez','error'); return; }
   if(!game){ toast('Aucune chasse avec ce code','error'); return; }
+  if(game.isTemplate){ toast('Ce code est une chasse type : dupliquez-la depuis le tiroir','error',5000); return; }
   // Sécurité : on ne reprend que SES propres chasses (l'identité = auth.uid()).
   if(game.adminId && game.adminId !== u.id){
     toast('Vous n\'êtes pas le maître du jeu de cette chasse','error',5000); return;
@@ -1874,6 +2004,8 @@ function screenAdminLobby(){
         <h3>${g.clues.length} indice${g.clues.length>1?'s':''} · ${g.durationMinutes} min total · ${g.perClueMinutes} min/indice</h3>
         <p class="help-text" style="margin-top:8px">${g.clues.map(c=>escapeHtml(c.title)).join(' · ')}</p>
       </div>
+      <button class="btn ghost" style="width:100%;margin-top:10px" onclick="saveAsTemplate('${g.code}', this)">☆ Enregistrer comme chasse type</button>
+      <p class="help-text" style="margin-top:6px">Range une copie du scénario (indices, durées, lieu, logo) dans le tiroir pour le rejouer plus tard. Cette chasse-ci n'est pas modifiée.</p>
       
       <div class="sticky-bottom">
         <div class="btn-row">

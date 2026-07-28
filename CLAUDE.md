@@ -3,8 +3,8 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-28, commit `d7ea340` + #52, `BUILD` `2026-07-28.3`,
-> `CACHE` `expedition-v22`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-28, commit `b984ea0` + #53, `BUILD` `2026-07-28.4`,
+> `CACHE` `expedition-v23`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > ⚠️ **Écart en cours** : le dossier `commercial/` (plaquette de vente, #47) est **local, non
 > poussé**. Aucun impact applicatif — `BUILD`/`CACHE` inchangés.
 >
@@ -36,7 +36,9 @@ des photos comme preuves ; un maître du jeu (admin) valide puis fait juger les 
 
 ## Modèle de données (Postgres)
 
-- **`games`** — PK `code` (texte, 4 lettres). Champs : `name`, `status`, `location` (texte,
+- **`games`** — PK `code` (texte, 4 lettres). Champs : `is_template` (booléen, défaut `false` —
+  chasse type rangée au tiroir : jamais jouée, exclue des pickers de jeu et de la purge 90 j,
+  voir #53), `name`, `status`, `location` (texte,
   optionnel — lieu de la chasse, ex. « Center Parcs »), `logo_url` (texte, optionnel — logo du
   lieu affiché sur le tirage, fichier `{code}/logo.png` dans le bucket, voir #43), `clues` (jsonb :
   `[{id,title,text,points,lat,lng}]` — `lat`/`lng` optionnels, `null` si l'indice n'est pas
@@ -96,6 +98,20 @@ dissocier les deux.
   (filtrables par statut) en archive `{CODE}_photos.zip`, organisée `Équipe/HHhMM_statut_indice_id.jpg`
   (JSZip, pool de 8 requêtes parallèles). La photo d'équipe échappe aux filtres de statut et
   ouvre le dossier de son équipe sous `00_photo-equipe.jpg` (voir #48).
+- **Tiroir de chasses types** : une chasse type est une ligne `games` avec `is_template=true` —
+  une **copie vierge** (indices aux `id` neufs, réglages, lieu, logo recopié sous son propre code),
+  sans équipe ni preuve, jamais lancée. Section « Tiroir des chasses types » sur l'écran de
+  préparation (`loadTemplates` → `#tpl-picker`, `selectTemplate`, `useTemplate` →
+  `duplicateFromCode(code,{suffix:false})` — pas de « (copie) » dans le nom, `deleteTemplate`).
+  On y range un scénario par l'**étoile ☆** de chaque ligne du picker de duplication ou par le
+  bouton « ☆ Enregistrer comme chasse type » du lobby, tous deux branchés sur `saveAsTemplate`.
+  ⚠️ **On ne marque jamais une chasse déjà jouée** : les modèles échappant à la rétention 90 j,
+  poser le drapeau sur une chasse jouée immobiliserait hors rétention les photos et les noms de
+  ses participants. `saveAsTemplate` **crée donc toujours une copie neuve** ; la source n'est pas
+  touchée et reste soumise à la purge. ⚠️ `saveGame` **n'écrit pas** `is_template` (colonne absente
+  du payload d'upsert, donc jamais mise à jour) : le drapeau ne peut pas être effacé par une
+  sauvegarde ordinaire. Les modèles sont exclus de `loadSessionsForPicker` et de
+  `loadGamesForDuplicate`, et `resumeByCode`/`loadAndEditGameFromPicker` refusent d'en ouvrir un.
 - **Dupliquer une chasse passée** : dans l'écran admin de préparation, section « Dupliquer une
   chasse ». Voie principale = **liste de toutes MES chasses** (`loadGamesForDuplicate` : chasses
   dont `admin_id = auth.uid()` **ou** dont l'`admin_id` n'est pas un UUID — voir #32 et le
@@ -214,6 +230,7 @@ restent à passer — **à ce jour, aucune : la base est à jour**.
 | `migration-print-choice.sql` | `teams.print_submission_id` — tirage souvenir (#39) | appliqué 2026-07-26 |
 | `migration-venue-logo.sql` | `games.logo_url` — logo du lieu (#43) | appliqué 2026-07-27 |
 | `migration-storage-delete-fix.sql` | Policy DELETE du bucket : `name` mal résolu (#50) | appliqué 2026-07-28 |
+| `migration-templates.sql` | `games.is_template` + purge 90 j épargnant les modèles (#53) | appliqué 2026-07-28 |
 
 ⚠️ `supabase-setup.sql` §5 est **obsolète** depuis #38 : ses trois fonctions de purge y
 suppriment encore des lignes de `storage.objects`, ce que Supabase refuse. C'est
@@ -886,6 +903,43 @@ présent dans le bucket, pastille affichée, photo proposée au choix du tirage.
     (le mot « Annuler » à côté d'un « ← Menu » laissait croire à un simple retour, alors qu'il
     appelle `deleteGame`), et une ligne d'aide sous le code rappelle que la chasse est déjà
     enregistrée. `BUILD` → `2026-07-28.3`, `CACHE` **v21→v22**.
+
+### Poussés sur GitHub (2026-07-28) — Tiroir de chasses types
+
+53. **Chasses types réutilisables** (`migration-templates.sql`, appliquée le 2026-07-28).
+    Besoin : garder un scénario prêt à rejouer sans dépendre d'une chasse passée, qui finit
+    supprimée à la main ou par le cron de rétention. Jusqu'ici, dupliquer supposait que la
+    chasse source existe encore.
+    (1) **Base** : `games.is_template boolean not null default false` + index
+    `(admin_id, is_template)`. `purge_expired_games` gagne `and is_template = false` — c'est la
+    seule protection contre l'expiration.
+    (2) **Décision d'archi** : marquer une chasse **déjà jouée** aurait été plus simple mais est
+    **écarté pour raison RGPD** — le modèle échappant à la rétention 90 j, il aurait immobilisé
+    hors purge les photos et les noms de ses participants. `saveAsTemplate(code)` **insère
+    toujours une copie neuve et vierge** (nouveaux `id` d'indices, `hunt_date=null`, logo recopié
+    par `copyLogoTo` sous le nouveau code, aucune équipe) ; la chasse source n'est jamais modifiée
+    et reste soumise à la purge.
+    (3) **Écriture du drapeau** : `saveGame` **ne liste pas** `is_template` dans son payload —
+    un upsert PostgREST ne met à jour que les colonnes fournies, le drapeau survit donc à toutes
+    les sauvegardes ordinaires et ne peut pas être effacé par accident. Seul `saveAsTemplate`
+    l'écrit, par un `insert` direct.
+    (4) **UI** : section « Tiroir des chasses types » sur l'écran de préparation (picker
+    `#tpl-picker`, colonne de gauche = nombre d'indices puisqu'un modèle n'a pas de date, bouton
+    « Utiliser cette chasse type → », corbeille par ligne) ; **étoile ☆** sur chaque ligne du
+    picker de duplication et bouton « ☆ Enregistrer comme chasse type » dans le lobby.
+    `useTemplate` passe par `duplicateFromCode(code,{suffix:false})` : depuis un modèle, le
+    suffixe « (copie) » n'a pas de sens.
+    (5) **Étanchéité** : `loadSessionsForPicker` et `loadGamesForDuplicate` filtrent
+    `is_template=false` (sinon un modèle apparaîtrait dans trois listes et pourrait être
+    **lancé**) ; `resumeByCode` et `loadAndEditGameFromPicker` refusent explicitement d'ouvrir un
+    modèle, y compris par saisie de son code.
+    (6) **Refactor** : la recopie de fichier logo sort de `persistGameLogo` dans `copyLogoTo(url,
+    code)`, partagée avec le tiroir. Comportement inchangé.
+    ⚠️ **Modifier un modèle n'est pas prévu** : on l'utilise (ce qui remplit le formulaire de
+    création), on ajuste, on crée la chasse, puis on range la nouvelle version au tiroir et on
+    retire l'ancienne. Une édition en place demanderait de charger un modèle dans `STATE.game`,
+    donc de rouvrir la porte que le point (5) ferme.
+    `BUILD` → `2026-07-28.4`, `CACHE` **v22→v23**.
 
 ## Dette technique / points de vigilance connus
 

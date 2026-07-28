@@ -62,6 +62,11 @@ alter table submissions alter column lng drop not null;
 alter table games add column if not exists location text;
 alter table games add column if not exists logo_url text;
 
+-- Migration : tiroir de chasses types (#53) — modèle vierge, jamais joué, exclu de la
+-- rétention 90 j (voir migration-templates.sql, qui fait foi pour purge_expired_games).
+alter table games add column if not exists is_template boolean not null default false;
+create index if not exists games_admin_template_idx on games (admin_id, is_template);
+
 -- Migration : l'app utilise aussi les statuts 'validation' et 'judging'
 alter table games drop constraint if exists games_status_check;
 alter table games add constraint games_status_check
