@@ -776,6 +776,9 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
 
 ### Poussés sur GitHub (2026-07-28) — Deux pannes silencieuses : photo d'équipe et purge des fichiers
 
+**✅ Vérifié en conditions réelles le 2026-07-28** : nouvelle inscription avec selfie → fichier
+présent dans le bucket, pastille affichée, photo proposée au choix du tirage.
+
 50. **(a) La photo d'équipe n'a jamais été stockée du 2026-06-30 au 2026-07-28.**
     Symptôme : « on ne voit pas la photo », nulle part. Diagnostic en base plutôt qu'en
     supposant : **0 fichier `%/team_%`** dans le bucket sur 91 objets, et `teams.photo_url`

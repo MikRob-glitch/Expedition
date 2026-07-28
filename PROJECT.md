@@ -175,6 +175,8 @@ Voie principale : **liste de toutes mes chasses** (`loadGamesForDuplicate`, tout
 ### Supprimer une chasse
 Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Double confirmation, puis **deux étapes dans cet ordre** : (1) `purgeGamePhotos` retire les fichiers par l'**API Storage** — Supabase interdit tout `DELETE` SQL sur `storage.objects` ; (2) RPC `admin_purge_game` supprime les lignes (cascade). ⚠️ Jamais l'inverse : le bucket n'étant pas listable, les chemins ne se reconstruisent que depuis `submissions.id` / `teams.id`.
 
+⚠️ **L'étape (1) n'a réellement fonctionné qu'à partir du 2026-07-28** : la policy `photos_delete_owner` résolvait `name` sur `games` au lieu de `storage.objects` et n'autorisait donc rien (`CLAUDE.md` #50, `migration-storage-delete-fix.sql`). Les **89 fichiers déjà orphelins** (~15 Mo, 16 chasses supprimées avant le correctif) ne sont plus atteignables par l'app : à retirer une fois à la main depuis le dashboard Supabase (Storage → `photos`).
+
 ---
 
 ## Fonctions clés à connaître
@@ -217,7 +219,7 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 
 - **Auth admin par code OTP email** (Supabase Auth) : l'admin est identifié par `auth.uid()` (stable, lié à l'email), écrit dans `games.admin_id`. Fin de l'usurpation admin.
 - **RLS scopées** : `games` (INSERT/UPDATE/DELETE) et `submissions` (UPDATE) réservés à l'**admin propriétaire authentifié**. Lecture publique conservée.
-- **Bucket `photos` verrouillé** : suppression des policies SELECT (listing) et DELETE publiques ; upload conservé (joueurs anonymes).
+- **Bucket `photos` verrouillé** : suppression des policies SELECT (listing) et DELETE publiques ; upload conservé (joueurs anonymes). Il reste donc exactement **deux** policies : `INSERT` (public) et `DELETE` (admin propriétaire de la chasse dont le code est le premier segment du chemin). **Aucune policy UPDATE** — d'où l'interdiction absolue d'`upsert` sur ce bucket, pour tout le monde.
 
 **Dette restante (avant usage grand public / commercial)** :
 
@@ -240,7 +242,7 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 
 - **Keep-alive** (`.github/workflows/keepalive.yml`) : ping REST tous les 3 j → évite la pause du projet Supabase (tier gratuit). ⚠️ GitHub désactive les crons après 60 j sans commit.
 - **Capture d'erreurs client** (`reportError` + handlers globaux) : toast discret côté admin, hook **Sentry** optionnel (`localStorage.sentry_dsn`).
-- **Envoi photo robuste** : retry + rollback d'orphelin, idempotence, outbox offline (voir `CLAUDE.md` #4, #23, #26).
+- **Envoi photo robuste** : retry + rollback d'orphelin, idempotence, outbox offline (voir `CLAUDE.md` #4, #23, #26). Tous les envois vers le bucket sont en `upsert:false` avec 409 traité comme succès — un `upsert` réclamerait le droit UPDATE, absent du bucket, et échouerait en silence (#26, #43, #50).
 
 ---
 
@@ -248,6 +250,7 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 
 1. **Écritures `teams`/`submissions` ouvertes** (clé `anon`) → Lot Edge Functions à venir.
 2. **Secret des indices côté client seulement** (payload `clues` public).
+3. **89 fichiers orphelins** (~15 Mo) laissés par la policy DELETE cassée jusqu'au 2026-07-28 : à supprimer une fois depuis le dashboard Supabase. Les photos d'équipe d'avant cette date, elles, n'existent nulle part (jamais stockées, voir `CLAUDE.md` #50).
 3. **Plus de GPS sur les preuves** : la preuve est la photo seule.
 4. **iOS** : pas de Background Sync → flush outbox appli ouverte/réouverte uniquement.
 5. **Pas de tests automatisés** ; compression photo destructive (1600 px, JPEG 0,82, plafond ~3 Mo de dataURL).

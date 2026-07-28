@@ -19,7 +19,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 - **Tirage souvenir** — chaque équipe choisit sa photo préférée en fin de chasse — photo d'équipe comprise — (zoom sur chaque photo avant de trancher) ; le maître du jeu récupère les tirages **encadrés** (rose des vents, nom de la chasse, nom de l'équipe, date, et le **logo du lieu** si vous en joignez un) au **format 10×15 prêt à imprimer** (portrait ou paysage), à l'unité ou en ZIP.
 - **PWA offline** — service worker (app-shell en cache) + **file d'envoi photo hors-ligne** (IndexedDB) : un rechargement en coupure ne casse plus rien, une photo prise sans réseau part automatiquement au retour du réseau.
 - **Dupliquer / supprimer une chasse** — liste de toutes vos chasses passées : re-jouer les mêmes indices en une nouvelle session, ou effacer définitivement (photos comprises).
-- **Sécurité & RGPD** — auth admin par **code email** (Supabase Auth), **RLS scopées**, bucket photos verrouillé, consentement + politique de confidentialité + purge automatique à 90 j (⚠️ les fichiers restent à purger depuis l'app, voir [`PROJECT.md`](PROJECT.md)).
+- **Sécurité & RGPD** — auth admin par **code email** (Supabase Auth), **RLS scopées**, bucket photos verrouillé (INSERT public + DELETE réservé au propriétaire, aucun UPDATE), consentement + politique de confidentialité + purge automatique à 90 j (⚠️ les fichiers restent à purger depuis l'app, voir [`PROJECT.md`](PROJECT.md)).
 
 ## Stack
 
