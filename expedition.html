@@ -415,7 +415,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-28.2';
+const BUILD = '2026-07-28.3';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -1847,10 +1847,11 @@ function screenAdminLobby(){
     <div class="screen" data-screen="admin-lobby">
       <div class="topbar">
         <div class="brand"><span class="brand-icon">✦</span>${escapeHtml(g.name)}</div>
-        <span class="chip">Lobby</span>
+        <button class="chip" onclick="backToSetup()">← Menu</button>
       </div>
       <h2>Partagez le code</h2>
       <p class="subtitle">Les équipes saisissent ce code pour rejoindre la chasse.${g.location ? ' · <strong>'+escapeHtml(g.location)+'</strong>':''}</p>
+      <p class="help-text" style="margin:-6px 0 14px">Cette chasse est enregistrée. « ← Menu » revient à la préparation pour en créer une autre — vous la retrouverez dans « Reprendre une session ».</p>
       <div class="code-display">
         <div class="label">Code de chasse</div>
         <div class="code">${g.code}</div>
@@ -1876,12 +1877,26 @@ function screenAdminLobby(){
       
       <div class="sticky-bottom">
         <div class="btn-row">
-          <button class="btn ghost" onclick="cancelGame()" style="flex:1">Annuler</button>
+          <button class="btn ghost" onclick="cancelGame()" style="flex:1;border-color:var(--oxblood);color:var(--oxblood)">Supprimer 🗑</button>
           <button class="btn ghost" onclick="screenAdminEditGame()" style="flex:1">Modifier ✎</button>
           <button class="btn oxblood" onclick="startGame()" ${g.teams.length===0?'disabled':''} style="flex:2">Démarrer la chasse</button>
         </div>
       </div>
     </div>`;
+}
+
+// Quitte le lobby SANS toucher à la chasse : elle reste en base au statut `setup` et
+// réapparaît dans « Reprendre une session ». Permet de préparer plusieurs chasses d'affilée.
+// ⚠️ On détache seulement l'appareil (`me.gameCode`), on ne supprime rien — cancelGame(), lui, efface.
+async function backToSetup(){
+  stopRealtime();
+  if(STATE.me){ STATE.me.gameCode = null; await saveMe(); }
+  STATE.game = null;
+  STATE.submissions = [];
+  // Formulaire vierge : sinon un brouillon d'édition resterait collé à l'écran de préparation.
+  STATE.draftClues = null; STATE.draftMeta = null; STATE.logoDraft = null;
+  toast('Chasse enregistrée — retrouvez-la dans « Reprendre une session »','success',4000);
+  await render();
 }
 
 async function cancelGame(){
