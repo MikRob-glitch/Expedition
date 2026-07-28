@@ -3,7 +3,7 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-28, commit `b984ea0` + #53, `BUILD` `2026-07-28.4`,
+> **réellement poussé sur GitHub** (HEAD = 2026-07-28, commit `2c2bf19`, `BUILD` `2026-07-28.4`,
 > `CACHE` `expedition-v23`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > ⚠️ **Écart en cours** : le dossier `commercial/` (plaquette de vente, #47) est **local, non
 > poussé**. Aucun impact applicatif — `BUILD`/`CACHE` inchangés.
@@ -888,6 +888,8 @@ présent dans le bucket, pastille affichée, photo proposée au choix du tirage.
 
 ### Poussés sur GitHub (2026-07-28, commit `d7ea340`) — Retour au menu de préparation depuis le lobby
 
+**✅ Vérifié en conditions réelles le 2026-07-28.**
+
 52. **`backToSetup()` — préparer plusieurs chasses d'affilée.** Besoin : créer une chasse à
     l'avance puis y revenir plus tard, sans la lancer ni la perdre. Le lobby (`setup`) n'offrait
     que « Annuler » (= **suppression** de la chasse), « Modifier » et « Démarrer » : le seul moyen
@@ -904,7 +906,10 @@ présent dans le bucket, pastille affichée, photo proposée au choix du tirage.
     appelle `deleteGame`), et une ligne d'aide sous le code rappelle que la chasse est déjà
     enregistrée. `BUILD` → `2026-07-28.3`, `CACHE` **v21→v22**.
 
-### Poussés sur GitHub (2026-07-28) — Tiroir de chasses types
+### Poussés sur GitHub (2026-07-28, commit `2c2bf19`) — Tiroir de chasses types
+
+**✅ Vérifié en conditions réelles le 2026-07-28** : mise au tiroir depuis la liste des chasses,
+réutilisation d'un modèle et création de la chasse à partir de lui — parcours complet OK.
 
 53. **Chasses types réutilisables** (`migration-templates.sql`, appliquée le 2026-07-28).
     Besoin : garder un scénario prêt à rejouer sans dépendre d'une chasse passée, qui finit
