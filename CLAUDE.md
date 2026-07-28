@@ -3,8 +3,8 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-27, commit `22d69d8`+docs, `BUILD` `2026-07-27.5`,
-> `CACHE` `expedition-v18`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-27, commit `0d75dfe`+docs, `BUILD` `2026-07-27.6`,
+> `CACHE` `expedition-v19`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > À ce jour, aucun écart applicatif : local et distant alignés (vérifié par re-clonage + `diff`).
 > Seul le dossier `commercial/` (support de vente) reste volontairement hors dépôt.
 >
@@ -749,6 +749,29 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     10×15 à ~200 dpi, correct mais en deçà des preuves. Seules les inscriptions postérieures au
     déploiement bénéficient de la pleine définition.
 
+### Poussés sur GitHub (2026-07-27, commit `0d75dfe`) — Le nom d'équipe survit à la photo
+
+49. **Brouillon d'inscription tenu dans `STATE`, plus dans le DOM.** Symptôme signalé sur le
+    terrain : prendre la photo d'équipe **effaçait le nom d'équipe** déjà saisi. Cause :
+    `handleJoinCapture` sauvait les champs, appelait `render()` **sans `await`** — or `render()`
+    est `async` (il recharge jeu et preuves) — puis « restaurait » les valeurs. La restauration
+    écrivait donc dans le DOM que `render()` allait remplacer une fraction de seconde plus tard.
+    Le code de la chasse survivait par chance : `screenTeamJoin` le réémet depuis
+    `STATE.joinDraftCode` ; le nom d'équipe, lui, n'avait aucun attribut `value`.
+    ⚠️ Le bug ne se limitait pas à la photo : **n'importe quel `render()`** (realtime, poll 15 s)
+    pendant la saisie vidait le champ. Il attendait juste un déclencheur reproductible.
+    Correctif : (1) `#join-team` réémis depuis `STATE.joinDraftTeam`, `escapeHtml` protégeant
+    l'attribut (guillemets compris) ; (2) `syncJoinDraft()` recopie les trois champs dans
+    `STATE` **à chaque frappe** (`oninput`/`onchange`) et avant toute action qui redessine ;
+    (3) `await render()` et suppression de la restauration post-rendu ; (4) doublage en
+    **`sessionStorage`** (`join_draft`) : ouvrir l'appareil photo peut faire recharger la page
+    sur un téléphone peu doté, ce qui viderait `STATE` — la photo, elle, n'y est pas mise
+    (dataURL ~350 Ko, quota trop juste), donc un rechargement pendant la capture perd la photo,
+    jamais le nom ; (5) `clearJoinDraft()` à l'inscription, à la reconnexion et au `logout`,
+    sinon le brouillon ressurgirait à l'inscription suivante. Le libellé du champ photo annonce
+    désormais qu'elle pourra servir de tirage souvenir (#48). `BUILD` → `2026-07-27.6`,
+    `CACHE` **v18→v19**.
+
 ## Dette technique / points de vigilance connus
 
 - **[STOCKAGE — depuis 2026-07-26] Les preuves pèsent ~2× plus lourd** (1600 px, #40) alors
@@ -809,6 +832,10 @@ JS avant livraison.
 - ⚠️ **Écritures équipe = INSERT seul, jamais `upsert`** (RLS UPDATE réservée à l'admin, bucket
   sans policy UPDATE) — sinon le moindre retry se bloque en `42501`. Insert idempotent : `23505`
   (DB) et `409` (storage) valent succès.
+- ⚠️ **`render()` est `async` et réécrit tout l'écran** : ne jamais lire/restaurer la valeur d'un
+  champ après l'avoir appelé (encore moins sans `await`) — la valeur part dans le DOM remplacé.
+  Un champ de saisie qui doit survivre se réémet depuis `STATE`, tenu à jour à chaque frappe
+  (voir #49). Vaut pour tout formulaire, pas seulement l'inscription.
 - ⚠️ **Photos : API Storage uniquement**, jamais de `delete from storage.objects` (#38).
 - ⚠️ **L'API REST Supabase n'est pas joignable depuis le sandbox** (proxy) : impossible de
   vérifier une hypothèse sur les données par `curl`. Passer par le table editor ou une requête
