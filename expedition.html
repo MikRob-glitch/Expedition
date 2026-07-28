@@ -415,7 +415,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-27.6';
+const BUILD = '2026-07-28.1';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -624,12 +624,28 @@ async function uploadTeamPhoto(dataUrl, gameCode, teamId){
     const res = await fetch(dataUrl);
     const blob = await res.blob();
     const path = `${gameCode}/team_${teamId}.jpg`;
-    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType:'image/jpeg', upsert:true });
-    if(error){ toast('Upload photo équipe: '+error.message,'error',4500); return null; }
+    // ⚠️ JAMAIS `upsert:true` ici : le bucket n'a qu'une policy INSERT (Lot 2, #14) et l'upsert
+    // réclame en plus le droit UPDATE → refus RLS. C'est ce qui a empêché **toute** photo
+    // d'équipe d'être stockée du 2026-06-30 au 2026-07-28 (voir #50). Même piège que #26/#43.
+    // Le chemin porte un `teamId` neuf à chaque inscription : aucun fichier à écraser. Un 409
+    // (« Duplicate ») ne peut venir que d'un retry après réponse perdue → c'est un succès.
+    const { error } = await sb.storage.from('photos').upload(path, blob, {
+      contentType:'image/jpeg', upsert:false
+    });
+    if(error){
+      const already = String(error.statusCode)==='409'
+        || error.error==='Duplicate'
+        || /exist|duplicate/i.test(error.message||'');
+      if(!already){
+        toast('Photo d\'équipe non enregistrée : '+error.message,'error',5500);
+        reportError(error, 'upload photo équipe');
+        return null;
+      }
+    }
     const { data } = sb.storage.from('photos').getPublicUrl(path);
-    // cache-buster : l'URL est stable (upsert), on force le rafraîchissement
+    // cache-buster : le chemin est stable pour une équipe donnée, on force le rafraîchissement
     return data.publicUrl + '?v=' + Date.now();
-  }catch(e){ toast('Upload photo équipe: '+e.message,'error',4500); return null; }
+  }catch(e){ toast('Photo d\'équipe non enregistrée : '+e.message,'error',5500); return null; }
 }
 async function setTeamPhoto(teamId, photoUrl){
   if(!sb) return false;

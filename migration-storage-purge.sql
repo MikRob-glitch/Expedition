@@ -36,6 +36,9 @@
 
 drop policy if exists photos_delete_owner on storage.objects;
 
+-- ⚠️ #50 : la clause `(storage.foldername(name))[1]` ci-dessous est BUGGÉE — `name` se
+-- résout en `g.name` (nom de la chasse) et non `storage.objects.name` (chemin du fichier),
+-- donc la policy n' autorisait aucune suppression. Corrigée par migration-storage-delete-fix.sql.
 create policy photos_delete_owner on storage.objects
 for delete to authenticated
 using (
