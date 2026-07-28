@@ -3,10 +3,10 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-27, commit `209c933`+docs, `BUILD` `2026-07-28.1`,
-> `CACHE` `expedition-v20`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
-> À ce jour, aucun écart applicatif : local et distant alignés (vérifié par re-clonage + `diff`).
-> Seul le dossier `commercial/` (support de vente) reste volontairement hors dépôt.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-28, commit `bcef85c` + #51, `BUILD` `2026-07-28.2`,
+> `CACHE` `expedition-v21`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> ⚠️ **Écart en cours** : le dossier `commercial/` (plaquette de vente, #47) est **local, non
+> poussé**. Aucun impact applicatif — `BUILD`/`CACHE` inchangés.
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
 > § « État des migrations SQL » si une migration est ajoutée, et une entrée dans le journal.
@@ -717,6 +717,40 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     ils n'empêchent pas de le copier. Une vraie protection supposerait des URLs signées et un
     rendu du cadre côté serveur (Edge Function) — non fait.
 
+### Local, non poussé (2026-07-27) — Plaquette commerciale
+
+47. **Dossier `commercial/`** — support de vente de la **prestation** (scénario B de
+    `ANALYSE_CONCURRENCE.md` : Mika anime les événements avec son outil ; l'appli est le
+    différenciateur, pas un SaaS vendu seul). Deux fichiers : `Expedition_plaquette.pdf`
+    (6 pages A4) et `plaquette-source.html` (le source, pour ajuster les prix sans repasser
+    par une génération). **Aucun fichier applicatif touché** : ni `BUILD` ni `CACHE` à bumper.
+    Le PDF est produit par **WeasyPrint** depuis le HTML — pas de dépendance ajoutée au dépôt,
+    la génération est hors app.
+    Contenu : couverture, déroulé en 4 temps, bénéfices pour le lieu (camping / séminaire),
+    logistique jour J, grille tarifaire, tirage souvenir + FAQ + contact. Charte reprise de
+    l'app (parchemin, oxblood, filets dorés, rose des vents de `icons/favicon.svg` inlinée en SVG).
+    **Grille retenue** — forfait avec plafond de participants inclus, **jamais de pur
+    per-capita** (un camping ne connaît pas sa fréquentation à l'avance et ne signe pas un prix
+    variable) : DÉCOUVERTE 390 € HT / 40 pers., SIGNATURE 690 € HT / 70, SÉMINAIRE 990 € HT / 30 ;
+    dépassement 6 / 5 / 22 € par personne. Options : −15 % dès 5 dates, tirage supplémentaire
+    4 € HT (revendable 8–10 € par l'établissement), 2ᵉ session le même jour −40 %.
+    Repères marché ayant servi de calage : animateur pro **300–800 €/jour**, team-building
+    **15–50 €/pers** sur une base forfaitaire **~990 € HT**. L'hypothèse initiale à 5 €/pers a
+    été écartée : elle met un groupe de 20 à 100 € pour une journée de travail.
+    ⚠️ **Trois champs restent en `[ à compléter ]`** dans le PDF : téléphone, SIRET — et la
+    plaquette **annonce une RC pro** (page 4, « ce que j'apporte »), à souscrire avant tout
+    démarchage réel.
+    ⚠️ **Pré-requis avant un gros compte** : la dette « Lot Edge Functions » ci-dessous est
+    jugée *disqualifiante en B2B* par `ANALYSE_CONCURRENCE.md`. Volontairement absente de la
+    plaquette, mais bloquante face à un service informatique (Center Parcs, DRH).
+    ⚠️ **Regénération** : `weasyprint commercial/plaquette-source.html commercial/Expedition_plaquette.pdf`.
+    Le HTML est calibré pour WeasyPrint, dont le support **flex est partiel** : `flex-wrap` est
+    ignoré et les colonnes s'empilent. Les grilles utilisent donc `inline-block` (cartes,
+    options), `display:table` (deux colonnes) et `float` (étapes, tirage) — **ne pas les
+    repasser en flexbox**. Chaque `.page` est en `height:297mm; overflow:hidden` avec un
+    `.ftr` en `position:absolute` : `margin-top:auto` ne fonctionne pas, la hauteur du bloc
+    étant recalculée en auto.
+
 ### Poussés sur GitHub (2026-07-27, commit `22d69d8`) — La photo d'équipe devient une photo à part entière
 
 48. **Selfie d'inscription traité comme une preuve virtuelle.** Constat terrain : la photo prise
@@ -815,6 +849,25 @@ présent dans le bucket, pastille affichée, photo proposée au choix du tirage.
     ⚠️ **Ménage à faire à la main une fois** : les 89 fichiers déjà orphelins ne sont plus
     référencés par aucune chasse — l'app ne peut plus reconstruire leurs chemins. À supprimer
     depuis le dashboard Supabase (Storage → `photos` → dossiers dont le code n'existe plus).
+
+### Poussés sur GitHub (2026-07-28) — Sortie de secours de la phase validation
+
+51. **La phase `validation` n'était plus un cul-de-sac.** Symptôme signalé : chasse terminée
+    (chrono expiré ou fin déclenchée par erreur) **sans aucune photo** → l'écran « Photos
+    conformes ? » n'offrait qu'un bouton **désactivé** « Aucune photo ». Aucun moyen de revenir
+    au jeu, ni de clôturer, ni de supprimer la chasse (le bouton de purge vit sur
+    `screenAdminEnd`, inatteignable). Deux correctifs : (1) **`resumeHunt()`** — bouton
+    « ↩︎ Reprendre la chasse » sur `screenAdminValidation`, repasse `status` à `active`,
+    `ended_at` à `null` et **décale `startedAt`** pour que le temps restant soit exactement
+    celui qui restait au moment de la fin ; si le chrono était épuisé, un `prompt` demande les
+    minutes à ajouter (défaut 15) et `durationMinutes` n'est allongée que si le temps ajouté
+    dépasse la durée initiale. ⚠️ Sans ce décalage, `render()` rebascule **aussitôt** en
+    `validation` (le contrôle de chrono en tête de `render`) — la reprise serait invisible.
+    Les équipes repassent de `screenTeamWaiting` à `screenTeamActive` par realtime (`team-waiting`
+    est dans la liste blanche depuis #30). (2) **Clôture possible à vide** : quand il n'y a
+    aucune photo, le bouton principal devient « Clôturer la chasse → » (`finalizeGame`, saut
+    direct de `validation` à `ended`) au lieu d'être grisé — l'écran de fin, et donc la
+    corbeille RGPD, redevient accessible. `BUILD` → `2026-07-28.2`, `CACHE` **v20→v21**.
 
 ## Dette technique / points de vigilance connus
 

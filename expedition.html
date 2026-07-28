@@ -415,7 +415,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-28.1';
+const BUILD = '2026-07-28.2';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -2003,7 +2003,8 @@ function screenAdminValidation(){
   const pending = subs.filter(s=>s.status==='pending');
   const validated = subs.filter(s=>s.status==='approved');
   const refused = subs.filter(s=>s.status==='rejected');
-  
+  const empty = pending.length===0 && validated.length===0 && refused.length===0;
+
   app().innerHTML = `
     <div class="screen" data-screen="admin-validation">
       <div class="topbar">
@@ -2029,14 +2030,15 @@ function screenAdminValidation(){
       </div>
 
       <div id="validation-list">
-        ${pending.length === 0 && validated.length === 0 && refused.length === 0
-          ? '<div class="empty">Aucune photo n\'a été envoyée durant la chasse</div>'
+        ${empty
+          ? '<div class="empty">Aucune photo n\'a été envoyée durant la chasse.<br><br>Fin déclenchée trop tôt ou par erreur ? <strong>Reprenez la chasse</strong> ci-dessous : les équipes retrouvent leurs indices. Sinon, clôturez — vous pourrez supprimer la chasse depuis l\'écran final.</div>'
           : [...pending, ...validated, ...refused].map(s=>renderSubmissionCard(s,'validation')).join('')}
       </div>
 
-      <div class="sticky-bottom">
-        <button class="btn oxblood" onclick="goToJudging()" ${pending.length>0 || (validated.length===0 && refused.length===0) ? 'disabled':''}>
-          ${pending.length>0 ? `Encore ${pending.length} à traiter` : (validated.length===0 && refused.length===0) ? 'Aucune photo' : `Passer au vote du jury →`}
+      <div class="sticky-bottom" style="display:flex;gap:8px">
+        <button class="btn ghost" onclick="resumeHunt()" style="flex:1">↩︎ Reprendre la chasse</button>
+        <button class="btn oxblood" style="flex:2" onclick="${empty?'finalizeGame()':'goToJudging()'}" ${pending.length>0 ? 'disabled':''}>
+          ${pending.length>0 ? `Encore ${pending.length} à traiter` : empty ? `Clôturer la chasse →` : `Passer au vote du jury →`}
         </button>
       </div>
     </div>`;
@@ -2061,6 +2063,33 @@ async function resetValidation(subId){
   s.status = 'pending'; s.points = 0; s.bonusPoints = 0;
   await saveSubmission(s);
   render();
+}
+
+// Retour en arrière depuis la phase validation : la chasse repasse « en cours ».
+// Sans ça, une chasse arrivée en `validation` sans aucune photo était un cul-de-sac
+// (bouton jury désactivé « Aucune photo », aucun moyen de revenir ni de clôturer) — #51.
+async function resumeHunt(){
+  const g = STATE.game; if(!g) return;
+  const total = (g.durationMinutes||0)*60000;
+  const ref = g.endedAt || Date.now();
+  let remain = g.startedAt ? Math.max(0, g.startedAt + total - ref) : total;
+  if(remain < 60000){
+    const ans = prompt('Le temps de jeu est écoulé.\n\nCombien de minutes ajouter pour reprendre la chasse ?', '15');
+    if(ans === null) return;
+    const mins = Math.floor(Number(String(ans).replace(',', '.')));
+    if(!Number.isFinite(mins) || mins <= 0){ toast('Durée invalide', 'error'); return; }
+    remain = mins*60000;
+  } else if(!confirm(`Reprendre la chasse ?\n\nLes équipes retrouvent leurs indices, avec ${Math.ceil(remain/60000)} minute(s) restantes.`)) return;
+  // On décale `startedAt` pour que le temps restant vaille exactement `remain` : sinon
+  // render() rebasculerait aussitôt en `validation` (chrono déjà expiré). La durée n'est
+  // allongée que si le temps ajouté dépasse la durée initiale.
+  g.durationMinutes = Math.max(g.durationMinutes||0, Math.ceil(remain/60000));
+  g.startedAt = Date.now() - Math.max(0, g.durationMinutes*60000 - remain);
+  g.endedAt = null;
+  g.status = 'active';
+  await saveGame(g);
+  await render();
+  toast('Chasse reprise — les équipes peuvent rejouer', 'success');
 }
 
 async function goToJudging(){
