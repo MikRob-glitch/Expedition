@@ -3,8 +3,8 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-27, commit `0d75dfe`+docs, `BUILD` `2026-07-27.6`,
-> `CACHE` `expedition-v19`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-27, commit `209c933`+docs, `BUILD` `2026-07-28.1`,
+> `CACHE` `expedition-v20`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > À ce jour, aucun écart applicatif : local et distant alignés (vérifié par re-clonage + `diff`).
 > Seul le dossier `commercial/` (support de vente) reste volontairement hors dépôt.
 >
@@ -213,6 +213,7 @@ restent à passer — **à ce jour, aucune : la base est à jour**.
 | `migration-storage-purge.sql` | Purge sans DELETE sur `storage.objects` (#38) | appliqué 2026-07-26 |
 | `migration-print-choice.sql` | `teams.print_submission_id` — tirage souvenir (#39) | appliqué 2026-07-26 |
 | `migration-venue-logo.sql` | `games.logo_url` — logo du lieu (#43) | appliqué 2026-07-27 |
+| `migration-storage-delete-fix.sql` | Policy DELETE du bucket : `name` mal résolu (#50) | appliqué 2026-07-28 |
 
 ⚠️ `supabase-setup.sql` §5 est **obsolète** depuis #38 : ses trois fonctions de purge y
 suppriment encore des lignes de `storage.objects`, ce que Supabase refuse. C'est
@@ -773,6 +774,45 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     désormais qu'elle pourra servir de tirage souvenir (#48). `BUILD` → `2026-07-27.6`,
     `CACHE` **v18→v19**.
 
+### Poussés sur GitHub (2026-07-28) — Deux pannes silencieuses : photo d'équipe et purge des fichiers
+
+50. **(a) La photo d'équipe n'a jamais été stockée du 2026-06-30 au 2026-07-28.**
+    Symptôme : « on ne voit pas la photo », nulle part. Diagnostic en base plutôt qu'en
+    supposant : **0 fichier `%/team_%`** dans le bucket sur 91 objets, et `teams.photo_url`
+    à `null` partout. Le rendu n'était donc pas en cause — il n'y avait rien à afficher, et
+    tout le lot #48 reposait sur une donnée inexistante. Cause : `uploadTeamPhoto` envoyait
+    en **`upsert:true`**, or l'upsert réclame le droit **UPDATE** sur `storage.objects` et le
+    bucket n'a qu'une policy **INSERT** depuis le Lot 2 (#14) → refus RLS à chaque inscription,
+    signalé par un toast de 4,5 s au milieu du parcours d'inscription, donc invisible en
+    pratique. Exactement le piège de #26 (preuves) et de #43 (logo du lieu), reproduit une
+    troisième fois. Correctif : `upsert:false` + 409/« Duplicate » traité comme succès (le
+    chemin porte un `teamId` neuf à chaque inscription : rien à écraser), message d'erreur
+    explicite et `reportError`. `BUILD` → `2026-07-28.1`, `CACHE` **v19→v20**.
+    ⚠️ **Aucune récupération possible** : les photos d'équipe des chasses passées n'existent
+    nulle part, elles n'ont jamais quitté le téléphone des joueurs.
+
+    **(b) `photos_delete_owner` n'autorisait aucune suppression** (`migration-storage-delete-fix.sql`,
+    appliquée le 2026-07-28). La policy écrite en #38 contenait :
+
+    ```sql
+    from public.games g
+    where g.admin_id = (select auth.uid())::text
+      and g.code = (storage.foldername(name))[1]   -- ⚠ `name` NON qualifié
+    ```
+
+    `name` n'étant pas qualifié et `games` alias `g` étant dans le `FROM` de la sous-requête,
+    Postgres résout `name` en **`g.name`** — le *nom de la chasse* — au lieu de
+    `storage.objects.name`, le *chemin du fichier*. Aucune erreur, aucun avertissement : la
+    condition compare le code d'une chasse au premier segment de son propre nom, donc elle est
+    **toujours fausse**. Conséquence : `purgeGamePhotos` échouait en silence, la corbeille de
+    l'app purgeait les lignes mais **jamais les fichiers**. Constat au 2026-07-28 : **89 fichiers
+    orphelins (~15 Mo) pour 16 chasses supprimées**, soit tout l'historique. Corrige aussi le
+    **remplacement du logo du lieu** (`uploadGameLogoBlob` fait `remove()` puis `upload`, et le
+    `remove()` échouait). Correctif : `storage.foldername(storage.objects.name)`.
+    ⚠️ **Ménage à faire à la main une fois** : les 89 fichiers déjà orphelins ne sont plus
+    référencés par aucune chasse — l'app ne peut plus reconstruire leurs chemins. À supprimer
+    depuis le dashboard Supabase (Storage → `photos` → dossiers dont le code n'existe plus).
+
 ## Dette technique / points de vigilance connus
 
 - **[STOCKAGE — depuis 2026-07-26] Les preuves pèsent ~2× plus lourd** (1600 px, #40) alors
@@ -838,6 +878,12 @@ JS avant livraison.
   Un champ de saisie qui doit survivre se réémet depuis `STATE`, tenu à jour à chaque frappe
   (voir #49). Vaut pour tout formulaire, pas seulement l'inscription.
 - ⚠️ **Photos : API Storage uniquement**, jamais de `delete from storage.objects` (#38).
+- ⚠️ **Aucun `upsert` sur le bucket, pour personne** : il n'existe pas de policy UPDATE. Trois
+  fonctions s'y sont brûlées (#26 preuves, #43 logo, #50 photo d'équipe). `upload(upsert:false)`,
+  409 = succès ; pour remplacer un fichier, `remove()` **puis** `upload`.
+- ⚠️ **Dans une policy RLS, qualifier les colonnes de la table protégée** : une sous-requête
+  `exists (select 1 from autre_table x where ... colonne ...)` résout `colonne` sur `x` d'abord,
+  en silence. C'est ce qui a rendu `photos_delete_owner` inopérante pendant un mois (#50).
 - ⚠️ **L'API REST Supabase n'est pas joignable depuis le sandbox** (proxy) : impossible de
   vérifier une hypothèse sur les données par `curl`. Passer par le table editor ou une requête
   SQL demandée à l'utilisateur, plutôt que supposer.

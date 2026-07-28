@@ -39,6 +39,7 @@ migration-legacy-admin.sql ← réattribution des admin_id d'avant l'auth (à jo
 migration-storage-purge.sql ← purge sans DELETE sur storage.objects (obligatoire)
 migration-print-choice.sql ← teams.print_submission_id (tirage souvenir)
 migration-venue-logo.sql   ← games.logo_url (logo du lieu sur le tirage)
+migration-storage-delete-fix.sql ← policy DELETE du bucket : `name` mal résolu (obligatoire)
 .github/workflows/keepalive.yml ← ping Supabase (anti-pause tier gratuit)
 .nojekyll                  ← désactive Jekyll sur GitHub Pages
 README.md                  ← présentation + démarrage rapide
@@ -145,6 +146,8 @@ Selfie **optionnel** à l'inscription (`capture="user"`), uploadé dans `{game_c
 - **Preuve virtuelle** : `teamPhotoSub(team)` fabrique un objet de la forme d'une submission, d'id sentinelle **`team:<teamId>`** ; `findAnySub(id)` résout indifféremment une preuve réelle ou cette photo, `teamPhotos(teamId)` liste les photos d'une équipe **selfie en tête**. **Aucune migration** : rien n'est écrit en base, l'objet est reconstruit à chaque rendu depuis `teams.photo_url`.
 - **Score intact** : cette photo n'entre jamais dans `STATE.submissions`, seule source du calcul des points.
 - Proposée **en premier** dans le choix du tirage souvenir (badge « ÉQUIPE ») et jointe en tête du dossier de l'équipe dans l'export ZIP.
+
+⚠️ L'envoi se fait en **`upload(upsert:false)`** : le bucket n'a pas de policy UPDATE, un `upsert` part en refus RLS silencieux. C'est ce qui a empêché toute photo d'équipe d'être stockée entre le 2026-06-30 et le 2026-07-28 (`CLAUDE.md` #50).
 
 ⚠️ L'id sentinelle est stocké tel quel dans `teams.print_submission_id` — possible parce que la colonne est du `text` **sans FK**. Pas de collision possible avec un id de submission (`uid()` = 7 caractères `[a-z0-9]`, sans `:`).
 
