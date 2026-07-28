@@ -2,7 +2,7 @@
 
 Application web mobile (**PWA installable, capable hors-ligne**) pour organiser une **chasse au trésor multi-équipes**. Les équipes résolvent des indices, prouvent chaque trouvaille par une **photo**, l'admin **valide** la conformité, puis un **jury vote** les meilleures photos. Synchronisation temps réel entre tous les téléphones.
 
-> Application mono-fichier (`expedition.html`, ~3710 lignes), zéro build, prête à déployer. Documentation technique complète : [`PROJECT.md`](PROJECT.md) ; guide de travail pour modifier l'app : [`CLAUDE.md`](CLAUDE.md).
+> Application mono-fichier (`expedition.html`, ~3750 lignes), zéro build, prête à déployer. Documentation technique complète : [`PROJECT.md`](PROJECT.md) ; guide de travail pour modifier l'app : [`CLAUDE.md`](CLAUDE.md).
 
 ## Aperçu
 
@@ -10,6 +10,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 - **Preuve par photo** — caméra native, compression côté client (1600 px, qualité adaptée à l'impression 10×15).
 - **Accès joueurs par QR code** — l'admin affiche un QR ; au scan, l'appli s'ouvre sur l'inscription avec le code **pré-rempli** (`?join=CODE`).
 - **Jugement live** — validation conforme/refusée par l'admin, puis vote du jury 50/30/10.
+- **Marche arrière** — chasse terminée trop tôt ou par erreur ? Le maître du jeu la **reprend** en un bouton, avec le temps restant restitué ; et une chasse finie sans aucune photo peut être clôturée (donc supprimée) au lieu de rester bloquée.
 - **Zoom sur les photos** — pincer / molette / double-clic / glisser pour juger les détails.
 - **Indices de départ** — dispersion des équipes (un indice de départ distinct par équipe).
 - **Carte d'orientation** — indices géolocalisables (optionnel) sur une carte Leaflet côté équipe (repères anonymes sauf départ + indices déjà réalisés).
@@ -25,7 +26,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 
 | Couche | Choix |
 |---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique (~3710 lignes), zéro build |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~3750 lignes), zéro build |
 | Caméra | `<input type="file" capture>` (natif iOS/Android) |
 | Backend | Supabase (Postgres + Realtime + Storage + **Auth**) |
 | Carte | Leaflet 1.9.4 + tuiles OpenStreetMap (orientation des indices) |
@@ -61,3 +62,9 @@ python3 -m http.server 8000
 ```
 
 > ⚠️ En modifiant `sw.js`, **bumper la constante `CACHE`** à chaque changement d'app-shell, sinon les appareils gardent l'ancienne version en cache. Le déploiement se fait par commit + push GitHub (procédure dans [`CLAUDE.md`](CLAUDE.md)).
+
+## Prestation
+
+L'application sert d'abord à **animer des événements** : chasses au trésor clé en main pour campings, villages de vacances, parcs de loisirs et séminaires d'entreprise. Le dossier [`commercial/`](commercial/) contient la plaquette de vente (concept, déroulé, logistique jour J, formules et tarifs) ainsi que son source HTML, regénérable avec WeasyPrint.
+
+Le positionnement — sur-mesure, zéro friction joueur (ni app à installer ni compte), vote de jury artistique et tirage souvenir encadré — est analysé face au marché dans [`ANALYSE_CONCURRENCE.md`](ANALYSE_CONCURRENCE.md).

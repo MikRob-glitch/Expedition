@@ -11,7 +11,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 
 | Couche | Choix | Pourquoi |
 |---|---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique (~3710 lignes) | Zéro build, démarrage instantané, debug trivial |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~3750 lignes) | Zéro build, démarrage instantané, debug trivial |
 | Backend | Supabase (Postgres + Realtime + Storage + Auth) | Synchro websockets, photos hébergées, auth OTP, tier gratuit |
 | Caméra | `<input type="file" capture>` | Caméra native iOS/Android sans permission custom |
 | Carte | Leaflet 1.9.4 + tuiles OpenStreetMap | Carte d'orientation des indices (géoloc optionnelle) |
@@ -27,7 +27,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 ## Fichiers du projet
 
 ```
-expedition.html            ← app complète, single-file SPA (~3710 lignes)
+expedition.html            ← app complète, single-file SPA (~3750 lignes)
 sw.js                      ← service worker (app-shell offline, cache, tuiles OSM)
 confidentialite.html       ← politique de confidentialité RGPD (servie par Pages)
 manifest.json              ← manifeste PWA (icônes any + maskable)
@@ -42,10 +42,21 @@ migration-venue-logo.sql   ← games.logo_url (logo du lieu sur le tirage)
 migration-storage-delete-fix.sql ← policy DELETE du bucket : `name` mal résolu (obligatoire)
 .github/workflows/keepalive.yml ← ping Supabase (anti-pause tier gratuit)
 .nojekyll                  ← désactive Jekyll sur GitHub Pages
+commercial/                ← support de vente de la prestation (hors app)
+  Expedition_plaquette.pdf ←   plaquette 6 pages A4 (concept, logistique, tarifs)
+  plaquette-source.html    ←   source du PDF, à regénérer avec WeasyPrint
 README.md                  ← présentation + démarrage rapide
 PROJECT.md                 ← ce fichier
+ANALYSE_CONCURRENCE.md     ← paysage concurrentiel + positionnement retenu
 CLAUDE.md                  ← guide de travail + journal des correctifs
 ```
+
+> `commercial/` ne fait pas partie de l'application : aucun fichier n'y est servi par Pages,
+> et une modification n'entraîne **ni bump de `BUILD` ni bump de `CACHE`**. Regénération du
+> PDF : `weasyprint commercial/plaquette-source.html commercial/Expedition_plaquette.pdf`.
+> ⚠️ Le HTML est calibré pour WeasyPrint, dont le support flex est partiel (`flex-wrap`
+> ignoré) : les grilles sont en `inline-block` / `display:table` / `float`, **à ne pas
+> repasser en flexbox**. Détail et grille tarifaire : voir #47 dans [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
@@ -103,6 +114,12 @@ setup → active → validation → judging → ended
 | `ended` | Classement final + galerie + **choix du tirage souvenir** | Équipes (choix) / Admin (récupération) |
 
 > `active → validation` est calculé à la fin du temps imparti, mais **persisté uniquement par l'admin** (les équipes le calculent en local).
+
+**Retours en arrière** (le maître du jeu n'est jamais coincé) :
+
+- `judging → validation` : bouton « ← Validation » (`backToValidation`).
+- `validation → active` : bouton « ↩︎ Reprendre la chasse » (`resumeHunt`) — remet `ended_at` à `null` et **décale `started_at`** pour restituer exactement le temps qui restait ; si le chrono était épuisé, un prompt demande les minutes à ajouter (défaut 15) et la durée n'est allongée que si l'ajout dépasse la durée initiale. ⚠️ Sans ce décalage, le contrôle de chrono en tête de `render()` rebasculerait aussitôt en `validation`. Les équipes repassent de l'écran d'attente à l'écran de jeu par realtime.
+- `validation → ended` **sans aucune photo** : le bouton principal devient « Clôturer la chasse → » (`finalizeGame`, saut direct par-dessus `judging`) au lieu d'être grisé. Sans lui, une chasse terminée à vide était un cul-de-sac : ni jury, ni fin, donc **ni corbeille RGPD** (le bouton de purge vit sur l'écran de fin). Voir `CLAUDE.md` #51.
 
 ### Routeur `render()`
 
@@ -193,6 +210,8 @@ Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Doub
 | `addTeam` / `removeTeam` | INSERT / DELETE équipe (reconnexion sans doublon) |
 | `setTeamStartClue` / `autoAssignStartClues` | Indices de départ |
 | `validateSubmission` / `resetValidation` | Conforme / refusée (points d'indice) |
+| `endGameNow` / `resumeHunt` | Terminer la chasse / **revenir en arrière** (validation → active, chrono restitué) |
+| `goToJudging` / `backToValidation` / `finalizeGame` | Transitions de phase (clôture directe possible si aucune photo) |
 | `setVote` | Vote jury 50/30/10, unicité par indice |
 | `openClueMapPicker` / `openTeamMap` | Carte Leaflet (admin place / équipe s'oriente) |
 | `showQR` / `closeQR` | QR d'accès joueurs (deep-link `?join=CODE`) |
@@ -251,18 +270,24 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 1. **Écritures `teams`/`submissions` ouvertes** (clé `anon`) → Lot Edge Functions à venir.
 2. **Secret des indices côté client seulement** (payload `clues` public).
 3. **89 fichiers orphelins** (~15 Mo) laissés par la policy DELETE cassée jusqu'au 2026-07-28 : à supprimer une fois depuis le dashboard Supabase. Les photos d'équipe d'avant cette date, elles, n'existent nulle part (jamais stockées, voir `CLAUDE.md` #50).
-3. **Plus de GPS sur les preuves** : la preuve est la photo seule.
-4. **iOS** : pas de Background Sync → flush outbox appli ouverte/réouverte uniquement.
-5. **Pas de tests automatisés** ; compression photo destructive (1600 px, JPEG 0,82, plafond ~3 Mo de dataURL).
-6. **Stockage** : ~350–450 Ko par preuve depuis le passage à 1600 px, tier gratuit plafonné à **1 Go**, et la purge automatique n'efface plus les fichiers → vider les vieilles chasses après chaque événement.
-7. **Tirage souvenir** : composé côté client (canvas), sortie fixe 10×15 à ~300 dpi — la qualité plafonne à ce que vaut la photo envoyée (1600 px).
+4. **Plus de GPS sur les preuves** : la preuve est la photo seule.
+5. **iOS** : pas de Background Sync → flush outbox appli ouverte/réouverte uniquement.
+6. **Pas de tests automatisés** ; compression photo destructive (1600 px, JPEG 0,82, plafond ~3 Mo de dataURL).
+7. **Stockage** : ~350–450 Ko par preuve depuis le passage à 1600 px, tier gratuit plafonné à **1 Go**, et la purge automatique n'efface plus les fichiers → vider les vieilles chasses après chaque événement.
+8. **Tirage souvenir** : composé côté client (canvas), sortie fixe 10×15 à ~300 dpi — la qualité plafonne à ce que vaut la photo envoyée (1600 px).
+9. **Reprise d'une chasse terminée** : `resumeHunt` restitue le temps restant mais ne « rejoue » rien — une équipe déjà déconnectée doit se reconnecter par la liste des équipes.
 
 ---
 
 ## Roadmap
 
 - **Lot Edge Functions** (`service_role`) : verrouiller les écritures `teams`/`submissions`, servir à chaque équipe seulement ses indices autorisés (ferme la fuite des textes/GPS d'indices), **purger les fichiers du Storage** à l'échéance des 90 j (le cron ne sait plus le faire), et — si le tirage devient une vraie source de revenu — passer le bucket en **privé + URLs signées** avec rendu du cadre côté serveur (aujourd'hui les photos brutes sont publiques et l'épreuve filigranée n'est qu'un frein).
-- **Supabase Pro** : plus de pause, backups quotidiens (remplace le keep-alive).
+- **Supabase Pro** : plus de pause, backups quotidiens (remplace le keep-alive). Devient un
+  **pré-requis commercial** dès la première date vendue : une pause du projet le jour J est
+  inacceptable face à un client payant.
+- **Commercialisation** (voir `commercial/` et #47) : compléter téléphone / SIRET dans la
+  plaquette, souscrire une **RC pro** (annoncée page 4), puis fermer la dette Edge Functions
+  avant de démarcher un grand compte.
 - **App native** (Expo/React Native) : le schéma et la logique ne changent pas.
 - Notifications push quand le jury vote ; replay animé ; etc.
 
@@ -287,4 +312,4 @@ select public.purge_game('XXXX');
 
 ## Historique des évolutions
 
-Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu et **épreuve filigranée**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
+Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu, **épreuve filigranée** et **sortie de secours de la phase validation**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
