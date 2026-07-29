@@ -42,9 +42,13 @@ migration-venue-logo.sql   ← games.logo_url (logo du lieu sur le tirage)
 migration-storage-delete-fix.sql ← policy DELETE du bucket : `name` mal résolu (obligatoire)
 .github/workflows/keepalive.yml ← ping Supabase (anti-pause tier gratuit)
 .nojekyll                  ← désactive Jekyll sur GitHub Pages
-commercial/                ← support de vente de la prestation (hors app)
-  Expedition_plaquette.pdf ←   plaquette 6 pages A4 (concept, logistique, tarifs)
-  plaquette-source.html    ←   source du PDF, à regénérer avec WeasyPrint
+commercial/                ← supports de vente de la prestation (hors app)
+  plaquette.css            ←   feuille de style commune aux deux livrets
+  livret-campings.html     ←   source — campings, villages de vacances, parcs
+  livret-entreprises.html  ←   source — séminaires, incentive, CSE
+  verif-pages.py           ←   contrôle anti-débordement, à lancer après chaque rendu
+  Expedition_livret_campings.pdf    ←  6 pages A4, à envoyer aux hébergeurs
+  Expedition_livret_entreprises.pdf ←  6 pages A4, à envoyer aux entreprises
 README.md                  ← présentation + démarrage rapide
 PROJECT.md                 ← ce fichier
 ANALYSE_CONCURRENCE.md     ← paysage concurrentiel + positionnement retenu
@@ -52,11 +56,27 @@ CLAUDE.md                  ← guide de travail + journal des correctifs
 ```
 
 > `commercial/` ne fait pas partie de l'application : aucun fichier n'y est servi par Pages,
-> et une modification n'entraîne **ni bump de `BUILD` ni bump de `CACHE`**. Regénération du
-> PDF : `weasyprint commercial/plaquette-source.html commercial/Expedition_plaquette.pdf`.
-> ⚠️ Le HTML est calibré pour WeasyPrint, dont le support flex est partiel (`flex-wrap`
-> ignoré) : les grilles sont en `inline-block` / `display:table` / `float`, **à ne pas
-> repasser en flexbox**. Détail et grille tarifaire : voir #47 dans [`CLAUDE.md`](CLAUDE.md).
+> et une modification n'entraîne **ni bump de `BUILD` ni bump de `CACHE`**.
+>
+> **Deux livrets, une cible chacun** — le camping ne doit pas lire « séminaire », ni voir le
+> tarif entreprise. Chacun n'affiche que **sa** grille : campings 390 / 690 / 1 190 € HT
+> (30 / 50 / 100 participants), entreprises 690 / 990 / 1 690 € HT (20 / 30 / 60). ⚠️ Rien ne
+> synchronise les deux fichiers : une révision de prix se répercute **à la main dans les deux**.
+>
+> ⚠️ **Les plafonds de participants viennent d'une contrainte produit, pas commerciale** :
+> la validation photo par photo et le vote 50/30/10 sont manuels et faits par une seule
+> personne sur un seul écran. Au-delà de ~10 équipes, l'arbitrage annoncé (15 min) devient
+> intenable. Ne pas les remonter pour « faire un meilleur prix » sans avoir d'abord réglé
+> le goulot d'arbitrage. Détail du calcul : #47 dans [`CLAUDE.md`](CLAUDE.md).
+>
+> Regénération : `weasyprint commercial/livret-campings.html commercial/Expedition_livret_campings.pdf`
+> (idem pour `entreprises`), **puis `python3 commercial/verif-pages.py commercial/*.pdf`**.
+> ⚠️ Le CSS est calibré pour WeasyPrint, dont le support flex est partiel (`flex-wrap` ignoré,
+> `margin-top:auto` inopérant) : les grilles sont en `inline-block` / `display:table` / `float`,
+> **à ne pas repasser en flexbox**. Les pages sont en `overflow:hidden`, donc un débordement est
+> **masqué** et non paginé : le PDF reste valide à 6 pages pendant qu'un bloc recouvre le pied de
+> page. D'où le script de contrôle, qui sort en code 1 dans ce cas. Détail et marges page par
+> page : #47 dans [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
@@ -152,8 +172,19 @@ Une chasse type est une ligne `games` avec `is_template=true` : **copie vierge**
 ### Préparer plusieurs chasses à l'avance
 Une chasse créée est **enregistrée immédiatement** (statut `setup`). Depuis le lobby, « ← Menu » ramène à l'écran de préparation pour en créer une autre ; le picker « Reprendre une session » (`loadSessionsForPicker` : `status='setup'` + `admin_id`) liste les chasses en attente et reprend directement au lobby. Aucune donnée n'est écrite ni effacée au passage.
 
-### Accès joueurs par QR code (deep-link)
-Écran maître du jeu (lobby + live) : bouton « 📱 QR code d'accès » → overlay avec un QR encodant `…/expedition.html?join=CODE`. Au scan, le joueur arrive **directement sur l'inscription équipe, code pré-rempli**. Lib `qrcode-generator` (CDN, cachée par le SW).
+### QR code : accès joueurs et diaporama
+Un seul overlay (`#qr-overlay`), deux modes portés par la table `QR_MODES` et sélectionnés par `showQR(mode)` — chaque mode fournit son titre, son texte d'aide et sa fonction d'URL :
+
+| Mode | Où | URL encodée | Usage |
+|---|---|---|---|
+| `join` (défaut) | lobby + live | `?join=CODE` | le joueur arrive **sur l'inscription équipe, code pré-rempli** |
+| `diapo` | écran de fin | `?diapo=CODE` | à la remise des prix, chacun scanne pour **emporter le diaporama** |
+
+Lib `qrcode-generator` (CDN, cachée par le SW) ; repli affichant l'URL en clair si elle n'a pas pu être chargée.
+
+> Le mode `diapo` remplace l'idée d'envoyer le lien par mail : **une adresse mail serait une donnée personnelle de plus**, non couverte par le consentement ni par `confidentialite.html`. Le lien `?diapo=` étant public depuis l'origine, le QR ne fait que le rendre distribuable sur place.
+> ⚠️ Le mode `diapo` n'a de sens qu'en statut `ended` : le diaporama ne montre que les photos **validées**. D'où le bouton placé sur l'écran de fin uniquement.
+> ⚠️ Lien **public et non signé** : qui a le code voit les photos (déjà vrai avant, via « Copier le lien »).
 
 ### Géoloc des indices + carte d'orientation (Leaflet)
 Chaque indice porte des coords **optionnelles**. Admin : « 📍 Placer sur la carte » / « 🎯 Ma position » dans l'éditeur d'indices. Équipe : bouton « 🗺️ Carte » (si ≥1 indice localisé) → tous les indices localisés en repères **anonymes** sauf le **départ** (★) et les indices **réalisés** (✓), + position live. ⚠️ Anonymisation **cosmétique** (client) : le payload `clues` transite via la clé `anon` (voir Sécurité).
@@ -301,9 +332,29 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 - **Supabase Pro** : plus de pause, backups quotidiens (remplace le keep-alive). Devient un
   **pré-requis commercial** dès la première date vendue : une pause du projet le jour J est
   inacceptable face à un client payant.
-- **Commercialisation** (voir `commercial/` et #47) : compléter téléphone / SIRET dans la
-  plaquette, souscrire une **RC pro** (annoncée page 4), puis fermer la dette Edge Functions
+- **Commercialisation** (voir `commercial/` et #47) : compléter téléphone / SIRET dans les
+  deux livrets, souscrire une **RC pro** (annoncée page 4), puis fermer la dette Edge Functions
   avant de démarcher un grand compte.
+- **Vote du public — étudié le 2026-07-29, non retenu pour l'instant.** Le maître du jeu reste
+  seul jury (comportement actuel, décrit tel quel dans les livrets) ; à revoir après les
+  premiers événements réels. Ce qu'il faudrait construire : table `votes` (INSERT ouvert comme
+  `teams`/`submissions`), écran de vote côté équipe, bouton « nominée » côté admin pendant la
+  validation, agrégation vers `bonus_points`.
+  **Pourquoi c'est tentant** : le vote deviendrait **parallèle**, ce qui supprimerait la moitié
+  du goulot d'arbitrage et relèverait le plafond de 50 participants (#47).
+  **Pourquoi c'est délicat** — trois pièges identifiés, à ne pas redécouvrir :
+  1. Interdire de voter pour sa propre équipe ne suffit pas : l'intérêt bascule vers le vote
+     **stratégique contre le rival le plus menaçant**, invisible et donc pire qu'un vote pour soi.
+  2. L'app fonctionne à **un téléphone par équipe** : « vote des capitaines » et « vote de la
+     salle » donnent le **même nombre de bulletins** (un par équipe). Élargir l'électorat
+     supposerait un mode spectateur, donc du bourrage d'urnes tant que les écritures ne sont
+     pas authentifiées (dette Edge Functions).
+  3. Correctif le plus efficace pour un coût minime : **masquer le nom des équipes** pendant le
+     vote — on ne vote pas contre un rival qu'on ne peut pas identifier ; garder l'exclusion de
+     ses propres photos en filet, chacun reconnaissant les siennes.
+  ⚠️ Un vote 100 % public ferait aussi perdre le grand écran et la réaction de la salle, que
+  `ANALYSE_CONCURRENCE.md` identifie comme le différenciateur n° 1. Toute évolution doit garder
+  le diaporama comme spectacle.
 - **App native** (Expo/React Native) : le schéma et la logique ne changent pas.
 - Notifications push quand le jury vote ; replay animé ; etc.
 

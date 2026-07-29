@@ -5,8 +5,10 @@ Guide de référence pour travailler sur l'application. À lire avant toute modi
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
 > **réellement poussé sur GitHub** (HEAD = 2026-07-28, commit `2c2bf19`, `BUILD` `2026-07-28.4`,
 > `CACHE` `expedition-v23`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
-> ⚠️ **Écart en cours** : le dossier `commercial/` (plaquette de vente, #47) est **local, non
-> poussé**. Aucun impact applicatif — `BUILD`/`CACHE` inchangés.
+> ⚠️ **Écarts en cours, non poussés** : (a) le dossier `commercial/` (livrets de vente campings
+> + entreprises, #47) — aucun impact applicatif ; (b) le **QR code du diaporama** (#54), qui
+> touche `expedition.html` et `sw.js` : `BUILD` local `2026-07-29.1`, `CACHE` local
+> `expedition-v24`. Syntaxe vérifiée, **pas encore testé en conditions réelles**.
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
 > § « État des migrations SQL » si une migration est ajoutée, et une entrée dans le journal.
@@ -734,39 +736,122 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     ils n'empêchent pas de le copier. Une vraie protection supposerait des URLs signées et un
     rendu du cadre côté serveur (Edge Function) — non fait.
 
-### Local, non poussé (2026-07-27) — Plaquette commerciale
+### Local, non poussé (2026-07-27 → 2026-07-29) — Livrets commerciaux
 
-47. **Dossier `commercial/`** — support de vente de la **prestation** (scénario B de
+47. **Dossier `commercial/`** — supports de vente de la **prestation** (scénario B de
     `ANALYSE_CONCURRENCE.md` : Mika anime les événements avec son outil ; l'appli est le
-    différenciateur, pas un SaaS vendu seul). Deux fichiers : `Expedition_plaquette.pdf`
-    (6 pages A4) et `plaquette-source.html` (le source, pour ajuster les prix sans repasser
-    par une génération). **Aucun fichier applicatif touché** : ni `BUILD` ni `CACHE` à bumper.
-    Le PDF est produit par **WeasyPrint** depuis le HTML — pas de dépendance ajoutée au dépôt,
-    la génération est hors app.
-    Contenu : couverture, déroulé en 4 temps, bénéfices pour le lieu (camping / séminaire),
-    logistique jour J, grille tarifaire, tirage souvenir + FAQ + contact. Charte reprise de
-    l'app (parchemin, oxblood, filets dorés, rose des vents de `icons/favicon.svg` inlinée en SVG).
-    **Grille retenue** — forfait avec plafond de participants inclus, **jamais de pur
-    per-capita** (un camping ne connaît pas sa fréquentation à l'avance et ne signe pas un prix
-    variable) : DÉCOUVERTE 390 € HT / 40 pers., SIGNATURE 690 € HT / 70, SÉMINAIRE 990 € HT / 30 ;
-    dépassement 6 / 5 / 22 € par personne. Options : −15 % dès 5 dates, tirage supplémentaire
-    4 € HT (revendable 8–10 € par l'établissement), 2ᵉ session le même jour −40 %.
-    Repères marché ayant servi de calage : animateur pro **300–800 €/jour**, team-building
+    différenciateur, pas un SaaS vendu seul). **Aucun fichier applicatif touché** : ni `BUILD`
+    ni `CACHE` à bumper. Les PDF sont produits par **WeasyPrint** depuis les HTML — pas de
+    dépendance ajoutée au dépôt, la génération est hors app.
+
+    **Deux livrets, une cible chacun** (2026-07-29). Un livret unique parlait à la fois de
+    vacanciers et de collaborateurs : le camping lisait « séminaire », le DRH lisait
+    « familles », et chacun voyait le prix de l'autre. Scindé en deux fichiers de 6 pages A4
+    qui partagent la feuille de style `plaquette.css` :
+
+    | Fichier | Cible | Grille |
+    |---|---|---|
+    | `livret-campings.html` → `Expedition_livret_campings.pdf` | campings, villages de vacances, parcs résidentiels, OT | DÉCOUVERTE 390 € / 30 pers. · SIGNATURE 690 € / 50 · GRANDE SEMAINE 1 190 € / 2 sessions, 100 cumulés |
+    | `livret-entreprises.html` → `Expedition_livret_entreprises.pdf` | séminaires, intégration, incentive, CSE | COHÉSION 690 € / 20 pers. · SÉMINAIRE 990 € / 30 · GRAND FORMAT 1 690 € / 60, 2 animateurs |
+
+    Dépassement : 6 / 5 / 5 € par personne côté camping, 25 / 22 / 18 € côté entreprise.
+    Options camping : −15 % dès 5 dates, tirage suppl. 4 € HT (revendable 8–10 €), 2ᵉ session
+    −40 %. Options entreprise : parcours à vos couleurs +290 € HT, tirage suppl. 6 € HT,
+    2ᵉ session −40 %. **Chaque livret n'affiche que sa propre grille** — c'est tout l'objet de
+    la scission, ne pas y remettre les formules de l'autre cible.
+    ⚠️ **Cohérence tarifaire à tenir à la main** : les deux grilles vivent dans deux fichiers
+    séparés, rien ne les synchronise. Une révision de prix doit être répercutée dans les deux.
+
+    **Positionnement produit** : l'accroche de couverture est **« Selfie Safari en équipe »** ;
+    « chasse au trésor photo » reste employé en explication dans le corps du texte, quand il
+    faut être clair sur le concept. Les deux formulations cohabitent volontairement — la
+    première vend, la seconde rassure. Le nom interne de l'app et du dépôt ne change pas.
+    ⚠️ Le pied de page dit « EXPÉDITION · Selfie Safari en équipe » : le changer suppose de le
+    reprendre sur les 5 pages intérieures de **chaque** livret.
+
+    Structure commune des 6 pages : couverture · déroulé en 4 temps + bandeau de chiffres ·
+    bénéfices (deux colonnes propres à la cible) · logistique jour J · formules · tirage
+    souvenir + FAQ + contact. Charte reprise de l'app (parchemin, oxblood, filets dorés,
+    rose des vents de `icons/favicon.svg` inlinée en SVG).
+
+    **Repères marché ayant servi de calage** : animateur pro **300–800 €/jour**, team-building
     **15–50 €/pers** sur une base forfaitaire **~990 € HT**. L'hypothèse initiale à 5 €/pers a
-    été écartée : elle met un groupe de 20 à 100 € pour une journée de travail.
-    ⚠️ **Trois champs restent en `[ à compléter ]`** dans le PDF : téléphone, SIRET — et la
-    plaquette **annonce une RC pro** (page 4, « ce que j'apporte »), à souscrire avant tout
+    été écartée : elle met un groupe de 20 à 100 € pour une journée de travail. Le principe
+    retenu est le **forfait avec plafond de participants inclus**, **jamais de pur per-capita**
+    (un camping ne connaît pas sa fréquentation à l'avance et ne signe pas un prix variable).
+
+    ⚠️ **Les plafonds de participants sont bornés par l'arbitrage, pas par le prix** (revu le
+    2026-07-29 ; les premiers chiffres — 70 / 90 / 140 côté camping, 80 côté entreprise — étaient
+    déduits du calage tarifaire et intenables). Le goulot est la **validation photo par photo**
+    puis le **vote 50/30/10 par indice**, tous deux manuels et faits par une seule personne sur
+    un seul écran. Avec 10 indices : 8 équipes = 80 photos = 11 s par photo sur les 15 min
+    annoncées (jouable) ; 14 équipes = 140 photos = 6 s (intenable) ; 18 équipes = 5 s
+    (impossible). Le jury est pire : classer 3 photos parmi 14, dix fois, en 20 min devant une
+    salle, ne se fait pas. **Plafond retenu : ~10 équipes, soit 50 participants pour un animateur
+    seul.** Au-delà, seconde session plutôt que second animateur — deux personnes n'accélèrent
+    pas l'arbitrage (un seul admin, un seul écran ; deux sessions Supabase simultanées sur le
+    même compte seraient possibles mais **non testées** et sujettes à double jugement).
+    ⚠️ Le vrai levier d'ajustement est le **nombre d'indices**, volontairement absent des livrets :
+    à 15 équipes, descendre à 6 indices repasse sous les 90 photos. À garder en main au devis.
+    ⚠️ **Aucune donnée historique pour calibrer** : au 2026-07-29 la base contient 2 chasses,
+    0 équipe, 0 preuve (tout a été purgé, cf. #50). Les chiffres ci-dessus sont un raisonnement,
+    pas une mesure — à corriger après le premier événement réel.
+
+    ⚠️ **Trois champs restent en `[ à compléter ]`** dans les deux PDF : téléphone, SIRET — et
+    les livrets **annoncent une RC pro** (page 4, « ce que j'apporte »), à souscrire avant tout
     démarchage réel.
-    ⚠️ **Pré-requis avant un gros compte** : la dette « Lot Edge Functions » ci-dessous est
-    jugée *disqualifiante en B2B* par `ANALYSE_CONCURRENCE.md`. Volontairement absente de la
-    plaquette, mais bloquante face à un service informatique (Center Parcs, DRH).
-    ⚠️ **Regénération** : `weasyprint commercial/plaquette-source.html commercial/Expedition_plaquette.pdf`.
-    Le HTML est calibré pour WeasyPrint, dont le support **flex est partiel** : `flex-wrap` est
-    ignoré et les colonnes s'empilent. Les grilles utilisent donc `inline-block` (cartes,
-    options), `display:table` (deux colonnes) et `float` (étapes, tirage) — **ne pas les
-    repasser en flexbox**. Chaque `.page` est en `height:297mm; overflow:hidden` avec un
-    `.ftr` en `position:absolute` : `margin-top:auto` ne fonctionne pas, la hauteur du bloc
-    étant recalculée en auto.
+    ⚠️ **Pré-requis avant un gros compte** : la dette « Lot Edge Functions » (voir § Dette
+    technique) est jugée *disqualifiante en B2B* par `ANALYSE_CONCURRENCE.md`. Volontairement
+    absente des livrets, mais bloquante face à un service informatique (DRH, grand groupe).
+
+    **Regénération** (depuis la racine du dépôt) :
+
+    ```bash
+    weasyprint commercial/livret-campings.html    commercial/Expedition_livret_campings.pdf
+    weasyprint commercial/livret-entreprises.html commercial/Expedition_livret_entreprises.pdf
+    python3 commercial/verif-pages.py commercial/*.pdf     # obligatoire, voir ci-dessous
+    ```
+
+    ⚠️ **`commercial/verif-pages.py` n'est pas optionnel.** `overflow:hidden` **masque** un
+    débordement au lieu de le paginer : un bloc trop long glisse **sous le pied de page** sans
+    qu'aucun outil ne signale d'erreur, et le PDF reste « valide » à 6 pages. Le piège s'est
+    déclenché **cinq fois** pendant la rédaction, et **aucune** relecture visuelle ne l'a
+    attrapé de façon fiable. Le script rend chaque page à 150 dpi, mesure le bas du dernier
+    élément dessiné et exige **5 mm de dégagement** sous lui ; code retour 1 sinon.
+
+    ⚠️ **Deux erreurs de calibrage à ne pas refaire** — elles ont l'une et l'autre produit un
+    script qui validait des pages débordantes :
+    1. **Le filet du pied de page est à 278,8 mm, pas 282,8** (282,8 = son *texte*). Viser
+       282,8 revient à contrôler l'espace vide *entre* le filet et le texte : tout passe.
+    2. **Le seuil de gris doit être à 233, pas 200.** Un seuil bas ne voit que l'encre, or
+       c'est le **fond teinté** d'un encadré (`--parchment-2` #ebe2cf, L = 226) qui dépasse
+       en premier, bien avant son texte — c'est exactement ce qui est arrivé page 4 du livret
+       camping. Le fond de page `--parchment` est à L = 238 : la fenêtre est étroite.
+
+    Dégagement actuel sous le dernier bloc, en mm :
+
+    | | p2 | p3 | p4 | p5 | p6 |
+    |---|---|---|---|---|---|
+    | campings | 10,1 | 33,1 | **6,5** | 29,0 | **5,7** |
+    | entreprises | 8,9 | 28,9 | **6,3** | 23,6 | 7,9 |
+
+    Les pages 4 et 6 sont les plus tendues : y ajouter une puce ou une ligne de FAQ déborde.
+    Leviers déjà utilisés pour les desserrer, dans l'ordre de préférence : fusionner deux
+    puces de la liste « j'apporte », ramener une réponse de FAQ à une ligne, puis
+    `style="margin-top:4mm"` sur le `.callout` ou le bloc `.contact` de la page concernée.
+
+    ⚠️ **Contraintes WeasyPrint, apprises à la dure** — le CSS est calibré pour lui, pas pour un
+    navigateur :
+    - le support **flex est partiel** : `flex-wrap` est **ignoré** (les cartes s'empilent sur
+      toute la largeur) et `margin-top:auto` **ne pousse rien** vers le bas ;
+    - les grilles utilisent donc `inline-block` (cartes, options), `display:table` (deux
+      colonnes) et `float` (étapes, vignette du tirage) — **ne pas les repasser en flexbox** ;
+    - chaque `.page` est en `height:297mm; overflow:hidden`, avec le `.ftr` en
+      `position:absolute; bottom:11mm` ;
+    - `overflow:hidden` **masque** un débordement au lieu de le paginer : après toute retouche
+      de texte, **re-rendre en images et regarder chaque page**
+      (`pdftoppm -jpeg -r 110 fichier.pdf p`), sinon un bloc passe sous le pied de page sans
+      la moindre erreur. C'est ce qui est arrivé à la page 6 du livret entreprises.
 
 ### Poussés sur GitHub (2026-07-27, commit `22d69d8`) — La photo d'équipe devient une photo à part entière
 
@@ -945,6 +1030,30 @@ réutilisation d'un modèle et création de la chasse à partir de lui — parco
     retire l'ancienne. Une édition en place demanderait de charger un modèle dans `STATE.game`,
     donc de rouvrir la porte que le point (5) ferme.
     `BUILD` → `2026-07-28.4`, `CACHE` **v22→v23**.
+
+### Local, non poussé (2026-07-29) — QR code du diaporama
+
+54. **`showQR(mode)` — un overlay, deux usages.** Besoin terrain : en camping il n'y a **pas de
+    vidéoprojecteur**, le diaporama ne peut pas être projeté à la remise des prix. La solution
+    envisagée d'abord (récolter les adresses mail et envoyer le lien) a été **écartée** : une
+    adresse mail est une donnée personnelle supplémentaire, non couverte par le consentement
+    actuel ni par `confidentialite.html`, qui ne parlent que des photos. Or l'URL publique
+    `?diapo=CODE` existe depuis l'origine — il suffisait de l'encoder en QR.
+    (1) L'overlay `#qr-overlay` gagne deux id (`qr-title`, `qr-hint`) pour que son texte change
+    selon le mode. (2) `showQR(mode)` lit la table `QR_MODES` (`join` par défaut, `diapo`), qui
+    porte le titre, l'aide et la fonction d'URL (`joinUrl` / `diapoUrl` — cette dernière extraite
+    du littéral qui vivait dans `screenAdminEnd`). (3) Bouton « 📱 QR code du diaporama » sur
+    `screenAdminEnd`, à côté de « Lancer le diaporama ». Le repli sans lib QR affiche désormais
+    **l'URL** et non le code : un code à 4 lettres ne sert à rien pour le diaporama.
+    **Aucune migration, aucun changement de schéma** — le lien était déjà public.
+    ⚠️ Le mode `diapo` n'a de sens qu'en statut `ended` : le diaporama ne montre que les photos
+    **validées**, il est vide tant que le jugement n'a pas eu lieu. C'est pour ça que le bouton
+    est sur l'écran de fin et nulle part ailleurs.
+    ⚠️ **Le lien reste public et non signé** : quiconque a le code voit les photos de la chasse.
+    C'était déjà le cas avant (bouton « Copier le lien »), le QR ne fait qu'en faciliter la
+    diffusion. À reconsidérer si le tirage souvenir devient une vraie source de revenu — voir la
+    dette « bucket privé + URLs signées » (#46).
+    `BUILD` → `2026-07-29.1`, `CACHE` **v23→v24**.
 
 ## Dette technique / points de vigilance connus
 

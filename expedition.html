@@ -335,9 +335,9 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 <div id="qr-overlay" class="qr-overlay">
   <button class="close" onclick="closeQR()" aria-label="Fermer">×</button>
   <div class="qr-inner">
-    <h3>Rejoindre la chasse</h3>
+    <h3 id="qr-title">Rejoindre la chasse</h3>
     <div id="qr-canvas"></div>
-    <p class="qr-hint">Les joueurs scannent ce QR code : l'appli s'ouvre avec le code déjà rempli.</p>
+    <p id="qr-hint" class="qr-hint">Les joueurs scannent ce QR code : l'appli s'ouvre avec le code déjà rempli.</p>
     <div class="qr-code-line">Code&nbsp;: <strong id="qr-code-text"></strong></div>
     <div id="qr-url-text" class="qr-url"></div>
   </div>
@@ -419,7 +419,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-28.4';
+const BUILD = '2026-07-29.1';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -2354,7 +2354,7 @@ async function endGameNow(){
 
 function screenAdminEnd(){
   const g = STATE.game;
-  const shareUrl = `${location.origin}${location.pathname}?diapo=${g.code}`;
+  const shareUrl = diapoUrl(g.code);
   app().innerHTML = `
     <div class="screen" data-screen="admin-end">
       <div class="topbar">
@@ -2367,8 +2367,9 @@ function screenAdminEnd(){
       
       <div class="card" style="margin-top:24px">
         <h3 style="margin-bottom:8px">✦ Souvenir de la chasse</h3>
-        <p class="help-text" style="margin:0 0 12px">Diaporama plein écran des photos validées. Le lien est partageable pour le projeter en réunion.</p>
+        <p class="help-text" style="margin:0 0 12px">Diaporama plein écran des photos validées. Affichez le QR code à la remise des prix : chacun repart avec les photos, sans avoir à donner son adresse mail.</p>
         <button class="btn gold" onclick="openSlideshow()" style="width:100%;margin-bottom:10px">▶ Lancer le diaporama</button>
+        <button class="btn ghost" onclick="showQR('diapo')" style="width:100%;margin-bottom:10px">📱 QR code du diaporama</button>
         <button class="btn ghost" onclick="openExportZip()" style="width:100%;margin-bottom:10px">📦 Télécharger toutes les photos (ZIP)</button>
         <div class="field" style="margin:0">
           <label>Lien à partager</label>
@@ -3142,12 +3143,28 @@ function openPhoto(subId){
 }
 function closeModal(){ $('#modal').classList.remove('open'); window.PZOOM=null; }
 
-// QR code d'accès joueurs (écran maître du jeu). Encode l'URL de l'appli avec le code
-// pré-rempli (?join=CODE) → le joueur scanne, l'appli s'ouvre directement sur l'inscription.
+// QR code (écran maître du jeu). Deux usages, un seul overlay :
+//   'join'  → `?join=CODE`  : le joueur scanne, l'appli s'ouvre sur l'inscription pré-remplie.
+//   'diapo' → `?diapo=CODE` : à la remise des prix, chacun scanne pour emporter le diaporama.
+//             Évite de collecter des adresses mail (aucune donnée perso de plus à traiter).
+// ⚠️ Le mode 'diapo' n'a de sens qu'une fois la chasse terminée : le diaporama public ne
+//    montre que les photos validées, il est vide tant que le jugement n'a pas eu lieu.
 function joinUrl(code){ return `${location.origin}${location.pathname}?join=${code}`; }
-function showQR(){
+function diapoUrl(code){ return `${location.origin}${location.pathname}?diapo=${code}`; }
+
+const QR_MODES = {
+  join : { title:'Rejoindre la chasse',
+           hint :"Les joueurs scannent ce QR code : l'appli s'ouvre avec le code déjà rempli.",
+           url  : joinUrl },
+  diapo: { title:'Emporter le diaporama',
+           hint :'Chacun scanne ce QR code pour revoir toutes les photos de la chasse, sans appli ni inscription.',
+           url  : diapoUrl },
+};
+
+function showQR(mode){
   const g = STATE.game; if(!g) return;
-  const url = joinUrl(g.code);
+  const m = QR_MODES[mode] || QR_MODES.join;
+  const url = m.url(g.code);
   const canvas = document.getElementById('qr-canvas');
   try{
     if(typeof qrcode === 'undefined') throw new Error('lib QR non chargée');
@@ -3155,8 +3172,10 @@ function showQR(){
     qr.addData(url); qr.make();
     canvas.innerHTML = qr.createDataURL ? `<img alt="QR ${escapeHtml(g.code)}" src="${qr.createDataURL(8,4)}">` : qr.createSvgTag({cellSize:8,margin:4});
   }catch(e){
-    canvas.innerHTML = `<p style="color:var(--parchment);opacity:.8;font-size:13px">QR indisponible (réseau requis au 1er chargement). Communiquez le code&nbsp;: <strong>${escapeHtml(g.code)}</strong></p>`;
+    canvas.innerHTML = `<p style="color:var(--parchment);opacity:.8;font-size:13px">QR indisponible (réseau requis au 1er chargement). Communiquez le lien&nbsp;: <strong>${escapeHtml(url)}</strong></p>`;
   }
+  document.getElementById('qr-title').textContent = m.title;
+  document.getElementById('qr-hint').textContent  = m.hint;
   document.getElementById('qr-code-text').textContent = g.code;
   document.getElementById('qr-url-text').textContent = url;
   document.getElementById('qr-overlay').classList.add('open');

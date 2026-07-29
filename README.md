@@ -67,6 +67,13 @@ python3 -m http.server 8000
 
 ## Prestation
 
-L'application sert d'abord à **animer des événements** : chasses au trésor clé en main pour campings, villages de vacances, parcs de loisirs et séminaires d'entreprise. Le dossier [`commercial/`](commercial/) contient la plaquette de vente (concept, déroulé, logistique jour J, formules et tarifs) ainsi que son source HTML, regénérable avec WeasyPrint.
+L'application sert d'abord à **animer des événements** — commercialisés sous le nom **« Selfie Safari »** : chasses au trésor photo clé en main pour campings, villages de vacances, parcs de loisirs et séminaires d'entreprise. Le dossier [`commercial/`](commercial/) contient **deux livrets de vente** de 6 pages, un par cible (vacanciers / collaborateurs), avec leurs sources HTML regénérables par WeasyPrint :
+
+| Livret | Cible | Formules | Participants inclus |
+|---|---|---|---|
+| `Expedition_livret_campings.pdf` | campings, villages de vacances, parcs résidentiels | 390 / 690 / 1 190 € HT | 30 / 50 / 100 |
+| `Expedition_livret_entreprises.pdf` | séminaires, intégration, incentive, CSE | 690 / 990 / 1 690 € HT | 20 / 30 / 60 |
+
+> Les plafonds sont bornés par l'arbitrage manuel (validation photo par photo + vote du jury), pas par le prix : au-delà d'une dizaine d'équipes, un animateur seul ne tient plus le rythme annoncé. Voir #47 dans [`CLAUDE.md`](CLAUDE.md).
 
 Le positionnement — sur-mesure, zéro friction joueur (ni app à installer ni compte), vote de jury artistique et tirage souvenir encadré — est analysé face au marché dans [`ANALYSE_CONCURRENCE.md`](ANALYSE_CONCURRENCE.md).
