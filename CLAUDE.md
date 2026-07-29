@@ -3,12 +3,14 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-28, commit `2c2bf19`, `BUILD` `2026-07-28.4`,
-> `CACHE` `expedition-v23`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
-> ⚠️ **Écarts en cours, non poussés** : (a) le dossier `commercial/` (livrets de vente campings
-> + entreprises, #47) — aucun impact applicatif ; (b) le **QR code du diaporama** (#54), qui
-> touche `expedition.html` et `sw.js` : `BUILD` local `2026-07-29.1`, `CACHE` local
-> `expedition-v24`. Syntaxe vérifiée, **pas encore testé en conditions réelles**.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-29, commit `6f1e2d5`, `BUILD` `2026-07-29.1`,
+> `CACHE` `expedition-v24`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> Local et distant alignés, vérifié par re-clonage + `diff` le 2026-07-29.
+> ⚠️ **#54 (QR du diaporama) est poussé mais PAS ENCORE TESTÉ en conditions réelles** :
+> syntaxe validée, parcours non joué. À contrôler avant la première date vendue.
+> ⚠️ `commercial/` et `ANALYSE_CONCURRENCE.md` sont **volontairement hors dépôt** (`.gitignore`) :
+> le dépôt est public et servi par Pages, les grilles tarifaires et l'analyse des faiblesses
+> n'ont rien à y faire. Ne pas les y remettre.
 >
 > **À mettre à jour à chaque livraison** : la ligne ci-dessus (commit, BUILD, CACHE), le
 > § « État des migrations SQL » si une migration est ajoutée, et une entrée dans le journal.
@@ -1031,7 +1033,9 @@ réutilisation d'un modèle et création de la chasse à partir de lui — parco
     donc de rouvrir la porte que le point (5) ferme.
     `BUILD` → `2026-07-28.4`, `CACHE` **v22→v23**.
 
-### Local, non poussé (2026-07-29) — QR code du diaporama
+### Poussés sur GitHub (2026-07-29, commit `6f1e2d5`) — QR code du diaporama
+
+⚠️ **Poussé mais non testé en conditions réelles.**
 
 54. **`showQR(mode)` — un overlay, deux usages.** Besoin terrain : en camping il n'y a **pas de
     vidéoprojecteur**, le diaporama ne peut pas être projeté à la remise des prix. La solution
