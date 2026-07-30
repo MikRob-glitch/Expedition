@@ -11,7 +11,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 
 | Couche | Choix | Pourquoi |
 |---|---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique (~3750 lignes) | Zéro build, démarrage instantané, debug trivial |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~3970 lignes) | Zéro build, démarrage instantané, debug trivial |
 | Backend | Supabase (Postgres + Realtime + Storage + Auth) | Synchro websockets, photos hébergées, auth OTP, tier gratuit |
 | Caméra | `<input type="file" capture>` | Caméra native iOS/Android sans permission custom |
 | Carte | Leaflet 1.9.4 + tuiles OpenStreetMap | Carte d'orientation des indices (géoloc optionnelle) |
@@ -27,7 +27,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 ## Fichiers du projet
 
 ```
-expedition.html            ← app complète, single-file SPA (~3750 lignes)
+expedition.html            ← app complète, single-file SPA (~3970 lignes)
 sw.js                      ← service worker (app-shell offline, cache, tuiles OSM)
 confidentialite.html       ← politique de confidentialité RGPD (servie par Pages)
 manifest.json              ← manifeste PWA (icônes any + maskable)
@@ -226,7 +226,7 @@ Selfie **optionnel** à l'inscription (`capture="user"`), uploadé dans `{game_c
 `compressImage(file, {max, q})` — plus grand côté ramené à **1600 px**, JPEG **0,82**, rééchantillonnage `high`, jamais d'agrandissement ; si la dataURL dépasse ~3 Mo, la **qualité** baisse par paliers (plancher 0,45) et non la définition. La photo d'équipe suit le **même régime** depuis qu'elle est imprimable (~350 Ko par équipe, contre ~80 Ko en 800 px auparavant). ⚠️ Les photos d'équipe **enregistrées avant** ce changement restent en 800 px : imprimables en 10×15 à ~200 dpi, correct mais en deçà des preuves. Compromis : ~350–450 Ko par preuve (≈2× l'ancien plafond de 1000 px) contre un tirage net en 10×15 cm (~300 dpi) et 13×18 (~225 dpi).
 
 ### Tirage souvenir encadré
-Écran de fin **équipe** : l'équipe choisit **une** photo parmi les siennes (`teams.print_submission_id`) — sa **photo d'équipe est proposée en première vignette** —, avec une **loupe sur chaque vignette** pour l'ouvrir en grand et zoomer (pincer / molette / double-clic) avant de trancher. Écran de fin **admin** : liste des choix, choix de secours pour une équipe absente, aperçu, téléchargement à l'unité ou en ZIP `{CODE}_tirages.zip`. Le cadre (parchemin, double filet, lockup logo « rose des vents + EXPÉDITION », puis **une ligne par information** — équipe, chasse, lieu, date — et le **logo du lieu** à droite s'il a été joint à la chasse) est composé **en canvas** (`buildPrintCanvas`) — la photo passe par `fetch → blob → objectURL` pour ne pas souiller le canvas. **Sortie au format fixe 10×15 cm** (1200×1800 portrait / 1800×1200 paysage, ~300 dpi) selon l'orientation de la photo : le labo imprime plein format, sans recadrage ; la photo est posée entière (jamais rognée), le parchemin absorbe l'écart de ratio. Migration : `migration-print-choice.sql`.
+Écran de fin **équipe** : l'équipe choisit **une** photo parmi les siennes (`teams.print_submission_id`) — sa **photo d'équipe est proposée en première vignette** —, avec une **loupe sur chaque vignette** pour l'ouvrir en grand et zoomer (pincer / molette / double-clic) avant de trancher. Écran de fin **admin** : liste des choix, choix de secours pour une équipe absente, aperçu, téléchargement à l'unité ou en ZIP `{CODE}_tirages.zip`. Le cadre est composé **en canvas** (`buildPrintCanvas`) — la photo passe par `fetch → blob → objectURL` pour ne pas souiller le canvas. Composition : parchemin, double filet, la **rose des vents en sceau à cheval sur le filet bas de la photo** (bord gauche collé à ce filet, 35 % du diamètre sous lui, dessinée **en dernier** pour recouvrir le filet — dessinée avant, elle paraissait derrière une vitre), « EXPÉDITION » sous elle, le **bloc de texte centré sur un axe commun** (équipe / chasse / lieu / date, chacun sur sa ligne en portrait ; **deux lignes** en paysage : équipe puis `chasse · lieu · date`) et le **logo du lieu** à droite du cartouche s'il a été joint à la chasse. ⚠️ Le sceau est ancré sur le rectangle **réellement dessiné** de la photo et dimensionné sur le **petit côté du tirage**, jamais sur la hauteur du cartouche. **Sortie au format fixe 10×15 cm** (1200×1800 portrait / 1800×1200 paysage, ~300 dpi) selon l'orientation de la photo : le labo imprime plein format, sans recadrage ; la photo est posée entière (jamais rognée), le parchemin absorbe l'écart de ratio. Fenêtre photo : 1080×1440 en portrait (3:4 exact) ; en paysage marge 40 px et cartouche 150 px, soit **1347×1010 pour une 4:3 (+23 % de surface)** — en paysage la photo est limitée par la hauteur, donc seuls la marge et le cartouche peuvent l'agrandir. Migration : `migration-print-choice.sql`.
 
 ### Export ZIP des photos
 Écrans **Jury** et **Fin** : télécharge **toutes les photos** d'une partie (filtrable par statut) en `{CODE}_photos.zip`, organisé `Équipe/HHhMM_statut_indice_id.jpg` (JSZip, pool de 8 requêtes). La **photo d'équipe** n'a pas de statut : elle échappe aux filtres et ouvre le dossier de son équipe sous `00_photo-equipe.jpg` (le préfixe la garde en tête au tri).

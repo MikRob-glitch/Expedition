@@ -2,7 +2,7 @@
 
 Application web mobile (**PWA installable, capable hors-ligne**) pour organiser une **chasse au trésor multi-équipes**. Les équipes résolvent des indices, prouvent chaque trouvaille par une **photo**, l'admin **valide** la conformité, puis un **jury vote** les meilleures photos. Synchronisation temps réel entre tous les téléphones.
 
-> Application mono-fichier (`expedition.html`, ~3750 lignes), zéro build, prête à déployer. Documentation technique complète : [`PROJECT.md`](PROJECT.md) ; guide de travail pour modifier l'app : [`CLAUDE.md`](CLAUDE.md).
+> Application mono-fichier (`expedition.html`, ~3970 lignes), zéro build, prête à déployer. Documentation technique complète : [`PROJECT.md`](PROJECT.md) ; guide de travail pour modifier l'app : [`CLAUDE.md`](CLAUDE.md).
 
 ## Aperçu
 
@@ -19,7 +19,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 - **Photo d'équipe** — selfie optionnel à l'inscription. C'est souvent la seule photo où l'équipe est au complet : elle s'affiche au lobby, au classement et **en en-tête d'équipe côté maître du jeu** (cliquable pour l'ouvrir en grand), elle est **proposée en premier au choix du tirage souvenir** et ouvre le dossier de l'équipe dans l'export ZIP.
 - **Diaporama public** — photos en direct via l'URL `?diapo=CODE`.
 - **Export ZIP** — toutes les photos d'une partie, archive organisée par équipe.
-- **Tirage souvenir** — chaque équipe choisit sa photo préférée en fin de chasse — photo d'équipe comprise — (zoom sur chaque photo avant de trancher) ; le maître du jeu récupère les tirages **encadrés** (rose des vents, nom de la chasse, nom de l'équipe, date, et le **logo du lieu** si vous en joignez un) au **format 10×15 prêt à imprimer** (portrait ou paysage), à l'unité ou en ZIP.
+- **Tirage souvenir** — chaque équipe choisit sa photo préférée en fin de chasse — photo d'équipe comprise — (zoom sur chaque photo avant de trancher) ; le maître du jeu récupère les tirages **encadrés** au **format 10×15 prêt à imprimer** (portrait ou paysage), à l'unité ou en ZIP. Le cadre porte la rose des vents en **sceau à cheval sur la photo**, puis, centrés sous elle, le nom de l'équipe, celui de la chasse, le lieu et la date — et le **logo du lieu** à droite si vous en joignez un.
 - **PWA offline** — service worker (app-shell en cache) + **file d'envoi photo hors-ligne** (IndexedDB) : un rechargement en coupure ne casse plus rien, une photo prise sans réseau part automatiquement au retour du réseau.
 - **Dupliquer / supprimer une chasse** — liste de toutes vos chasses passées : re-jouer les mêmes indices en une nouvelle session, ou effacer définitivement (photos comprises).
 - **Sécurité & RGPD** — auth admin par **code email** (Supabase Auth), **RLS scopées**, bucket photos verrouillé (INSERT public + DELETE réservé au propriétaire, aucun UPDATE), consentement + politique de confidentialité + purge automatique à 90 j (⚠️ les fichiers restent à purger depuis l'app, voir [`PROJECT.md`](PROJECT.md)).
@@ -28,7 +28,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 
 | Couche | Choix |
 |---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique (~3750 lignes), zéro build |
+| Frontend | HTML5 + Vanilla JS, fichier unique (~3970 lignes), zéro build |
 | Caméra | `<input type="file" capture>` (natif iOS/Android) |
 | Backend | Supabase (Postgres + Realtime + Storage + **Auth**) |
 | Carte | Leaflet 1.9.4 + tuiles OpenStreetMap (orientation des indices) |
