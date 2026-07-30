@@ -3,9 +3,11 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-30, `BUILD` `2026-07-30.1`,
+> **réellement poussé sur GitHub** (HEAD = 2026-07-30, commit `895f43e`, `BUILD` `2026-07-30.1`,
 > `CACHE` `expedition-v25`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
-> Local et distant alignés, vérifié par re-clonage + `diff` le 2026-07-30.
+> Local et distant alignés sur `expedition.html` et `sw.js`, vérifié par re-clonage + `diff`
+> le 2026-07-30. ⚠️ `CLAUDE.md` diverge volontairement : la copie locale porte le § #47
+> (livrets) enrichi, avec la grille tarifaire, qui n'a rien à faire dans un dépôt public.
 > ⚠️ **#54 (QR du diaporama) et #55 (cadre du tirage) sont poussés mais PAS ENCORE TESTÉS en
 > conditions réelles** : syntaxe validée, aucun tirage réellement produit depuis #55.
 > Les maquettes qui ont servi à valider #55 sont des rendus **PIL hors app** (dossier local
