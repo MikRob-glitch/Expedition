@@ -419,7 +419,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-29.1';
+const BUILD = '2026-07-30.1';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -3450,10 +3450,16 @@ async function buildPrintCanvas(sub, team){
   const landscape = iw >= ih;
   const W = landscape ? PRINT_LONG : PRINT_SHORT;
   const H = landscape ? PRINT_SHORT : PRINT_LONG;
-  const pad  = Math.round(PRINT_SHORT*0.05);   // 60 px ≈ 5 mm de marge
+  // Marge : 60 px (≈5 mm) en portrait, 40 en paysage. En paysage la photo est limitée
+  // par la HAUTEUR (elle n'atteint jamais les bords latéraux), donc chaque pixel rendu
+  // par la marge et par le cartouche agrandit la fenêtre — c'est le seul levier.
+  const pad  = landscape ? 40 : Math.round(PRINT_SHORT*0.05);
   // Cartouche : 300 px en portrait → fenêtre 1080×1440 = 3:4 exact (zéro marge pour une
-  // photo standard) ; 230 px en paysage (un bandeau plus fin sur le petit côté).
-  const foot = landscape ? 230 : 300;
+  // photo standard) ; 150 px en paysage, où le texte tient sur DEUX lignes (un bandeau
+  // de 1800 px de large n'a aucune raison d'empiler quatre lignes : à 230 px le bloc
+  // était déjà mis à l'échelle à 0,82 faute de place verticale). Photo 4:3 en paysage :
+  // 1347×1010 au lieu de 1213×910, soit +23 % de surface.
+  const foot = landscape ? 150 : 300;
   const aw = W - pad*2, ah = H - pad - foot;   // fenêtre disponible pour la photo
 
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
@@ -3493,41 +3499,45 @@ async function buildPrintCanvas(sub, team){
   });
 
   // ── Cartouche ──
-  // Gauche : le logo — rose des vents avec « EXPÉDITION » dessous (lockup).
-  // Droite : nom d'équipe / nom de la chasse · lieu / date, sur toute la largeur restante.
+  // Gauche : le logo maison en SCEAU à cheval sur le filet bas de la photo.
+  // Droite : le logo du lieu. Entre les deux : le bloc de texte, centré.
   const y0 = H - foot;
-  // Le lockup logo + « EXPÉDITION » s'adapte à l'orientation : empilé (nom sous la
-  // rose) dans le cartouche portrait (300 px de haut), côte à côte dans le cartouche
-  // paysage (230 px — un empilement y touchait le filet doré).
-  const brandSize = foot*0.095, brandSp = brandSize*0.12;
-  const gap = foot*0.10;
+  // Le sceau : la rose des vents porte déjà son propre disque parchemin opaque
+  // (drawRose remplit un cercle #f4ede0 cerclé de noir), donc elle reste lisible sur
+  // n'importe quelle photo, claire comme sombre — aucune pastille à ajouter.
+  // ⚠ Dimensionné sur le PETIT CÔTÉ du tirage, jamais sur `foot` : sinon le cartouche
+  // paysage ramené à 150 px rapetissait la marque, l'inverse du but recherché.
+  const brandSize = PRINT_SHORT*0.0175, brandSp = brandSize*0.12;
+  const gap = brandSize*1.05;
   ctx.textBaseline = 'alphabetic';
   ctx.font = `600 ${brandSize}px "Geist Mono", monospace`;
   const brandW = spacedWidth(ctx, 'EXPÉDITION', brandSp);
-  let lockW;
+  const sealR = PRINT_SHORT*(landscape ? 0.0754 : 0.0975);
+  // Bord gauche du disque COLLÉ au filet de la photo, et 35 % du diamètre sous ce filet
+  // (le reste mord sur la photo). ⚠ Ancré sur dx/dy/dw/dh, jamais sur la fenêtre : en
+  // paysage une 4:3 ne remplit pas la largeur, un ancrage sur la fenêtre poserait le
+  // sceau sur le parchemin, à côté de la photo.
+  const sealX = dx + sealR, sealY = (dy + dh) - sealR*0.30;
+  // Obstacles : (haut, bas, bord droit). Une ligne de texte dont la bande verticale
+  // croise un obstacle démarre après lui ; les autres repartent de la marge.
+  const obst = [[sealY - sealR, sealY + sealR, sealX + sealR]];
   if(landscape){
-    const R = foot*0.30;
-    drawRose(ctx, pad + R, y0 + foot*0.5, R);
+    // Sous un disque agrandi, le mot ne tient plus dans 150 px de bandeau : il passe à
+    // DROITE de la rose (règle déjà retenue en paysage, cf. lockup côte à côte).
     ctx.fillStyle = '#a0832f';
-    drawSpaced(ctx, 'EXPÉDITION', pad + 2*R + gap, y0 + foot*0.5 + brandSize*0.35, brandSp, 'left');
-    lockW = 2*R + gap + brandW;
+    drawSpaced(ctx, 'EXPÉDITION', sealX + sealR + gap, y0 + foot*0.42 + brandSize*0.35, brandSp, 'left');
+    obst.push([y0, H, sealX + sealR + gap + brandW]);
   }else{
-    const innerPad = i2 + 10;
-    const availH = foot - innerPad*2;
-    const R = Math.min(foot*0.26, (availH - brandSize - gap)/2);
-    lockW = Math.max(2*R, brandW);
-    const cx = pad + lockW/2;
-    const lockTop = y0 + innerPad + (availH - (2*R + gap + brandSize))/2;
-    drawRose(ctx, cx, lockTop + R, R);
     ctx.fillStyle = '#a0832f';
-    drawSpaced(ctx, 'EXPÉDITION', cx, lockTop + 2*R + gap + brandSize*0.8, brandSp, 'center');
+    drawSpaced(ctx, 'EXPÉDITION', sealX, sealY + sealR + gap + brandSize*0.8, brandSp, 'center');
+    obst.push([sealY + sealR + gap, sealY + sealR + gap + brandSize, sealX + brandW/2]);
   }
 
   // Logo du lieu, calé à droite du cartouche. La place qu'il occupe est retirée de la
   // largeur des textes — jamais l'inverse.
   let rightW = 0;
   if(venue && venue.width && venue.height){
-    const bh = foot*0.62, bw = Math.min(foot*1.30, W*0.20);
+    const bh = foot*0.62, bw = Math.min(foot*(landscape ? 1.60 : 1.30), W*(landscape ? 0.16 : 0.20));
     const vs = Math.min(bw/venue.width, bh/venue.height);
     const vw = Math.round(venue.width*vs), vh = Math.round(venue.height*vs);
     ctx.drawImage(venue, W - pad - vw, y0 + Math.round((foot-vh)/2), vw, vh);
@@ -3535,42 +3545,83 @@ async function buildPrintCanvas(sub, team){
     rightW = vw + foot*0.16;
   }
 
-  const textX = pad + lockW + foot*0.16;
-  const leftMax = (W - pad) - rightW - textX;
-
   // Bloc de texte : équipe / chasse / lieu / date — le lieu a SA propre ligne (accolé au
   // nom de chasse, il se faisait tronquer dès qu'un logo mangeait de la largeur).
   // On mesure la hauteur totale avant de dessiner et on met le bloc à l'échelle s'il
   // déborde : quatre lignes ne tiennent pas aux tailles nominales dans le cartouche
   // paysage (230 px contre 300 en portrait).
-  const lines = [
-    { t: team?.name || 'Équipe', size: foot*0.30,  min: foot*0.13, color:'#1a1815', gap: foot*0.055,
-      font: s=>`800 ${s}px Fraunces, Georgia, serif` },
-    { t: g.name || '',           size: foot*0.175, min: foot*0.09, color:'#4a4438', gap: foot*0.035,
-      font: s=>`italic 600 ${s}px Fraunces, Georgia, serif` }
-  ];
-  if(g.location) lines.push(
-    { t: g.location,             size: foot*0.145, min: foot*0.08, color:'#6e6552', gap: foot*0.045,
-      font: s=>`italic 500 ${s}px Fraunces, Georgia, serif` });
-  lines.push(
-    { t: printDateStr(g).toUpperCase(), size: foot*0.125, min: foot*0.07, color:'#6e6552', gap: 0,
-      font: s=>`500 ${s}px "Geist Mono", monospace`, spaced: true });
+  // Paysage : DEUX lignes (le bandeau est large et court). Portrait : quatre lignes,
+  // le lieu gardant la sienne (accolé au nom de chasse il se faisait tronquer, #44).
+  const lines = landscape
+    ? [
+        { t: team?.name || 'Équipe', size: foot*0.42, min: foot*0.18, color:'#1a1815', gap: foot*0.13,
+          font: s=>`800 ${s}px Fraunces, Georgia, serif` },
+        { t: [g.name, g.location, printDateStr(g)].filter(Boolean).join(' · '),
+          size: foot*0.185, min: foot*0.09, color:'#4a4438', gap: 0,
+          font: s=>`italic 600 ${s}px Fraunces, Georgia, serif` }
+      ]
+    : [
+        { t: team?.name || 'Équipe', size: foot*0.30,  min: foot*0.13, color:'#1a1815', gap: foot*0.055,
+          font: s=>`800 ${s}px Fraunces, Georgia, serif` },
+        { t: g.name || '',           size: foot*0.175, min: foot*0.09, color:'#4a4438', gap: foot*0.035,
+          font: s=>`italic 600 ${s}px Fraunces, Georgia, serif` }
+      ];
+  if(!landscape){
+    if(g.location) lines.push(
+      { t: g.location,             size: foot*0.145, min: foot*0.08, color:'#6e6552', gap: foot*0.045,
+        font: s=>`italic 500 ${s}px Fraunces, Georgia, serif` });
+    lines.push(
+      { t: printDateStr(g).toUpperCase(), size: foot*0.125, min: foot*0.07, color:'#6e6552', gap: 0,
+        font: s=>`500 ${s}px "Geist Mono", monospace`, spaced: true });
+  }
 
   const usableTop = y0 + foot*0.09, usableBot = y0 + foot - i2 - 10;
   const usableH = usableBot - usableTop;
   const total = lines.reduce((a,l)=>a + l.size + l.gap, 0);
   const k = Math.min(1, usableH/total);
   let cursor = usableTop + Math.max(0, (usableH - total*k)/2);
-  ctx.textAlign = 'left';
+
+  // Intervalle horizontal libre de CHAQUE ligne : le sceau et le mot ne rognent que
+  // les lignes qu'ils croisent réellement ; les autres repartent de la marge.
+  const xR = (W - pad) - rightW;
+  const spans = [];
+  let probe = cursor;
   for(const l of lines){
     const start = l.size*k;
-    const size = fitFont(ctx, l.t, leftMax, l.font, start, Math.min(l.min, start));
+    let xL = pad;
+    for(const [ot, ob, orr] of obst) if(probe < ob && probe + start > ot) xL = Math.max(xL, orr);
+    spans.push(xL + foot*0.16);
+    probe += start + l.gap*k;
+  }
+  // Bloc centré : UN axe commun (sinon les lignes se décalent et ce n'est plus un bloc),
+  // mais une largeur PROPRE à chaque ligne. ⚠ Borner toutes les lignes à l'intervalle du
+  // bloc rétrécit pour rien les lignes basses et tronquait le lieu.
+  const axis = (Math.max(...spans) + xR)/2;
+  ctx.textAlign = 'left';
+  for(let i = 0; i < lines.length; i++){
+    const l = lines[i];
+    const start = l.size*k;
+    // Garde-fou : un logo du lieu très large + le sceau pourraient croiser les deux
+    // bornes et donner une largeur négative — mieux vaut un texte minuscule qu'un tirage vide.
+    const maxW = Math.max(60, 2*Math.min(axis - spans[i], xR - axis));
+    const size = fitFont(ctx, l.t, maxW, l.font, start, Math.min(l.min, start));
     ctx.font = l.font(size); ctx.fillStyle = l.color;
     const baseline = cursor + start*0.80;
-    if(l.spaced) drawSpaced(ctx, l.t, textX, baseline, size*0.10, 'left');
-    else ctx.fillText(ellipsize(ctx, l.t, leftMax), textX, baseline);
+    if(l.spaced) drawSpaced(ctx, l.t, axis, baseline, size*0.10, 'center');
+    else { const txt = ellipsize(ctx, l.t, maxW); ctx.fillText(txt, axis - ctx.measureText(txt).width/2, baseline); }
     cursor += start + l.gap*k;
   }
+
+  // ── Sceau, posé EN DERNIER ────────────────────────────────────────────────────
+  // Il doit recouvrir le filet de la photo : dessiné avant, le trait noir lui passerait
+  // dessus et le ferait paraître derrière une vitre au lieu d'être apposé dessus.
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.42)';
+  ctx.shadowBlur = sealR*0.20; ctx.shadowOffsetX = 3; ctx.shadowOffsetY = 7;
+  ctx.beginPath(); ctx.arc(sealX, sealY, sealR, 0, Math.PI*2);
+  ctx.fillStyle = '#f4ede0'; ctx.fill();
+  ctx.restore();
+  drawRose(ctx, sealX, sealY, sealR);
 
   return cv;
 }

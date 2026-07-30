@@ -3,11 +3,15 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-29, commit `6f1e2d5`, `BUILD` `2026-07-29.1`,
-> `CACHE` `expedition-v24`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
-> Local et distant alignés, vérifié par re-clonage + `diff` le 2026-07-29.
-> ⚠️ **#54 (QR du diaporama) est poussé mais PAS ENCORE TESTÉ en conditions réelles** :
-> syntaxe validée, parcours non joué. À contrôler avant la première date vendue.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-30, `BUILD` `2026-07-30.1`,
+> `CACHE` `expedition-v25`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> Local et distant alignés, vérifié par re-clonage + `diff` le 2026-07-30.
+> ⚠️ **#54 (QR du diaporama) et #55 (cadre du tirage) sont poussés mais PAS ENCORE TESTÉS en
+> conditions réelles** : syntaxe validée, aucun tirage réellement produit depuis #55.
+> Les maquettes qui ont servi à valider #55 sont des rendus **PIL hors app** (dossier local
+> `maquettes/`, hors dépôt) : elles répliquent la géométrie, pas le rendu canvas ni les
+> polices Fraunces. **Produire un tirage réel dans les deux orientations avant toute date
+> vendue** — c'est le seul contrôle qui vaut.
 > ⚠️ `commercial/` et `ANALYSE_CONCURRENCE.md` sont **volontairement hors dépôt** (`.gitignore`) :
 > le dépôt est public et servi par Pages, les grilles tarifaires et l'analyse des faiblesses
 > n'ont rien à y faire. Ne pas les y remettre.
@@ -180,10 +184,11 @@ dissocier les deux.
   `{CODE}_tirages.zip` (`downloadAllPrints`, JSZip, `STORE` — du JPEG ne se recompresse pas).
   Le cadre est composé **en canvas** par `buildPrintCanvas` : fond parchemin + vignette, double
   filet + losanges d'angle, rose des vents vectorielle (mêmes tracés que `icons/favicon.svg`),
-  puis cartouche : lockup logo (rose des vents + « EXPÉDITION » — empilé en portrait, côte à
-  côte en paysage), le bloc de texte **équipe / chasse / lieu / date** (une ligne chacun, mis
-  à l'échelle pour tenir dans le cartouche — voir #44) et, à droite, le **logo du lieu** s'il a
-  été joint à la chasse (#43). **Format de sortie FIXE
+  puis cartouche. Depuis #55 : la rose des vents est un **sceau à cheval sur le filet bas de la
+  photo** (bord gauche collé au filet, 35 % du diamètre sous lui), « EXPÉDITION » sous elle en
+  portrait / à sa droite en paysage, le bloc de texte **équipe / chasse / lieu / date**
+  **centré** sur un axe commun (4 lignes en portrait, 2 en paysage) et, à droite, le **logo du
+  lieu** s'il a été joint à la chasse (#43). **Format de sortie FIXE
   10×15 cm** : 1200×1800 px en portrait, 1800×1200 en paysage (~300 dpi), selon l'orientation
   de la photo — le labo imprime plein format sans recadrer (#41). La photo est posée **entière**
   (« contain », jamais rognée) dans la fenêtre ; le parchemin absorbe l'écart de ratio, et une
@@ -1058,6 +1063,65 @@ réutilisation d'un modèle et création de la chasse à partir de lui — parco
     diffusion. À reconsidérer si le tirage souvenir devient une vraie source de revenu — voir la
     dette « bucket privé + URLs signées » (#46).
     `BUILD` → `2026-07-29.1`, `CACHE` **v23→v24**.
+
+### Poussés sur GitHub (2026-07-30) — Cadre du tirage : sceau, centrage, fenêtre paysage
+
+⚠️ **Poussé mais aucun tirage réel produit depuis.** Validé sur maquettes PIL hors app.
+
+55. **`buildPrintCanvas` remanié : quatre décisions, prises sur des rendus mesurés.**
+
+    (1) **La rose des vents devient un sceau à cheval** sur le filet bas de la photo, bord
+    gauche **collé** à ce filet (`sealX = dx + sealR`), 35 % du diamètre sous le filet
+    (`sealY = (dy+dh) - sealR*0.30`), agrandie de 30 % (rayon 117 px en portrait, 90 en
+    paysage). Dessinée **en dernier**, après le cartouche : dessinée avant, le filet noir lui
+    passait dessus et elle paraissait *derrière une vitre* au lieu d'être apposée dessus.
+    ⚠️ Aucune pastille de fond n'a été nécessaire : `drawRose` remplit **déjà** un disque
+    parchemin opaque cerclé de noir, donc la marque reste lisible sur photo claire comme
+    sombre. C'est ce qui distingue ce sceau du logo **du lieu**, un PNG nu qui disparaît sur
+    fond sombre — raison pour laquelle le logo du lieu, lui, **reste dans le cartouche**.
+    ⚠️ Ancré sur `dx/dy/dw/dh` (le rectangle **réellement dessiné**), jamais sur la fenêtre :
+    en paysage une photo 4:3 ne remplit pas la largeur, un ancrage sur la fenêtre poserait le
+    sceau sur le parchemin, à côté de la photo. Conséquence assumée : avec une 4:3 en paysage
+    le sceau suit la photo et reste donc à ~186 px du bord du cadre. Le coller au cadre
+    supposerait de **caler la photo à gauche** au lieu de la centrer — écarté, composition
+    trop asymétrique.
+    ⚠️ Le sceau est dimensionné sur le **petit côté du tirage** (`PRINT_SHORT`), jamais sur
+    `foot` : il l'était, et ramener le cartouche paysage à 150 px le réduisait à 39 px de
+    rayon — exactement l'inverse du but.
+
+    (2) **Bloc de texte centré** : **un axe commun** (sinon les quatre lignes se décalent et
+    ce n'est plus un bloc) mais une **largeur propre à chaque ligne**, via une liste
+    d'obstacles `(haut, bas, bord droit)` — le sceau et le mot ne rognent que les lignes que
+    leur bande verticale croise réellement. ⚠️ Borner toutes les lignes à l'intervalle du
+    bloc (première version) rétrécissait pour rien les lignes basses et **tronquait le lieu**.
+    ⚠️ **Limite arithmétique à connaître** : avec le sceau à gauche et le logo du lieu à
+    droite, un axe unique devrait être à ≥ 571 px pour le nom d'équipe et à ≤ 480 pour la
+    ligne du lieu. Incompatible. En portrait, un libellé de lieu long (« Center Parcs ·
+    Domaine des Trois Forêts ») tombe donc au plancher et se tronque ; un libellé court
+    (« Domaine des Trois Forêts ») passe à sa taille nominale. **Le logo du lieu dit déjà la
+    marque : ne pas la répéter dans le champ Lieu.** En paysage, le centrage ne coûte rien.
+
+    (3) **Fenêtre photo agrandie en paysage : +23 %** (1347×1010 au lieu de 1213×910 pour une
+    4:3). En paysage la photo est limitée par la **hauteur** — elle n'atteint jamais les bords
+    latéraux — donc seuls `pad` et `foot` peuvent l'agrandir : `pad` 60 → **40**, `foot`
+    230 → **150**. ⚠️ Le levier est le cartouche, pas la marge : un bandeau de 1800 px de
+    large n'a aucune raison d'empiler quatre lignes. Le texte passe donc à **deux lignes**
+    (équipe, puis `chasse · lieu · date`) et y est **plus gros** qu'avant, pas plus petit — le
+    bloc à quatre lignes était déjà mis à l'échelle à 0,82 faute de place verticale.
+    ⚠️ Descendre à `foot` 130 donne +28 % en 4:3 mais **rien de plus en 16:9** (la photo y
+    devient limitée par la largeur) et « EXPÉDITION » touche le filet doré : 150 est le point
+    d'arrêt. ⚠️ Une 16:9 est désormais **agrandie de 7,5 %** (contre 1 %) depuis une source de
+    1600 px : sans effet visible à 300 dpi, et `buildPrintCanvas` préfère déjà l'agrandissement
+    au tirage à trou (#41). En 4:3 et 3:2 on reste en réduction, donc sans coût de définition.
+
+    (4) **En paysage, « EXPÉDITION » passe à droite de la rose** et non sous elle : sous un
+    disque agrandi il ne tient plus dans 150 px de bandeau. Cohérent avec la règle de #42
+    (lockup côte à côte en paysage).
+
+    Portrait inchangé côté fenêtre : `pad` 60, `foot` 300, photo 1080×1440 (3:4 exact).
+    **Aucune migration, aucun changement de schéma** ; `buildProofCanvas`, `downloadPrint` et
+    `downloadAllPrints` fonctionnent sans modification. `BUILD` → `2026-07-30.1`,
+    `CACHE` **v24→v25**.
 
 ## Dette technique / points de vigilance connus
 
