@@ -419,7 +419,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-07-30.1';
+const BUILD = '2026-07-30.2';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -3521,17 +3521,13 @@ async function buildPrintCanvas(sub, team){
   // Obstacles : (haut, bas, bord droit). Une ligne de texte dont la bande verticale
   // croise un obstacle démarre après lui ; les autres repartent de la marge.
   const obst = [[sealY - sealR, sealY + sealR, sealX + sealR]];
-  if(landscape){
-    // Sous un disque agrandi, le mot ne tient plus dans 150 px de bandeau : il passe à
-    // DROITE de la rose (règle déjà retenue en paysage, cf. lockup côte à côte).
-    ctx.fillStyle = '#a0832f';
-    drawSpaced(ctx, 'EXPÉDITION', sealX + sealR + gap, y0 + foot*0.42 + brandSize*0.35, brandSp, 'left');
-    obst.push([y0, H, sealX + sealR + gap + brandW]);
-  }else{
-    ctx.fillStyle = '#a0832f';
-    drawSpaced(ctx, 'EXPÉDITION', sealX, sealY + sealR + gap + brandSize*0.8, brandSp, 'center');
-    obst.push([sealY + sealR + gap, sealY + sealR + gap + brandSize, sealX + brandW/2]);
-  }
+  // « EXPÉDITION » sous la rose dans LES DEUX orientations. ⚠️ Corrige #55 (4), qui le
+  // plaçait à droite en paysage : mesuré sur un tirage réel, l'empilement tient (le mot
+  // finit à ~1157 px pour un filet doré à 1178) ET il libère 171 px à gauche, ce qui
+  // permet enfin de centrer le cartouche paysage au milieu du cadre.
+  ctx.fillStyle = '#a0832f';
+  drawSpaced(ctx, 'EXPÉDITION', sealX, sealY + sealR + gap + brandSize*0.8, brandSp, 'center');
+  obst.push([sealY + sealR + gap, sealY + sealR + gap + brandSize, sealX + brandW/2]);
 
   // Logo du lieu, calé à droite du cartouche. La place qu'il occupe est retirée de la
   // largeur des textes — jamais l'inverse.
@@ -3596,7 +3592,12 @@ async function buildPrintCanvas(sub, team){
   // Bloc centré : UN axe commun (sinon les lignes se décalent et ce n'est plus un bloc),
   // mais une largeur PROPRE à chaque ligne. ⚠ Borner toutes les lignes à l'intervalle du
   // bloc rétrécit pour rien les lignes basses et tronquait le lieu.
-  const axis = (Math.max(...spans) + xR)/2;
+  // Paysage : axe du CADRE, donc vraiment centré, et robuste à l'absence de logo du lieu
+  // (l'axe de la place libre dérivait de 100 px selon qu'un logo était joint ou non) ;
+  // 1192 px restent disponibles, largement de quoi loger les deux lignes.
+  // Portrait : axe de la place LIBRE — mesuré, l'axe du cadre y ramène le nom d'équipe de
+  // 51 à 48 px et tronque la ligne du lieu, le cartouche n'y est pas assez large.
+  const axis = landscape ? W/2 : (Math.max(...spans) + xR)/2;
   ctx.textAlign = 'left';
   for(let i = 0; i < lines.length; i++){
     const l = lines[i];

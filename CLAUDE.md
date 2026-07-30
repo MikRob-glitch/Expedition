@@ -3,8 +3,8 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-30, commit `895f43e`, `BUILD` `2026-07-30.1`,
-> `CACHE` `expedition-v25`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
+> **réellement poussé sur GitHub** (HEAD = 2026-07-30, `BUILD` `2026-07-30.2`,
+> `CACHE` `expedition-v26`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
 > Local et distant alignés sur `expedition.html` et `sw.js`, vérifié par re-clonage + `diff`
 > le 2026-07-30. ⚠️ `CLAUDE.md` diverge volontairement : la copie locale porte le § #47
 > (livrets) enrichi, avec la grille tarifaire, qui n'a rien à faire dans un dépôt public.
@@ -1119,11 +1119,39 @@ réutilisation d'un modèle et création de la chasse à partir de lui — parco
     (4) **En paysage, « EXPÉDITION » passe à droite de la rose** et non sous elle : sous un
     disque agrandi il ne tient plus dans 150 px de bandeau. Cohérent avec la règle de #42
     (lockup côte à côte en paysage).
+    ⚠️ **Faux — corrigé par #58 après le premier tirage réel.** L'empilement tient (le mot
+    finit à 1156 px pour un filet doré à 1178) et le placer à droite empêchait de centrer le
+    cartouche. Le calcul qui concluait à l'impossibilité datait des cotes d'avant #55.
 
     Portrait inchangé côté fenêtre : `pad` 60, `foot` 300, photo 1080×1440 (3:4 exact).
     **Aucune migration, aucun changement de schéma** ; `buildProofCanvas`, `downloadPrint` et
     `downloadAllPrints` fonctionnent sans modification. `BUILD` → `2026-07-30.1`,
     `CACHE` **v24→v25**.
+
+### Poussés sur GitHub (2026-07-30) — Cartouche paysage vraiment centré (1er tirage réel)
+
+58. **Deux corrections dictées par le premier tirage produit pour de vrai** (chasse « Chasse
+    test », équipe « Les nanas », logo Capfun — donc large).
+    (1) **« EXPÉDITION » repasse SOUS la rose en paysage**, comme en portrait. #55 (4) le
+    plaçait à droite en affirmant que l'empilement ne tenait pas dans 150 px : mesuré, il
+    tient — le mot finit à **1156 px** pour un filet doré à **1178** (22 px de dégagement).
+    Le gain n'est pas cosmétique : le lockup côte à côte occupait
+    `sceau + 22 + largeur du mot` à gauche, soit **171 px de plus**, et l'axe du bloc était
+    donc repoussé à 956 px au lieu de 900 — visiblement décentré vers la droite sur le tirage.
+    ⚠️ La règle de #42 (« lockup côte à côte en paysage ») ne s'applique plus depuis que la
+    rose a quitté le cartouche pour devenir un sceau posé sur la photo (#55) : elle valait
+    pour un lockup logé *dans* le bandeau.
+    (2) **En paysage, l'axe du bloc est celui du CADRE** (`W/2`), plus celui de la place
+    libre. Deux raisons mesurées : le cartouche paysage laisse 1192 px utiles, donc le
+    centrage exact ne coûte rien ; et l'axe de la place libre **dérive de ~100 px selon qu'un
+    logo de lieu est joint ou non** (870 avec, 1002 sans), ce qui donnait deux compositions
+    différentes pour la même chasse. En **portrait**, l'axe reste celui de la place libre :
+    mesuré, l'axe du cadre y ramène le nom d'équipe de 51 à 48 px et **tronque la ligne du
+    lieu** — le cartouche portrait n'est pas assez large pour se payer un centrage exact.
+    **Aucune migration.** `BUILD` → `2026-07-30.2`, `CACHE` **v25→v26**.
+    ⚠️ Conséquence de numérotation : le `sw.js` local du lot #57 (régie) portait déjà
+    `expedition-v26` sans être poussé. Il est passé à **v27** en local pour ne pas exister en
+    deux versions différentes sous le même nom de cache.
 
 ## Dette technique / points de vigilance connus
 
