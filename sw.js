@@ -7,9 +7,11 @@
    - Tuiles OSM : cache-first runtime (zones déjà vues dispo hors-ligne).
    - Appels Supabase (REST/Storage) : network-only (jamais d'état de jeu périmé).
    ⚠️ Bumper CACHE à chaque déploiement qui change l'app-shell. */
-const CACHE = 'expedition-v26';
+const CACHE = 'expedition-v29';
 const CORE = [
   './expedition.html',
+  './regie.html',
+  './print-frame.js',
   './confidentialite.html',
   './manifest.json',
   './icons/icon-192.png',
@@ -63,15 +65,22 @@ self.addEventListener('fetch', e=>{
   // renvoie un max-age et un simple rechargement pouvait servir une app-shell périmée
   // (un correctif déployé n'apparaissait pas). On repart de req.url et non de req :
   // une Request en mode 'navigate' ne peut pas être reconstruite avec un init.
+  // ⚠️ Le document mis en cache doit être CELUI qui a été demandé. Écrire toute
+  // navigation sous './expedition.html' (version ≤ v25) faisait qu'ouvrir la régie
+  // écrasait l'app-shell des joueurs : hors-ligne, un joueur retombait sur regie.html.
   if(req.mode === 'navigate'){
+    const shell = url.pathname.endsWith('/regie.html')          ? './regie.html'
+                : url.pathname.endsWith('/confidentialite.html') ? './confidentialite.html'
+                : './expedition.html';
     e.respondWith((async()=>{
       try{
         const net = await fetch(req.url, { cache:'reload', credentials:'same-origin' });
         const c = await caches.open(CACHE);
-        c.put('./expedition.html', net.clone()).catch(()=>{});
+        c.put(shell, net.clone()).catch(()=>{});
         return net;
       }catch(_){
-        return (await caches.match(req)) || (await caches.match('./expedition.html')) || Response.error();
+        return (await caches.match(req)) || (await caches.match(shell))
+            || (await caches.match('./expedition.html')) || Response.error();
       }
     })());
     return;

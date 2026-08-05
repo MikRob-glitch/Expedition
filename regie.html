@@ -1,0 +1,2055 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1815">
+<meta name="robots" content="noindex">
+<title>Régie · Expédition</title>
+
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;0,9..144,900;1,9..144,600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<!-- Moteur du cadre de tirage, PARTAGÉ avec expedition.html. Une seule source de vérité :
+     ne jamais recopier sa composition canvas ici (voir #59). -->
+<script src="print-frame.js"></script>
+
+<style>
+:root{
+  --parchment:#f4ede0; --parchment-2:#ebe2cf; --parchment-3:#dfd4b8;
+  --ink:#1a1815; --ink-soft:#4a4438; --ink-mute:#8a8068;
+  --gold:#c9a55a; --gold-dark:#a0832f;
+  --oxblood:#8b2e2e; --oxblood-dark:#6e2222;
+  --forest:#2d4a3a;
+  --line:#d8ccb0; --line-strong:#c0b394;
+  --shadow:0 1px 2px rgba(26,24,21,.06), 0 8px 24px -12px rgba(26,24,21,.18);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;font-family:'Geist',-apple-system,system-ui,sans-serif;background:var(--parchment);color:var(--ink);font-size:15px;line-height:1.5;min-height:100dvh}
+body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(circle at 15% 12%,rgba(139,46,46,.05),transparent 42%),radial-gradient(circle at 85% 88%,rgba(45,74,58,.045),transparent 42%);pointer-events:none;z-index:0}
+.display{font-family:'Fraunces',serif;font-variation-settings:"opsz" 144;letter-spacing:-.025em;line-height:1.05;font-weight:800}
+.mono{font-family:'Geist Mono',monospace}
+.muted{color:var(--ink-mute)}
+h1,h2,h3{font-family:'Fraunces',serif;letter-spacing:-.02em;margin:0}
+a{color:var(--oxblood)}
+
+/* ───────── Boutons ───────── */
+.btn{appearance:none;border:1.5px solid transparent;background:var(--ink);color:var(--parchment);font-family:'Geist',sans-serif;font-weight:600;font-size:14px;padding:11px 16px;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:transform .12s,background .18s,opacity .18s;line-height:1.2}
+.btn:hover{opacity:.9}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.btn.gold{background:var(--gold-dark);color:#fff}
+.btn.ox{background:var(--oxblood);color:#fff}
+.btn.forest{background:var(--forest);color:#fff}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line-strong)}
+.btn.ghost:hover{border-color:var(--ink);background:rgba(255,255,255,.5)}
+.btn.ghost.ox{color:var(--oxblood);border-color:rgba(139,46,46,.45)}
+.btn.sm{padding:7px 11px;font-size:12.5px;border-radius:8px;gap:5px}
+.btn.xs{padding:4px 8px;font-size:11.5px;border-radius:7px;gap:4px}
+.btn.wide{width:100%}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row.tight{gap:6px}
+kbd{font-family:'Geist Mono',monospace;font-size:10.5px;background:rgba(26,24,21,.08);border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:5px;padding:1px 5px;color:var(--ink-soft)}
+
+.chip{font-family:'Geist Mono',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:.11em;color:var(--ink-soft);padding:4px 9px;border:1px solid var(--line-strong);border-radius:999px;background:rgba(255,255,255,.35);white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.chip.live{color:#fff;border-color:var(--oxblood);background:var(--oxblood)}
+.chip.live::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;animation:pulse 1.4s infinite}
+.chip.gold{color:var(--gold-dark);border-color:var(--gold-dark);background:rgba(201,165,90,.12)}
+.chip.forest{color:#fff;background:var(--forest);border-color:var(--forest)}
+.chip.dark{color:var(--gold);background:var(--ink);border-color:var(--ink)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+.input,select.input,textarea.input{width:100%;background:rgba(255,255,255,.55);border:1.5px solid var(--line-strong);border-radius:9px;padding:9px 11px;font-family:'Geist',sans-serif;font-size:14px;color:var(--ink);outline:none}
+.input:focus{border-color:var(--ink)}
+label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:.11em;color:var(--ink-soft);margin-bottom:5px}
+
+/* ───────── Barre haute ───────── */
+.topbar{position:sticky;top:0;z-index:40;background:var(--ink);color:var(--parchment);padding:9px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;box-shadow:0 2px 14px rgba(0,0,0,.22)}
+.topbar .brand{font-family:'Fraunces',serif;font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase;display:flex;align-items:center;gap:9px;white-space:nowrap}
+.topbar .brand i{width:26px;height:26px;border:1.5px solid var(--gold);border-radius:50%;display:grid;place-items:center;font-style:normal;color:var(--gold);font-size:13px}
+.topbar .ident{min-width:0;flex:1;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.topbar .ident b{font-family:'Fraunces',serif;font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38vw}
+.topbar .ident span{font-family:'Geist Mono',monospace;font-size:12px;color:var(--gold);letter-spacing:.14em}
+.topbar .ident em{font-style:normal;font-size:12.5px;opacity:.62}
+.topbar .acts{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.topbar .btn.ghost{color:var(--parchment);border-color:rgba(244,237,224,.3)}
+.topbar .btn.ghost:hover{background:rgba(244,237,224,.1);border-color:var(--parchment)}
+.clock{font-family:'Geist Mono',monospace;font-weight:600;font-size:26px;letter-spacing:.03em;padding:2px 12px;border-radius:9px;background:rgba(244,237,224,.1);border:1.5px solid rgba(244,237,224,.22);line-height:1.25}
+.clock.warn{background:rgba(160,131,47,.35);border-color:var(--gold)}
+.clock.alert{background:var(--oxblood);border-color:var(--oxblood);animation:pulse 1.1s infinite}
+.clock.off{opacity:.4}
+
+/* ───────── Grille console ───────── */
+.wrap{position:relative;z-index:1;padding:16px;max-width:2100px;margin:0 auto}
+.grid{display:grid;gap:16px;grid-template-columns:1fr;align-items:start}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+@media(min-width:900px){ .grid{grid-template-columns:minmax(300px,360px) minmax(0,1fr)} .col.c3{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start} }
+@media(min-width:1440px){ .grid{grid-template-columns:minmax(300px,360px) minmax(0,1fr) minmax(300px,380px)} .col.c3{grid-column:auto;display:flex;grid-template-columns:none} }
+
+.pane{background:rgba(255,255,255,.46);border:1.5px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;min-width:0}
+.pane>header{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1.5px solid var(--line);background:rgba(255,255,255,.4);flex-wrap:wrap}
+.pane>header h3{font-size:15.5px;font-weight:700;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pane>.body{padding:14px}
+.pane>.body.scroll{max-height:min(72vh,900px);overflow:auto;overscroll-behavior:contain}
+.pane.danger{border-color:rgba(139,46,46,.4)}
+.pane.danger>header{background:rgba(139,46,46,.07)}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));gap:8px}
+.stat{background:rgba(255,255,255,.55);border:1.5px solid var(--line);border-radius:10px;padding:9px 8px;text-align:center}
+.stat .n{font-family:'Fraunces',serif;font-weight:800;font-size:24px;line-height:1.1}
+.stat .l{font-family:'Geist Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-mute);margin-top:2px}
+.stat.ok .n{color:var(--forest)} .stat.ko .n{color:var(--oxblood)} .stat.wait .n{color:var(--gold-dark)}
+
+.bar{height:8px;border-radius:99px;background:var(--parchment-3);overflow:hidden;margin:10px 0 4px}
+.bar>i{display:block;height:100%;background:var(--forest);transition:width .4s}
+.bar.warn>i{background:var(--gold-dark)} .bar.alert>i{background:var(--oxblood)}
+
+.ava{width:34px;height:34px;border-radius:50%;flex-shrink:0;object-fit:cover;border:1.5px solid var(--line-strong);background:var(--parchment-3);display:grid;place-items:center;font-family:'Fraunces',serif;font-weight:700;color:var(--ink-soft);font-size:14px;cursor:pointer}
+.ava.n{cursor:default}
+
+.tlist{display:flex;flex-direction:column;gap:8px}
+.tcard{display:flex;align-items:center;gap:10px;padding:9px 10px;background:rgba(255,255,255,.5);border:1.5px solid var(--line);border-radius:11px}
+.tcard .nm{flex:1;min-width:0}
+.tcard .nm b{display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tcard .nm small{font-family:'Geist Mono',monospace;font-size:10.5px;color:var(--ink-mute)}
+.tcard .sc{font-family:'Fraunces',serif;font-weight:800;font-size:21px;text-align:right;line-height:1}
+.dots{display:flex;gap:3px;flex-wrap:wrap;margin-top:4px}
+.dots i{width:9px;height:9px;border-radius:2.5px;background:var(--parchment-3);border:1px solid var(--line-strong)}
+.dots i.ok{background:var(--forest);border-color:var(--forest)}
+.dots i.ko{background:var(--oxblood);border-color:var(--oxblood)}
+.dots i.pd{background:var(--gold-dark);border-color:var(--gold-dark)}
+.dots i.st{box-shadow:0 0 0 2px rgba(201,165,90,.75)}
+
+.board{display:flex;flex-direction:column;gap:6px}
+.board .r{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.45);border:1.5px solid var(--line)}
+.board .r.first{background:var(--ink);color:var(--parchment);border-color:var(--ink)}
+.board .r.first .k{color:var(--gold)}
+.board .k{width:24px;text-align:center;font-family:'Fraunces',serif;font-weight:800;font-size:16px;color:var(--ink-mute)}
+.board .n{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.board .p{font-family:'Fraunces',serif;font-weight:800;font-size:20px}
+
+.filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.seg{display:inline-flex;border:1.5px solid var(--line-strong);border-radius:9px;overflow:hidden;background:rgba(255,255,255,.4)}
+.seg button{appearance:none;border:0;background:transparent;font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.07em;padding:6px 10px;cursor:pointer;color:var(--ink-soft);border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--ink);color:var(--parchment)}
+
+.shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.shot{border:1.5px solid var(--line);border-radius:12px;overflow:hidden;background:rgba(255,255,255,.55);display:flex;flex-direction:column}
+.shot.ok{border-color:rgba(45,74,58,.5)} .shot.ko{border-color:rgba(139,46,46,.45)}
+.shot .im{position:relative;aspect-ratio:4/3;background:var(--parchment-3);cursor:zoom-in;overflow:hidden}
+.shot .im img{width:100%;height:100%;object-fit:cover;display:block}
+.shot .im .tag{position:absolute;top:6px;left:6px;font-family:'Geist Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;padding:3px 7px;border-radius:99px;background:rgba(26,24,21,.82);color:var(--parchment)}
+.shot .im .tag.ok{background:var(--forest)} .shot .im .tag.ko{background:var(--oxblood)} .shot .im .tag.pd{background:var(--gold-dark)}
+.shot .im .vt{position:absolute;top:6px;right:6px;font-family:'Geist Mono',monospace;font-size:11px;font-weight:600;padding:3px 8px;border-radius:99px;background:var(--gold-dark);color:#fff}
+.shot .mt{padding:8px 9px;font-size:12.5px;min-width:0}
+.shot .mt b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shot .mt small{color:var(--ink-mute);font-family:'Geist Mono',monospace;font-size:10.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shot .ac{display:flex;gap:5px;padding:0 9px 9px}
+.shot .ac .btn{flex:1;padding:7px 4px;font-size:12px}
+.vote{display:flex;gap:4px;padding:0 9px 9px}
+.vote button{flex:1;padding:7px 2px;border-radius:8px;font-family:'Geist Mono',monospace;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid var(--line-strong);background:transparent;color:var(--ink)}
+.vote button.on{background:var(--gold-dark);border-color:var(--gold-dark);color:#fff}
+
+.clueblock{margin-bottom:20px}
+.cluehead{display:flex;align-items:center;gap:9px;margin:0 0 9px;padding-bottom:6px;border-bottom:1.5px solid var(--line)}
+.cluehead h4{font-family:'Fraunces',serif;font-size:15px;margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.empty{padding:26px 16px;text-align:center;color:var(--ink-mute);font-size:13.5px;border:1.5px dashed var(--line-strong);border-radius:11px;background:rgba(255,255,255,.25)}
+.hint{font-size:12.5px;color:var(--ink-soft);line-height:1.45;margin:8px 0 0}
+.hint.warn{color:var(--oxblood)}
+.sep{height:1.5px;background:var(--line);margin:14px 0}
+
+/* ───────── Sélecteur de chasse / login ───────── */
+.center{max-width:560px;margin:0 auto;padding:36px 18px}
+.glist{display:flex;flex-direction:column;gap:9px}
+.gitem{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 13px;border:1.5px solid var(--line-strong);border-radius:12px;background:rgba(255,255,255,.45);cursor:pointer;font:inherit;color:inherit}
+.gitem:hover{border-color:var(--ink);background:rgba(255,255,255,.7)}
+.gitem .bd{flex:1;min-width:0}
+.gitem .bd b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gitem .bd small{color:var(--ink-mute);font-size:12px}
+.gitem .cd{font-family:'Geist Mono',monospace;font-size:15px;letter-spacing:.16em;font-weight:600;color:var(--gold-dark)}
+
+/* ───────── Overlays ───────── */
+.ov{position:fixed;inset:0;z-index:80;background:rgba(20,18,15,.93);display:none;flex-direction:column;padding:16px;backdrop-filter:blur(3px)}
+.ov.open{display:flex}
+.ov .ohead{display:flex;align-items:center;gap:12px;color:var(--parchment);margin-bottom:12px;flex-wrap:wrap}
+.ov .ohead h3{color:var(--parchment);font-size:17px;flex:1;min-width:0}
+.ov .box{background:var(--parchment);border-radius:16px;padding:20px;max-width:520px;width:100%;margin:auto;max-height:92dvh;overflow:auto}
+.close-x{appearance:none;border:1.5px solid rgba(244,237,224,.35);background:transparent;color:var(--parchment);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;flex-shrink:0}
+.box .close-x{border-color:var(--line-strong);color:var(--ink)}
+
+#zoomwrap{flex:1;min-height:0;display:grid;place-items:center;overflow:hidden;touch-action:none}
+#zoomwrap img{max-width:100%;max-height:100%;object-fit:contain;transform-origin:0 0;will-change:transform;user-select:none;-webkit-user-drag:none}
+.zbar{display:flex;gap:8px;justify-content:center;padding-top:12px}
+.zbar button{width:42px;height:42px;border-radius:50%;border:1.5px solid rgba(244,237,224,.35);background:transparent;color:var(--parchment);font-size:17px;cursor:pointer}
+
+/* mode rafale */
+#burst-ov .stage{flex:1;min-height:0;display:grid;place-items:center;overflow:hidden}
+#burst-ov .stage img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+#burst-ov .info{color:var(--parchment);text-align:center;padding:10px 0 4px}
+#burst-ov .info b{font-family:'Fraunces',serif;font-size:19px;display:block}
+#burst-ov .info small{font-family:'Geist Mono',monospace;font-size:12px;opacity:.66}
+#burst-ov .ctl{display:flex;gap:10px;justify-content:center;padding-top:10px;flex-wrap:wrap}
+#burst-ov .ctl .btn{min-width:150px;padding:14px 20px;font-size:15px}
+#burst-ov .pg{height:5px;background:rgba(244,237,224,.16);border-radius:99px;overflow:hidden;margin-top:12px}
+#burst-ov .pg>i{display:block;height:100%;background:var(--gold);transition:width .25s}
+
+/* commande de tirages à la demande */
+#order-ov .panel{background:var(--parchment);border-radius:16px;width:100%;max-width:1200px;margin:auto;display:flex;flex-direction:column;max-height:92dvh;overflow:hidden}
+#order-ov .ohd{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1.5px solid var(--line);flex-wrap:wrap}
+#order-ov .obody{padding:14px 16px;overflow:auto;flex:1;min-height:0}
+#order-ov .ofoot{padding:12px 16px;border-top:1.5px solid var(--line);background:rgba(255,255,255,.45);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#order-ov .ofoot .tot{flex:1;min-width:170px;font-size:13px}
+#order-ov .ofoot .tot b{font-family:'Fraunces',serif;font-size:19px}
+.shot.sel{border-color:var(--gold-dark);box-shadow:0 0 0 2px var(--gold-dark) inset}
+.shot .pick{position:absolute;bottom:6px;right:6px;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:rgba(26,24,21,.82);color:var(--parchment);font-size:13px;cursor:zoom-in;border:0}
+.qty{display:flex;align-items:center;gap:4px;padding:0 9px 9px}
+.qty button{width:28px;height:28px;border-radius:7px;border:1.5px solid var(--line-strong);background:transparent;cursor:pointer;font-size:15px;line-height:1;color:var(--ink)}
+.qty span{flex:1;text-align:center;font-family:'Geist Mono',monospace;font-size:13px;font-weight:600}
+#order-price{width:82px;font-size:13px;padding:6px 8px}
+
+/* aperçu du tirage */
+#print-stage{flex:1;min-height:0;display:grid;place-items:center;overflow:auto;padding:4px}
+#print-stage img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 14px 50px rgba(0,0,0,.55)}
+#print-stage .wait{color:var(--parchment);opacity:.8;font-size:14px}
+#print-ctl{display:flex;gap:10px;justify-content:center;padding-top:12px;flex-wrap:wrap}
+#print-status{font-family:'Geist Mono',monospace;font-size:11.5px;color:var(--ink-soft);margin-top:8px;min-height:16px}
+
+#qr-canvas img,#qr-canvas svg{width:100%;max-width:340px;height:auto;background:#fff;padding:12px;border-radius:12px;display:block;margin:0 auto}
+
+.exp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
+.exp-f{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 14px;font-size:13px}
+.exp-f label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.exp-bar{height:8px;background:var(--parchment-3);border-radius:99px;overflow:hidden;margin:12px 0 6px}
+.exp-bar>i{display:block;height:100%;width:0;background:var(--gold-dark);transition:width .2s}
+.exp-log{font-family:'Geist Mono',monospace;font-size:11px;max-height:130px;overflow:auto;color:var(--ink-soft);margin-top:8px}
+.exp-log .err{color:var(--oxblood)} .exp-log .ok{color:var(--forest)}
+
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--parchment);padding:11px 18px;border-radius:10px;font-size:13.5px;z-index:200;box-shadow:0 8px 30px rgba(0,0,0,.3);max-width:88vw;text-align:center}
+.toast.error{background:var(--oxblood)} .toast.success{background:var(--forest)}
+
+.tabs{display:none;position:sticky;top:0;z-index:35;background:var(--parchment);border-bottom:1.5px solid var(--line);padding:8px 12px;gap:6px}
+@media(max-width:899px){ .tabs{display:flex} .col{display:none} .col.show{display:flex} .col.c3.show{display:flex} }
+.tabs button{flex:1;appearance:none;border:1.5px solid var(--line-strong);background:rgba(255,255,255,.45);border-radius:9px;padding:8px 4px;font-family:'Geist Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;color:var(--ink-soft)}
+.tabs button.on{background:var(--ink);color:var(--parchment);border-color:var(--ink)}
+.tabs button .b{display:inline-block;background:var(--oxblood);color:#fff;border-radius:99px;padding:0 5px;margin-left:4px;font-size:10px}
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<!-- Visionneuse photo (zoom/pan) -->
+<div id="zoom-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="ohead">
+    <h3 id="zoom-title">Photo</h3>
+    <button class="close-x" onclick="closeZoom()" aria-label="Fermer">✕</button>
+  </div>
+  <div id="zoomwrap"></div>
+  <div class="zbar">
+    <button onclick="PZ&&PZ.zoom(-1)" aria-label="Dézoomer">−</button>
+    <button onclick="PZ&&PZ.reset()" aria-label="Réinitialiser">⟲</button>
+    <button onclick="PZ&&PZ.zoom(1)" aria-label="Zoomer">+</button>
+  </div>
+</div>
+
+<!-- Mode rafale -->
+<div id="burst-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="ohead">
+    <h3 id="burst-title">Validation en rafale</h3>
+    <span class="chip dark" id="burst-count">0 / 0</span>
+    <button class="close-x" onclick="closeBurst()" aria-label="Fermer">✕</button>
+  </div>
+  <div class="stage" id="burst-stage"></div>
+  <div class="info" id="burst-info"></div>
+  <div class="ctl" id="burst-ctl"></div>
+  <div class="pg"><i id="burst-pg"></i></div>
+</div>
+
+<!-- QR -->
+<div id="qr-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="box" style="text-align:center">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <h3 id="qr-title" style="flex:1;text-align:left">QR code</h3>
+      <button class="close-x" onclick="closeQR()" aria-label="Fermer">✕</button>
+    </div>
+    <div id="qr-canvas"></div>
+    <div class="mono" id="qr-code-text" style="font-size:30px;letter-spacing:.24em;font-weight:600;margin:14px 0 4px"></div>
+    <div class="mono muted" id="qr-url-text" style="font-size:11px;word-break:break-all"></div>
+    <p class="hint" id="qr-hint"></p>
+  </div>
+</div>
+
+<!-- Export ZIP -->
+<div id="export-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="box">
+    <div style="display:flex;align-items:center;gap:10px">
+      <h3 style="flex:1">Exporter les photos</h3>
+      <button class="close-x" onclick="closeExport()" aria-label="Fermer">✕</button>
+    </div>
+    <p class="hint">Archive ZIP organisée par équipe, avec heure, statut et nom de l'indice dans chaque fichier.</p>
+    <div class="exp-stats" id="exp-stats"></div>
+    <div id="exp-note"></div>
+    <div class="exp-f">
+      <label><input type="checkbox" id="exp-ok" checked> Conformes</label>
+      <label><input type="checkbox" id="exp-ko" checked> Refusées</label>
+      <label><input type="checkbox" id="exp-pd" checked> En attente</label>
+    </div>
+    <button id="exp-run" class="btn gold wide" onclick="runExport()">Télécharger le ZIP →</button>
+    <div id="exp-prog" hidden>
+      <div class="exp-bar"><i id="exp-fill"></i></div>
+      <div class="row" style="justify-content:space-between;font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink-mute)">
+        <span id="exp-count">0 / 0</span><span id="exp-time"></span>
+      </div>
+      <div class="exp-log" id="exp-log"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Sélecteur de tirage -->
+<div id="pick-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="box" style="max-width:760px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <h3 id="pick-title" style="flex:1">Choisir le tirage</h3>
+      <button class="close-x" onclick="closePick()" aria-label="Fermer">✕</button>
+    </div>
+    <div id="pick-body"></div>
+  </div>
+</div>
+
+<!-- Commande de tirages à la demande (photos supplémentaires) -->
+<div id="order-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="panel">
+    <div class="ohd">
+      <h3 style="flex:1;min-width:0">Tirages à la demande</h3>
+      <span class="chip gold" id="order-count">0</span>
+      <button class="close-x" style="border-color:var(--line-strong);color:var(--ink)" onclick="closeOrder()" aria-label="Fermer">✕</button>
+    </div>
+    <div class="obody" id="order-body"></div>
+    <div class="ofoot">
+      <div class="tot" id="order-total"></div>
+      <label class="lbl" style="margin:0 4px 0 0">Prix unitaire</label>
+      <input id="order-price" class="input mono" inputmode="decimal" placeholder="—" oninput="setOrderPrice(this.value)">
+      <button class="btn ghost sm" onclick="clearOrder()">Vider</button>
+      <button class="btn gold sm" id="order-run" onclick="downloadOrder()">⬇ Télécharger la commande</button>
+    </div>
+  </div>
+</div>
+
+<!-- Aperçu du tirage encadré -->
+<div id="print-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="ohead">
+    <h3 id="print-title">Tirage</h3>
+    <button class="close-x" onclick="closePrint()" aria-label="Fermer">✕</button>
+  </div>
+  <div id="print-stage"></div>
+  <div id="print-ctl"></div>
+</div>
+
+<!-- Aide raccourcis -->
+<div id="help-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="box">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <h3 style="flex:1">Raccourcis clavier</h3>
+      <button class="close-x" onclick="closeHelp()" aria-label="Fermer">✕</button>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13.5px">
+      <tbody>
+        <tr><td style="padding:6px 0"><kbd>V</kbd></td><td>Ouvrir la validation en rafale</td></tr>
+        <tr><td style="padding:6px 0"><kbd>→</kbd> <kbd>A</kbd> <kbd>Espace</kbd></td><td>Photo conforme (en rafale)</td></tr>
+        <tr><td style="padding:6px 0"><kbd>←</kbd> <kbd>R</kbd></td><td>Photo refusée (en rafale)</td></tr>
+        <tr><td style="padding:6px 0"><kbd>S</kbd></td><td>Passer sans décider (en rafale)</td></tr>
+        <tr><td style="padding:6px 0"><kbd>Retour arrière</kbd></td><td>Revenir à la photo précédente</td></tr>
+        <tr><td style="padding:6px 0"><kbd>Q</kbd></td><td>QR code d'accès joueurs</td></tr>
+        <tr><td style="padding:6px 0"><kbd>E</kbd></td><td>Export ZIP des photos</td></tr>
+        <tr><td style="padding:6px 0"><kbd>T</kbd></td><td>Tirages à la demande (photos supplémentaires)</td></tr>
+        <tr><td style="padding:6px 0"><kbd>1</kbd>–<kbd>3</kbd></td><td>Onglets (écran étroit)</td></tr>
+        <tr><td style="padding:6px 0"><kbd>?</kbd></td><td>Cette aide</td></tr>
+        <tr><td style="padding:6px 0"><kbd>Échap</kbd></td><td>Fermer la fenêtre courante</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   EXPÉDITION · RÉGIE — console maître du jeu
+   ---------------------------------------------------------------------
+   Fichier AUTONOME, servi par GitHub Pages à côté de `expedition.html`.
+   Même projet Supabase, même schéma, même session d'auth (localStorage
+   partagé sur la même origine) : se connecter ici connecte aussi l'app.
+
+   Ce que la régie apporte face aux écrans admin de `expedition.html` :
+   - tout est visible d'un coup (chrono, équipes, flux, jury, classement) ;
+   - la validation peut se faire DÈS L'ARRIVÉE des photos, pendant la
+     chasse, au lieu de tout empiler à la fin (goulot connu : ~11 s/photo
+     à 8 équipes × 10 indices, cf. CLAUDE.md § livrets) ;
+   - mode « rafale » plein écran + raccourcis clavier pour l'arbitrage ;
+   - production des tirages souvenir encadrés (aperçu, unité, ZIP) via le module
+     partagé `print-frame.js` — le MÊME que celui de l'app, jamais une copie.
+
+   ⚠️ Règles héritées du projet, à ne pas redécouvrir :
+   - écriture Storage : jamais d'`upsert` (aucune policy UPDATE) ;
+   - suppression de photos : API Storage AVANT le RPC de purge, jamais
+     l'inverse (le bucket n'est pas listable, les chemins se reconstruisent
+     depuis submissions.id / teams.id) ;
+   - `games.is_template` ne figure dans aucun payload d'écriture : on
+     n'utilise que des UPDATE ciblés, jamais d'upsert sur `games`.
+   ===================================================================== */
+
+const BUILD = '2026-07-30.3';
+
+const SUPABASE_DEFAULTS = {
+  url: 'https://rwagwbzztcehvdztkscj.supabase.co',
+  key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ3YWd3Ynp6dGNlaHZkenRrc2NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDIyODEsImV4cCI6MjA5NDc3ODI4MX0.jODIBEM1OLcRrBYk3mI5XeFR-Wp5ImLUUGiYNYkzJx8'
+};
+
+const TEAMPHOTO_PREFIX = 'team:';
+const APP_URL = 'expedition.html';
+
+let sb = null;
+let PZ = null;                     // contrôleur de zoom courant
+
+const S = {
+  view: 'boot',                    // boot | login | picker | console
+  user: null,
+  otpEmail: null,
+  games: [],
+  game: null,
+  subs: [],
+  channel: null,
+  poll: null,
+  tick: null,
+  burst: null,                     // { ids:[], i:0 }
+  printing: false,                 // série de tirages en cours : gèle le rendu
+  order: {},                       // commande de tirages : { [subId]: quantité }
+  oTeam: '', oClue: '',            // filtres du sélecteur de commande
+  tab: 'work',                     // onglet mobile : pilot | work | tools
+  fStatus: 'all',                  // filtre statut du flux
+  fTeam: '',
+  fClue: '',
+  startDraft: {},                  // brouillon optimiste des indices de départ
+  lastSig: ''
+};
+
+/* ───────────────────────── Helpers ───────────────────────── */
+const $ = (s, p = document) => p.querySelector(s);
+const $$ = (s, p = document) => Array.from(p.querySelectorAll(s));
+const app = () => $('#app');
+
+function esc(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Pour insérer un nom dans un littéral JS d'attribut onclick : les apostrophes doivent
+// disparaître AVANT esc(), sinon `&#39;` est redécodé par le parser et casse le littéral.
+function jsq(s){ return esc(String(s ?? '').replace(/'/g, '’')); }
+
+function toast(msg, kind = '', dur = 2600){
+  $$('.toast').forEach(t => t.remove());
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), dur);
+}
+
+function fmtTime(secs){
+  secs = Math.max(0, Math.floor(secs));
+  const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60;
+  const p = n => String(n).padStart(2,'0');
+  return h > 0 ? `${h}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)}`;
+}
+function hhmm(ts){ const d = new Date(ts); return `${String(d.getHours()).padStart(2,'0')}h${String(d.getMinutes()).padStart(2,'0')}`; }
+function safeFile(s){ return (s||'').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,'_').trim() || '_'; }
+
+function reportError(err, kind){
+  console.error('[Régie]', kind, err);
+  try{ toast('Incident technique — voir la console (F12)','error',4200); }catch(_){}
+}
+window.addEventListener('error', e => reportError(e.error || e.message, 'error'));
+window.addEventListener('unhandledrejection', e => reportError(e.reason, 'promise'));
+
+/* ───────────────────────── Supabase ───────────────────────── */
+function initClient(){
+  const url = localStorage.getItem('sb_url') || SUPABASE_DEFAULTS.url;
+  const key = localStorage.getItem('sb_key') || SUPABASE_DEFAULTS.key;
+  if(!window.supabase) return false;
+  sb = window.supabase.createClient(url, key, { realtime:{ params:{ eventsPerSecond:10 } } });
+  return true;
+}
+async function currentUser(){
+  if(!sb) return null;
+  const { data } = await sb.auth.getSession();
+  return data?.session?.user || null;
+}
+
+/* ───────────────────── Mapping DB ↔ objets ───────────────────── */
+function rowToGame(row, teams){
+  if(!row) return null;
+  return {
+    code: row.code, name: row.name,
+    huntDate: row.hunt_date || null,
+    location: row.location || '',
+    logoUrl: row.logo_url || null,
+    status: row.status,
+    durationMinutes: row.duration_minutes,
+    perClueMinutes: row.per_clue_minutes,
+    clues: row.clues || [],
+    teams: (teams||[]).map(t => ({
+      id:t.id, name:t.name, joinedAt:new Date(t.joined_at).getTime(),
+      startClueId:t.start_clue_id||null, photoUrl:t.photo_url||null,
+      printSubId:t.print_submission_id||null
+    })),
+    createdAt: new Date(row.created_at).getTime(),
+    startedAt: row.started_at ? new Date(row.started_at).getTime() : null,
+    endedAt: row.ended_at ? new Date(row.ended_at).getTime() : null,
+    adminId: row.admin_id,
+    isTemplate: !!row.is_template
+  };
+}
+function rowToSub(r){
+  return { id:r.id, gameCode:r.game_code, teamId:r.team_id, clueId:r.clue_id,
+           photoUrl:r.photo_url, status:r.status, points:r.points,
+           bonusPoints:r.bonus_points, submittedAt:new Date(r.submitted_at).getTime() };
+}
+
+async function loadGame(code){
+  if(!code || !sb) return undefined;
+  const [{data:g, error:e1}, {data:teams, error:e2}] = await Promise.all([
+    sb.from('games').select('*').eq('code', code).maybeSingle(),
+    sb.from('teams').select('*').eq('game_code', code).order('joined_at')
+  ]);
+  if(e1){ toast('Lecture chasse : '+e1.message,'error',4500); return undefined; }
+  if(e2) console.warn('teams', e2.message);
+  if(!g) return null;
+  return rowToGame(g, teams||[]);
+}
+async function loadSubs(code){
+  if(!code || !sb) return [];
+  const { data, error } = await sb.from('submissions').select('*').eq('game_code', code)
+                                 .order('submitted_at', { ascending:false });
+  if(error){ toast('Lecture preuves : '+error.message,'error',4500); return []; }
+  return (data||[]).map(rowToSub);
+}
+
+// UPDATE ciblé plutôt qu'upsert : on ne réécrit jamais `is_template` ni les indices.
+// ⚠️ `.select()` obligatoire : sous RLS, un UPDATE qui ne touche AUCUNE ligne (chasse
+// appartenant à un autre compte, ou `admin_id` legacy non réattribué) ne remonte pas
+// d'erreur — il renvoie 0 ligne, silencieusement. Sans ce contrôle, l'écran afficherait
+// un changement de phase qui n'a jamais été écrit en base. C'est exactement la famille
+// de pannes muettes déjà rencontrée sur le Storage (#26, #43, #50).
+async function patchGame(fields){
+  const g = S.game; if(!g || !sb) return false;
+  const { data, error } = await sb.from('games').update(fields).eq('code', g.code).select('code');
+  if(error){ toast('Sauvegarde : '+error.message,'error',5000); return false; }
+  if(!data || !data.length){
+    toast('Refusé par le serveur : cette chasse n\'appartient pas à ce compte.','error',6000);
+    return false;
+  }
+  return true;
+}
+// L'admin authentifié possède le droit UPDATE sur `submissions` (Lot 1).
+async function patchSub(id, fields){
+  const { data, error } = await sb.from('submissions').update(fields).eq('id', id).select('id');
+  if(error){ toast('Écriture preuve : '+error.message,'error',5000); return false; }
+  if(!data || !data.length){ toast('Preuve non enregistrée (droits insuffisants)','error',5000); return false; }
+  return true;
+}
+
+/* ───────────────── Liste des chasses de l'admin ───────────────── */
+// Règle héritée de #32 : les chasses créées avant le Lot 1 portent un admin_id
+// client de 7 caractères (jamais un UUID). Filtrer strictement sur auth.uid()
+// renverrait une liste vide. On garde donc : admin_id === uid OU admin_id non-UUID.
+const isUuid = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v||''));
+
+async function loadMyGames(){
+  if(!sb || !S.user) return [];
+  const { data, error } = await sb.from('games')
+    .select('code,name,status,location,hunt_date,created_at,admin_id,is_template,clues,duration_minutes')
+    .eq('is_template', false)
+    .order('created_at', { ascending:false }).limit(80);
+  if(error){ toast('Lecture des chasses : '+error.message,'error',5000); return []; }
+  return (data||[])
+    .filter(r => r.admin_id === S.user.id || !isUuid(r.admin_id))
+    .map(r => ({ ...r, legacy: !isUuid(r.admin_id), clueCount: (r.clues||[]).length }));
+}
+
+/* ───────────────────────── Realtime ───────────────────────── */
+function startRealtime(code){
+  stopRealtime();
+  if(!code || !sb) return;
+  S.channel = sb.channel('regie:'+code)
+    .on('postgres_changes', { event:'*', schema:'public', table:'games',       filter:`code=eq.${code}` }, refresh)
+    .on('postgres_changes', { event:'*', schema:'public', table:'teams',       filter:`game_code=eq.${code}` }, refresh)
+    .on('postgres_changes', { event:'*', schema:'public', table:'submissions', filter:`game_code=eq.${code}` }, refresh)
+    .subscribe();
+  S.poll = setInterval(refresh, 15000);            // filet si le websocket lâche
+  if(!S.tick) S.tick = setInterval(tick, 1000);    // chrono
+}
+function stopRealtime(){
+  if(S.channel){ sb?.removeChannel(S.channel); S.channel = null; }
+  if(S.poll){ clearInterval(S.poll); S.poll = null; }
+}
+
+async function refresh(){
+  if(!S.game) return;
+  const g = await loadGame(S.game.code);
+  if(g === undefined) return;                       // coupure transitoire : on ignore le cycle
+  if(g === null){ toast('Cette chasse a été supprimée','error',5000); backToPicker(); return; }
+  const subs = await loadSubs(S.game.code);
+  S.game = g; S.subs = subs;
+  paintIfChanged();
+}
+
+// Signature courte : évite de repeindre l'écran (et de perdre le défilement) pour rien.
+function signature(){
+  const g = S.game; if(!g) return '';
+  return [g.status, g.startedAt, g.endedAt, g.durationMinutes,
+          g.teams.map(t => t.id+t.startClueId+t.printSubId+(t.photoUrl?'1':'0')).join(','),
+          S.subs.map(s => s.id+s.status+s.points+s.bonusPoints).join(','),
+          S.fStatus, S.fTeam, S.fClue, S.tab].join('|');
+}
+function paintIfChanged(){
+  const sig = signature();
+  if(sig === S.lastSig){ paintClock(); return; }
+  S.lastSig = sig;
+  if(S.burst){ renderBurst(); return; }             // ne pas arracher la rafale sous les doigts
+  if(S.printing) return;                            // ni l'indicateur d'une série de tirages
+  paintConsole();
+}
+
+/* ───────────────────────── Chrono ───────────────────────── */
+function timeLeft(){
+  const g = S.game;
+  if(!g || !g.startedAt || g.status !== 'active') return null;
+  return Math.max(0, g.durationMinutes*60 - (Date.now() - g.startedAt)/1000);
+}
+async function tick(){
+  const g = S.game; if(!g) return;
+  paintClock();
+  // Bascule automatique en phase validation à l'expiration du chrono. La régie est
+  // admin : elle PERSISTE la bascule (sinon les équipes restent en attente côté serveur).
+  if(g.status === 'active' && g.startedAt){
+    const left = timeLeft();
+    if(left !== null && left <= 0){
+      g.status = 'validation';
+      g.endedAt = g.startedAt + g.durationMinutes*60000;
+      await patchGame({ status:'validation', ended_at:new Date(g.endedAt).toISOString() });
+      toast('Temps écoulé — passage en validation','',4000);
+      S.lastSig = ''; paintConsole();
+    }
+  }
+}
+function paintClock(){
+  const el = $('#clock'); if(!el) return;
+  const g = S.game; if(!g) return;
+  const left = timeLeft();
+  if(left === null){
+    el.className = 'clock off';
+    el.textContent = g.status === 'setup' ? '--:--'
+                   : g.status === 'ended' ? 'Terminée' : 'Hors chrono';
+  } else {
+    const pct = left / (g.durationMinutes*60);
+    el.className = 'clock' + (pct < .08 ? ' alert' : pct < .2 ? ' warn' : '');
+    el.textContent = fmtTime(left);
+  }
+  const b = $('#chrono-bar');
+  if(b && left !== null){
+    const pct = Math.max(0, Math.min(1, left/(g.durationMinutes*60)));
+    b.style.width = (pct*100).toFixed(1)+'%';
+    b.parentElement.className = 'bar' + (pct < .08 ? ' alert' : pct < .2 ? ' warn' : '');
+  }
+}
+
+/* ───────────────── Photos : helpers de domaine ───────────────── */
+const isTeamPhotoId = id => typeof id === 'string' && id.startsWith(TEAMPHOTO_PREFIX);
+
+// La photo d'équipe (prise à l'inscription) est traitée comme une preuve virtuelle :
+// reconstruite à chaque rendu depuis teams.photo_url, jamais écrite en base (#48).
+function teamPhotoSub(t){
+  if(!t?.photoUrl) return null;
+  return { id: TEAMPHOTO_PREFIX+t.id, teamId:t.id, clueId:null, photoUrl:t.photoUrl,
+           status:'approved', points:0, bonusPoints:0, submittedAt:t.joinedAt,
+           isTeamPhoto:true };
+}
+function findAnySub(id){
+  if(isTeamPhotoId(id)){
+    const t = S.game?.teams.find(x => x.id === id.slice(TEAMPHOTO_PREFIX.length));
+    return t ? teamPhotoSub(t) : null;
+  }
+  return S.subs.find(s => s.id === id) || null;
+}
+function teamPhotos(teamId){
+  const t = S.game?.teams.find(x => x.id === teamId);
+  const tp = t ? teamPhotoSub(t) : null;
+  return [...(tp?[tp]:[]), ...S.subs.filter(s => s.teamId === teamId)];
+}
+const teamOf = id => S.game?.teams.find(t => t.id === id) || null;
+const clueOf = id => S.game?.clues.find(c => c.id === id) || null;
+
+function scoreOf(teamId){
+  return S.subs.filter(s => s.teamId === teamId)
+               .reduce((n,s) => n + (s.points||0) + (s.bonusPoints||0), 0);
+}
+
+function ava(t, size = 34, clickable = true){
+  if(!t) return `<span class="ava n" style="width:${size}px;height:${size}px">?</span>`;
+  const st = `width:${size}px;height:${size}px;font-size:${Math.round(size*.42)}px`;
+  if(t.photoUrl){
+    const on = clickable ? ` onclick="openZoom('${TEAMPHOTO_PREFIX}${t.id}')"` : '';
+    return `<img class="ava${clickable?'':' n'}" style="${st}" src="${esc(t.photoUrl)}" alt="${esc(t.name)}"${on}>`;
+  }
+  return `<span class="ava n" style="${st}">${esc((t.name||'?').trim().charAt(0).toUpperCase())}</span>`;
+}
+
+/* ───────────────────────── Rendu : routeur ───────────────────────── */
+async function render(){
+  if(!sb && !initClient()){ app().innerHTML = '<div class="center"><h1>Supabase indisponible</h1><p class="hint">Le script client n\'a pas pu être chargé. Vérifiez la connexion réseau puis rechargez.</p></div>'; return; }
+  S.user = await currentUser();
+  if(!S.user) return viewLogin();
+  if(!S.game){ S.games = await loadMyGames(); return viewPicker(); }
+  paintConsole();
+}
+
+/* ───────────────────────── Vue : connexion ───────────────────────── */
+function viewLogin(){
+  S.view = 'login';
+  const sent = !!S.otpEmail;
+  app().innerHTML = `
+    <div class="topbar"><div class="brand"><i>✦</i>Expédition · Régie</div></div>
+    <div class="center">
+      <h1 class="display" style="font-size:38px;margin-bottom:8px">Console du<br><em style="color:var(--oxblood);font-style:italic;font-weight:600">maître du jeu</em></h1>
+      <p class="hint" style="font-size:14px;margin-bottom:24px">${sent
+        ? 'Entrez le code à 6 chiffres reçu par email.'
+        : 'Connexion par code email. La même session vaut pour l\'application joueurs.'}</p>
+      ${sent ? `
+        <label class="lbl">Code reçu par email</label>
+        <input id="otp" class="input mono" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="font-size:22px;letter-spacing:.4em;text-align:center">
+        <p class="hint">Envoyé à ${esc(S.otpEmail)} · <a href="#" onclick="event.preventDefault();S.otpEmail=null;viewLogin()">changer d'email</a></p>
+        <button class="btn gold wide" style="margin-top:16px" onclick="verifyCode()">Valider →</button>
+      ` : `
+        <label class="lbl">Votre email</label>
+        <input id="email" class="input" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="vous@exemple.com">
+        <button class="btn gold wide" style="margin-top:16px" onclick="requestCode()">Recevoir le code →</button>
+      `}
+      <p class="hint" style="text-align:center;margin-top:20px"><a href="${APP_URL}">← Retour à l'application</a></p>
+    </div>`;
+  setTimeout(() => $(sent ? '#otp' : '#email')?.focus(), 60);
+  const inp = $(sent ? '#otp' : '#email');
+  if(inp) inp.onkeydown = e => { if(e.key === 'Enter') (sent ? verifyCode : requestCode)(); };
+}
+
+async function requestCode(){
+  const email = ($('#email')?.value || '').trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast('Email invalide','error'); return; }
+  const { error } = await sb.auth.signInWithOtp({ email, options:{ shouldCreateUser:true } });
+  if(error){ toast('Envoi impossible : '+error.message,'error',5000); return; }
+  S.otpEmail = email; toast('Code envoyé à '+email,'success',4000); viewLogin();
+}
+async function verifyCode(){
+  const token = ($('#otp')?.value || '').trim();
+  if(!/^\d{6}$/.test(token)){ toast('Entrez les 6 chiffres','error'); return; }
+  const { data, error } = await sb.auth.verifyOtp({ email:S.otpEmail, token, type:'email' });
+  if(error){ toast('Code invalide ou expiré : '+error.message,'error',5000); return; }
+  S.user = data.user; S.otpEmail = null; toast('Connecté','success');
+  render();
+}
+async function logout(){
+  if(!confirm('Se déconnecter de la régie ?\n\nCela déconnecte aussi l\'application sur cet appareil.')) return;
+  stopRealtime();
+  await sb.auth.signOut();
+  S.user = null; S.game = null; S.subs = []; render();
+}
+
+/* ───────────────────────── Vue : choix de la chasse ───────────────────────── */
+const STATUS_LABEL = { setup:'Préparation', active:'En cours', validation:'Validation', judging:'Jury', ended:'Terminée' };
+const STATUS_CHIP  = { setup:'', active:'live', validation:'gold', judging:'gold', ended:'forest' };
+
+function viewPicker(){
+  S.view = 'picker';
+  const list = S.games;
+  const live = list.filter(g => ['active','validation','judging'].includes(g.status));
+  const prep = list.filter(g => g.status === 'setup');
+  const done = list.filter(g => g.status === 'ended');
+  const block = (title, arr, note) => !arr.length ? '' : `
+    <h3 style="margin:22px 0 9px;font-size:16px">${title} <span class="muted mono" style="font-size:12px;font-weight:400">${arr.length}</span></h3>
+    ${note ? `<p class="hint" style="margin:0 0 9px">${note}</p>` : ''}
+    <div class="glist">${arr.map(gameRow).join('')}</div>`;
+
+  app().innerHTML = `
+    <div class="topbar">
+      <div class="brand"><i>✦</i>Expédition · Régie</div>
+      <div class="ident"><em>${esc(S.user?.email || '')}</em></div>
+      <div class="acts">
+        <a class="btn ghost sm" href="${APP_URL}">Application ↗</a>
+        <button class="btn ghost sm" onclick="reloadGames()">↻ Actualiser</button>
+        <button class="btn ghost sm" onclick="logout()">Déconnexion</button>
+      </div>
+    </div>
+    <div class="center" style="max-width:680px">
+      <h1 class="display" style="font-size:32px;margin-bottom:6px">Vos chasses</h1>
+      <p class="hint" style="margin-bottom:4px">Choisissez la chasse à piloter. La création, la modification des indices et le tiroir des chasses types restent dans <a href="${APP_URL}">l'application</a>.</p>
+      ${list.length === 0 ? '<div class="empty" style="margin-top:24px">Aucune chasse. Créez-en une depuis l\'application.</div>' : ''}
+      ${block('En jeu', live, 'Chasses actuellement en cours, en validation ou au jury.')}
+      ${block('En préparation', prep)}
+      ${block('Terminées', done)}
+    </div>`;
+}
+function gameRow(g){
+  const d = g.hunt_date ? new Date(g.hunt_date+'T12:00:00') : new Date(g.created_at);
+  return `<button class="gitem" onclick="openGame('${g.code}')">
+    <span class="chip ${STATUS_CHIP[g.status]||''}">${STATUS_LABEL[g.status]||g.status}</span>
+    <span class="bd">
+      <b>${esc(g.name)}</b>
+      <small>${d.toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})}${g.location?' · '+esc(g.location):''} · ${g.clueCount} indice${g.clueCount>1?'s':''}${g.legacy?' · ancienne':''}</small>
+    </span>
+    <span class="cd">${esc(g.code)}</span>
+  </button>`;
+}
+async function reloadGames(){ S.games = await loadMyGames(); viewPicker(); toast('Liste actualisée'); }
+
+async function openGame(code){
+  const g = await loadGame(code);
+  if(!g){ toast('Chasse introuvable','error'); return; }
+  if(g.isTemplate){ toast('C\'est une chasse type : utilisez-la depuis l\'application','error',5000); return; }
+  S.game = g;
+  S.subs = await loadSubs(code);
+  S.startDraft = {}; S.lastSig = '';
+  loadOrder();                       // panier de tirages propre à cette chasse
+  S.tab = g.status === 'setup' ? 'pilot' : 'work';
+  S.fStatus = (g.status === 'active' || g.status === 'validation') ? 'pending' : 'all';
+  startRealtime(code);
+  paintConsole();
+}
+function backToPicker(){
+  stopRealtime();
+  S.game = null; S.subs = []; S.lastSig = '';
+  render();
+}
+
+/* ───────────────────────── Vue : console ───────────────────────── */
+function paintConsole(){
+  S.view = 'console';
+  const g = S.game; if(!g) return render();
+
+  // Sauvegarde du défilement des panneaux : sans ça, chaque événement realtime
+  // ramènerait le flux de photos en haut au milieu d'une session d'arbitrage.
+  const scrolls = {};
+  $$('.body.scroll').forEach(el => { if(el.id) scrolls[el.id] = el.scrollTop; });
+
+  const pending = S.subs.filter(s => s.status === 'pending').length;
+
+  app().innerHTML = `
+    <div class="topbar">
+      <div class="brand"><i>✦</i>Régie</div>
+      <div class="ident">
+        <b>${esc(g.name)}</b>
+        <span>${esc(g.code)}</span>
+        ${g.location ? `<em>${esc(g.location)}</em>` : ''}
+        <span class="chip ${STATUS_CHIP[g.status]||''}" style="margin-left:2px">${STATUS_LABEL[g.status]||g.status}</span>
+      </div>
+      <div id="clock" class="clock off">--:--</div>
+      <div class="acts">
+        <button class="btn ghost sm" onclick="showQR('join')" title="QR code d'accès (Q)">📱 QR</button>
+        <button class="btn ghost sm" onclick="openExport()" title="Export ZIP (E)">📦 ZIP</button>
+        <button class="btn ghost sm" onclick="openOrder()" title="Tirages à la demande (T)">🛒 Tirages</button>
+        <button class="btn ghost sm" onclick="openHelp()" title="Raccourcis (?)">⌨</button>
+        <button class="btn ghost sm" onclick="backToPicker()">← Chasses</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="${S.tab==='pilot'?'on':''}" onclick="setTab('pilot')">Pilotage</button>
+      <button class="${S.tab==='work'?'on':''}" onclick="setTab('work')">Travail${pending?`<span class="b">${pending}</span>`:''}</button>
+      <button class="${S.tab==='tools'?'on':''}" onclick="setTab('tools')">Outils</button>
+    </div>
+
+    <div class="wrap"><div class="grid">
+      <div class="col c1 ${S.tab==='pilot'?'show':''}">
+        ${panePilot()}
+        ${paneTeams()}
+        ${g.status !== 'setup' ? paneBoard() : ''}
+      </div>
+      <div class="col c2 ${S.tab==='work'?'show':''}">
+        ${g.status === 'setup' ? paneReady() : paneShots()}
+        ${['judging','ended'].includes(g.status) ? paneJury() : ''}
+      </div>
+      <div class="col c3 ${S.tab==='tools'?'show':''}">
+        ${paneShare()}
+        ${g.status === 'ended' ? panePrints() : ''}
+        ${paneDanger()}
+      </div>
+    </div></div>`;
+
+  Object.entries(scrolls).forEach(([id, top]) => { const el = document.getElementById(id); if(el) el.scrollTop = top; });
+  paintClock();
+}
+function setTab(t){ S.tab = t; S.lastSig = ''; paintConsole(); }
+
+/* ── Panneau : pilotage ── */
+function panePilot(){
+  const g = S.game;
+  const subs = S.subs;
+  const pending = subs.filter(s => s.status === 'pending').length;
+  const ok = subs.filter(s => s.status === 'approved').length;
+  const ko = subs.filter(s => s.status === 'rejected').length;
+  const left = timeLeft();
+
+  let actions = '';
+  if(g.status === 'setup'){
+    actions = `
+      <button class="btn ox wide" ${g.teams.length?'':'disabled'} onclick="startHunt()">▶ Démarrer la chasse</button>
+      ${g.teams.length ? '' : '<p class="hint">Au moins une équipe doit être inscrite.</p>'}`;
+  } else if(g.status === 'active'){
+    actions = `
+      <div class="row">
+        <button class="btn ghost sm" onclick="addMinutes(5)">+5 min</button>
+        <button class="btn ghost sm" onclick="addMinutes(10)">+10 min</button>
+        <button class="btn ghost sm" onclick="addMinutes(-5)">−5 min</button>
+      </div>
+      <button class="btn ox wide" style="margin-top:8px" onclick="endHunt()">■ Terminer maintenant</button>
+      <p class="hint">Vous pouvez déjà valider les photos qui arrivent : autant de moins à traiter à la fin.</p>`;
+  } else if(g.status === 'validation'){
+    actions = `
+      <button class="btn gold wide" ${pending?'':'disabled'} onclick="openBurst()">⚡ Valider en rafale (${pending})</button>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost sm" style="flex:1" onclick="resumeHunt()">↩ Reprendre la chasse</button>
+        <button class="btn ox sm" style="flex:1" ${pending?'disabled':''} onclick="${(ok+ko)?'goJudging()':'finalize()'}">${(ok+ko)?'Vote du jury →':'Clôturer →'}</button>
+      </div>
+      ${pending ? `<p class="hint warn">${pending} photo${pending>1?'s':''} encore à trancher.</p>` : ''}`;
+  } else if(g.status === 'judging'){
+    actions = `
+      <button class="btn ox wide" onclick="finalize()">Clôturer la chasse →</button>
+      <button class="btn ghost wide" style="margin-top:8px" onclick="backToValidation()">← Revenir à la validation</button>`;
+  } else {
+    actions = `
+      <a class="btn gold wide" href="${APP_URL}?diapo=${esc(g.code)}" target="_blank" rel="noopener">▶ Lancer le diaporama</a>
+      <button class="btn ghost wide" style="margin-top:8px" onclick="reopenJudging()">← Rouvrir le vote du jury</button>`;
+  }
+
+  return `<section class="pane">
+    <header><h3>Pilotage</h3><span class="chip">${STATUS_LABEL[g.status]}</span></header>
+    <div class="body">
+      ${left !== null ? `
+        <div class="display" style="font-size:40px;text-align:center">${fmtTime(left)}</div>
+        <div class="bar"><i id="chrono-bar" style="width:0"></i></div>
+        <p class="hint" style="text-align:center;margin-top:2px">sur ${g.durationMinutes} min · ${g.perClueMinutes} min/indice</p>
+      ` : ''}
+      <div class="stats" style="margin:${left!==null?'12px':'0'} 0 12px">
+        <div class="stat"><div class="n">${g.teams.length}</div><div class="l">Équipes</div></div>
+        <div class="stat"><div class="n">${subs.length}</div><div class="l">Preuves</div></div>
+        <div class="stat wait"><div class="n">${pending}</div><div class="l">À traiter</div></div>
+        <div class="stat ok"><div class="n">${ok}</div><div class="l">Conformes</div></div>
+        <div class="stat ko"><div class="n">${ko}</div><div class="l">Refusées</div></div>
+        <div class="stat"><div class="n">${g.clues.length}</div><div class="l">Indices</div></div>
+      </div>
+      ${actions}
+    </div>
+  </section>`;
+}
+
+/* ── Panneau : équipes ── */
+function paneTeams(){
+  const g = S.game;
+  const setup = g.status === 'setup';
+  const draft = S.startDraft;
+  const effStart = t => (t.id in draft) ? (draft[t.id] || null) : (t.startClueId || null);
+
+  // Doublons de noms : source connue de fragmentation des preuves.
+  const seen = {}, dups = new Set();
+  g.teams.forEach(t => { const n = (t.name||'').trim().toLowerCase().replace(/\s+/g,' '); if(seen[n]) dups.add(t.name); seen[n] = true; });
+  const usage = {}; g.teams.forEach(t => { const v = effStart(t); if(v) usage[v] = (usage[v]||0)+1; });
+  const hasDup = Object.values(usage).some(n => n > 1);
+
+  const rows = g.teams.map(t => {
+    const ts = S.subs.filter(s => s.teamId === t.id);
+    const done = ts.filter(s => s.status === 'approved').length;
+    const last = ts.length ? Math.max(...ts.map(s => s.submittedAt)) : null;
+    const dots = g.clues.map(c => {
+      const s = ts.find(x => x.clueId === c.id);
+      const cls = !s ? '' : s.status === 'approved' ? 'ok' : s.status === 'rejected' ? 'ko' : 'pd';
+      const st = effStart(t) === c.id ? ' st' : '';
+      return `<i class="${cls}${st}" title="${esc(c.title)}"></i>`;
+    }).join('');
+    return `<div class="tcard">
+      ${ava(t, 36)}
+      <span class="nm">
+        <b>${esc(t.name)}</b>
+        <small>${done}/${g.clues.length} validé${done>1?'s':''}${last?` · dernière ${hhmm(last)}`:' · rien envoyé'}</small>
+        <span class="dots">${dots}</span>
+      </span>
+      ${g.status === 'setup' ? '' : `<span class="sc">${scoreOf(t.id)}</span>`}
+      ${setup ? `<button class="btn ghost xs ox" title="Retirer l'équipe" onclick="removeTeam('${t.id}','${jsq(t.name)}')">🗑</button>` : ''}
+    </div>
+    ${setup ? `<div class="row tight" style="margin:-3px 0 4px;padding-left:46px">
+      <select class="input" style="font-size:12.5px;padding:6px 8px" onchange="setStart('${t.id}', this.value)">
+        <option value="">Départ : — aucun —</option>
+        ${g.clues.map(c => `<option value="${c.id}"${effStart(t)===c.id?' selected':''}>Départ : ${esc(c.title)}</option>`).join('')}
+      </select>
+    </div>` : ''}`;
+  }).join('');
+
+  return `<section class="pane">
+    <header>
+      <h3>Équipes</h3>
+      <span class="chip">${g.teams.length}</span>
+      ${setup && g.teams.length ? `<button class="btn ghost xs" onclick="autoAssign()">Répartir auto</button>` : ''}
+    </header>
+    <div class="body scroll" id="sc-teams">
+      ${g.teams.length ? `<div class="tlist">${rows}</div>` : '<div class="empty">Aucune équipe inscrite.<br>Affichez le QR code d\'accès aux capitaines.</div>'}
+      ${dups.size ? `<p class="hint warn">⚠ Noms en double (${[...dups].map(esc).join(', ')}) — risque de fusion des preuves.</p>` : ''}
+      ${setup && hasDup ? '<p class="hint warn">⚠ Deux équipes ou plus partent du même indice.</p>' : ''}
+      ${setup && g.clues.length < g.teams.length ? `<p class="hint warn">⚠ Moins d'indices (${g.clues.length}) que d'équipes (${g.teams.length}) : départ distinct impossible pour toutes.</p>` : ''}
+    </div>
+  </section>`;
+}
+
+/* ── Panneau : classement ── */
+function paneBoard(){
+  const g = S.game;
+  const board = g.teams.map(t => {
+    const ts = S.subs.filter(s => s.teamId === t.id);
+    return { t, pts: scoreOf(t.id), ok: ts.filter(s => s.status === 'approved').length, n: ts.length };
+  }).sort((a,b) => b.pts - a.pts);
+  return `<section class="pane">
+    <header><h3>Classement</h3><span class="chip">temps réel</span></header>
+    <div class="body">
+      ${board.length ? `<div class="board">${board.map((r,i) => `
+        <div class="r ${i===0&&r.pts>0?'first':''}">
+          <span class="k">${i===0&&r.pts>0?'★':i+1}</span>
+          ${ava(r.t, 30)}
+          <span class="n">${esc(r.t.name)}<br><small class="mono muted" style="font-size:10.5px;font-weight:400">${r.ok}/${g.clues.length} indices · ${r.n-r.ok} refus/attente</small></span>
+          <span class="p">${r.pts}</span>
+        </div>`).join('')}</div>` : '<div class="empty">Aucune équipe</div>'}
+      <p class="hint">Score = points d'indice (photos conformes) + points de vote (toutes photos, refusées comprises).</p>
+    </div>
+  </section>`;
+}
+
+/* ── Panneau : préparation (statut setup) ── */
+function paneReady(){
+  const g = S.game;
+  return `<section class="pane">
+    <header><h3>Préparation</h3><span class="chip">${g.clues.length} indice${g.clues.length>1?'s':''}</span></header>
+    <div class="body">
+      <div class="row" style="justify-content:center;gap:18px;align-items:center;margin-bottom:14px">
+        <div style="text-align:center">
+          <div class="mono muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.12em">Code de chasse</div>
+          <div class="display" style="font-size:44px;letter-spacing:.14em;color:var(--gold-dark)">${esc(g.code)}</div>
+        </div>
+        <button class="btn gold" onclick="showQR('join')">📱 QR d'accès</button>
+      </div>
+      <p class="hint">Présentez le QR code aux <strong>capitaines</strong> : chacun inscrit son équipe, un téléphone par équipe. C'est ce qui rend la mise en route rapide.</p>
+      <div class="sep"></div>
+      <h3 style="font-size:14px;margin-bottom:8px">Parcours</h3>
+      <div class="tlist">
+        ${g.clues.length ? g.clues.map((c,i) => `<div class="tcard">
+          <span class="ava n" style="width:30px;height:30px;font-size:13px;background:var(--ink);color:var(--gold);border-color:var(--ink)">${i+1}</span>
+          <span class="nm"><b>${esc(c.title)}</b><small>${c.points} pts${(c.lat&&c.lng)?' · géolocalisé 📍':''}</small></span>
+        </div>`).join('') : '<div class="empty">Aucun indice — à ajouter depuis l\'application.</div>'}
+      </div>
+      <p class="hint">Modifier les indices, les durées ou le logo du lieu se fait dans <a href="${APP_URL}">l'application</a> (écran « Modifier »).</p>
+    </div>
+  </section>`;
+}
+
+/* ── Panneau : flux de photos / validation ── */
+function paneShots(){
+  const g = S.game;
+  const counts = {
+    all: S.subs.length,
+    pending: S.subs.filter(s => s.status === 'pending').length,
+    approved: S.subs.filter(s => s.status === 'approved').length,
+    rejected: S.subs.filter(s => s.status === 'rejected').length
+  };
+  let list = S.subs.slice();
+  if(S.fStatus !== 'all') list = list.filter(s => s.status === S.fStatus);
+  if(S.fTeam) list = list.filter(s => s.teamId === S.fTeam);
+  if(S.fClue) list = list.filter(s => s.clueId === S.fClue);
+
+  const seg = (v, l, n) => `<button class="${S.fStatus===v?'on':''}" onclick="setFilter('fStatus','${v}')">${l}${n!==undefined?` ${n}`:''}</button>`;
+
+  return `<section class="pane">
+    <header>
+      <h3>${g.status === 'active' ? 'Flux des preuves' : 'Validation'}</h3>
+      <span class="chip">${list.length} affichée${list.length>1?'s':''}</span>
+      <button class="btn gold sm" ${counts.pending?'':'disabled'} onclick="openBurst()">⚡ Rafale <kbd style="background:rgba(255,255,255,.2);border-color:transparent;color:inherit">V</kbd></button>
+    </header>
+    <div class="body">
+      <div class="filters" style="margin-bottom:10px">
+        <div class="seg">
+          ${seg('all','Toutes',counts.all)}
+          ${seg('pending','À traiter',counts.pending)}
+          ${seg('approved','Conformes',counts.approved)}
+          ${seg('rejected','Refusées',counts.rejected)}
+        </div>
+        <select class="input" style="width:auto;font-size:12.5px;padding:6px 9px" onchange="setFilter('fTeam',this.value)">
+          <option value="">Toutes les équipes</option>
+          ${g.teams.map(t => `<option value="${t.id}"${S.fTeam===t.id?' selected':''}>${esc(t.name)}</option>`).join('')}
+        </select>
+        <select class="input" style="width:auto;font-size:12.5px;padding:6px 9px" onchange="setFilter('fClue',this.value)">
+          <option value="">Tous les indices</option>
+          ${g.clues.map(c => `<option value="${c.id}"${S.fClue===c.id?' selected':''}>${esc(c.title)}</option>`).join('')}
+        </select>
+        ${(S.fTeam||S.fClue||S.fStatus!=='all') ? `<button class="btn ghost xs" onclick="clearFilters()">✕ Filtres</button>` : ''}
+      </div>
+    </div>
+    <div class="body scroll" id="sc-shots" style="padding-top:0">
+      ${list.length ? `<div class="shots">${list.map(shotCard).join('')}</div>`
+        : `<div class="empty">${counts.all ? 'Aucune photo pour ces filtres.' : 'Aucune preuve reçue pour l\'instant.'}</div>`}
+      ${counts.pending > 1 && S.fStatus === 'pending' ? `
+        <div class="sep"></div>
+        <button class="btn ghost wide sm" onclick="bulkApprove()">✓ Tout marquer conforme (${list.length} affichée${list.length>1?'s':''})</button>
+        <p class="hint">Raccourci pour un parcours où la conformité ne fait pas débat. Le vote du jury départage ensuite sur la qualité.</p>` : ''}
+    </div>
+  </section>`;
+}
+
+function shotCard(s){
+  const t = teamOf(s.teamId), c = clueOf(s.clueId);
+  const cls = s.status === 'approved' ? 'ok' : s.status === 'rejected' ? 'ko' : '';
+  const tag = s.status === 'approved' ? '<span class="tag ok">Conforme</span>'
+            : s.status === 'rejected' ? '<span class="tag ko">Refusée</span>'
+            : '<span class="tag pd">À traiter</span>';
+  const ac = s.status === 'pending'
+    ? `<div class="ac">
+         <button class="btn forest sm" onclick="decide('${s.id}',true)">✓ Conforme</button>
+         <button class="btn ghost sm ox" onclick="decide('${s.id}',false)">✗ Refuser</button>
+       </div>`
+    : `<div class="ac"><button class="btn ghost sm" style="flex:1" onclick="resetDecision('${s.id}')">↩ Annuler la décision</button></div>`;
+  return `<article class="shot ${cls}">
+    <div class="im" onclick="openZoom('${s.id}')">
+      <img src="${esc(s.photoUrl)}" alt="" loading="lazy">
+      ${tag}${(s.bonusPoints||0)>0?`<span class="vt">+${s.bonusPoints}</span>`:''}
+    </div>
+    <div class="mt"><b>${esc(t?.name||'?')}</b><small>${esc(c?.title||'—')} · ${hhmm(s.submittedAt)}</small></div>
+    ${ac}
+  </article>`;
+}
+
+/* ── Panneau : vote du jury ── */
+function paneJury(){
+  const g = S.game;
+  const judged = S.subs.filter(s => s.status !== 'pending');
+  const groups = g.clues.map(c => ({ c, list: judged.filter(s => s.clueId === c.id) })).filter(x => x.list.length);
+  const total = judged.reduce((n,s) => n + (s.bonusPoints||0), 0);
+
+  return `<section class="pane">
+    <header>
+      <h3>Vote du jury</h3>
+      <span class="chip gold">${total} pts distribués</span>
+    </header>
+    <div class="body scroll" id="sc-jury">
+      <p class="hint" style="margin-top:0">Pour chaque indice : 🥇 50 / 🥈 30 / 🥉 10 aux trois meilleures photos. Une photo refusée peut gagner des points de vote, jamais les points de l'indice.</p>
+      ${groups.length ? groups.map(grp => {
+        const given = [50,30,10].filter(v => grp.list.some(s => (s.bonusPoints||0) === v)).length;
+        return `<div class="clueblock">
+          <div class="cluehead">
+            <h4>${esc(grp.c.title)}</h4>
+            <span class="chip ${given===3?'forest':''}">${given}/3 attribués</span>
+          </div>
+          <div class="shots">${grp.list.map(juryCard).join('')}</div>
+        </div>`;
+      }).join('') : '<div class="empty">Aucune photo jugée à noter.</div>'}
+    </div>
+  </section>`;
+}
+function juryCard(s){
+  const t = teamOf(s.teamId);
+  const v = s.bonusPoints || 0;
+  const b = (val,l) => `<button class="${v===val?'on':''}" onclick="setVote('${s.id}',${val})">${l}</button>`;
+  return `<article class="shot ${s.status==='rejected'?'ko':''}">
+    <div class="im" onclick="openZoom('${s.id}')">
+      <img src="${esc(s.photoUrl)}" alt="" loading="lazy">
+      ${s.status==='rejected'?'<span class="tag ko">Refusée</span>':''}
+      ${v?`<span class="vt">+${v}</span>`:''}
+    </div>
+    <div class="mt"><b>${esc(t?.name||'?')}</b><small>${s.status==='approved'?`base ${s.points||0} pts`:'0 pt d\'indice'} · ${hhmm(s.submittedAt)}</small></div>
+    <div class="vote">${b(50,'🥇')}${b(30,'🥈')}${b(10,'🥉')}${b(0,'—')}</div>
+  </article>`;
+}
+
+/* ── Panneau : diffusion ── */
+function paneShare(){
+  const g = S.game;
+  const ended = g.status === 'ended';
+  return `<section class="pane">
+    <header><h3>Diffusion</h3></header>
+    <div class="body">
+      <div class="row">
+        <button class="btn ghost sm" style="flex:1" onclick="showQR('join')">📱 QR d'accès joueurs</button>
+        <button class="btn ghost sm" style="flex:1" ${ended?'':'disabled'} onclick="showQR('diapo')">📱 QR du diaporama</button>
+      </div>
+      ${ended ? '' : '<p class="hint">Le QR du diaporama n\'a de sens qu\'une fois la chasse clôturée : le diaporama public ne montre que les photos validées.</p>'}
+      <div class="sep"></div>
+      <label class="lbl">Lien du diaporama</label>
+      <div class="row tight">
+        <input id="share-url" class="input mono" style="flex:1;font-size:11px" readonly value="${esc(diapoUrl(g.code))}">
+        <button class="btn sm" onclick="copyShare()">Copier</button>
+      </div>
+      <div class="sep"></div>
+      <button class="btn ghost wide sm" onclick="openExport()">📦 Exporter toutes les photos (ZIP)</button>
+      ${ended ? `<a class="btn gold wide sm" style="margin-top:8px" href="${APP_URL}?diapo=${esc(g.code)}" target="_blank" rel="noopener">▶ Ouvrir le diaporama</a>` : ''}
+    </div>
+  </section>`;
+}
+
+/* ── Panneau : tirages souvenir ── */
+// Le cadre est composé par `print-frame.js`, le MÊME module que celui de l'application :
+// la régie ne réimplémente rien, elle appelle. C'est ce qui rend l'ajout sans danger de
+// divergence (le cadre a été remanié en #41, #42, #44, #55, #58 — un copier-coller aurait
+// figé ici une version dépassée dès le correctif suivant).
+function panePrints(){
+  const g = S.game;
+  const withChoice = g.teams.filter(t => t.printSubId);
+  const chosen = withChoice.length;
+  const missing = g.teams.length - chosen;
+  return `<section class="pane">
+    <header>
+      <h3>Tirages souvenir</h3>
+      <span class="chip ${chosen===g.teams.length&&chosen?'forest':'gold'}">${chosen}/${g.teams.length}</span>
+    </header>
+    <div class="body scroll" id="sc-prints">
+      ${g.teams.length ? `<div class="tlist">${g.teams.map(t => {
+        const s = t.printSubId ? findAnySub(t.printSubId) : null;
+        return `<div class="tcard">
+          ${s ? `<img class="ava" style="width:46px;height:46px;border-radius:8px" src="${esc(s.photoUrl)}" alt="" onclick="previewPrint('${t.id}')" title="Voir le tirage encadré">`
+              : '<span class="ava n" style="width:46px;height:46px;border-radius:8px">—</span>'}
+          <span class="nm"><b>${esc(t.name)}</b><small>${s ? (s.isTeamPhoto ? 'photo d\'équipe' : esc(clueOf(s.clueId)?.title || 'photo')) : 'aucun choix'}</small></span>
+          ${s ? `<button class="btn ghost xs" onclick="downloadPrint('${t.id}')" title="Télécharger le tirage">⬇</button>` : ''}
+          <button class="btn ghost xs" onclick="openPick('${t.id}')">${s?'Changer':'Choisir'}</button>
+        </div>`;
+      }).join('')}</div>` : '<div class="empty">Aucune équipe</div>'}
+
+      ${g.teams.length ? `
+        <div class="sep"></div>
+        <button id="print-all" class="btn gold wide sm" ${chosen?'':'disabled'} onclick="downloadAllPrints()">
+          🖨 Télécharger ${chosen>1?`les ${chosen} tirages`:'le tirage'} (ZIP)
+        </button>
+        <div id="print-status"></div>
+        ${missing ? `<button class="btn ghost wide sm" style="margin-top:6px" onclick="fillMissingPrints()">✦ Compléter ${missing>1?`les ${missing} choix manquants`:'le choix manquant'}</button>
+        <p class="hint">Pour les équipes parties sans choisir : retient leur photo la mieux notée (points de vote, puis points d'indice, puis la plus récente). Réversible, chaque choix reste modifiable ligne par ligne.</p>` : ''}
+        <div class="sep"></div>
+        <button class="btn ghost wide sm" onclick="openOrder()">🛒 Tirages à la demande…</button>
+        <p class="hint">Pour vendre des exemplaires <strong>supplémentaires</strong> : n'importe quelle photo de la chasse, en autant d'exemplaires que voulu, avec un bon de commande joint au ZIP. Le tirage offert ci-dessus n'est pas affecté.</p>
+        <p class="hint">Format 10×15 cm à ~300 dpi, portrait ou paysage selon la photo — le labo imprime plein format, sans recadrer. Le cadre est composé ici même, par le module partagé avec l'application.</p>
+      ` : ''}
+    </div>
+  </section>`;
+}
+
+/* ───────────────────────── Tirages : composition et sortie ───────────────────────── */
+function printSubOf(t){ return t?.printSubId ? findAnySub(t.printSubId) : null; }
+
+// ⚠️ La composition d'un tirage prend ~1 s (fetch de la photo + canvas 1200×1800). Pendant
+// une série, un événement realtime repeindrait les panneaux et effacerait l'indicateur de
+// progression : `S.printing` gèle le rendu, exactement comme le fait le mode rafale.
+async function previewPrint(teamId){
+  const t = teamOf(teamId), sub = printSubOf(t);
+  if(!sub){ toast('Aucune photo choisie','error'); return; }
+  $('#print-title').textContent = `Tirage — ${t.name}`;
+  $('#print-stage').innerHTML = '<div class="wait">Composition du tirage…</div>';
+  $('#print-ctl').innerHTML = '';
+  $('#print-ov').classList.add('open');
+  try{
+    const cv = await PrintFrame.build(sub, t, S.game);
+    $('#print-stage').innerHTML = `<img src="${cv.toDataURL('image/jpeg', PrintFrame.Q)}" alt="Tirage ${esc(t.name)}">`;
+    $('#print-ctl').innerHTML = `
+      <button class="btn gold" onclick="downloadPrint('${teamId}')">⬇ Télécharger ce tirage</button>
+      <button class="btn ghost" onclick="closePrint();openPick('${teamId}')">Changer la photo</button>`;
+  }catch(e){
+    $('#print-stage').innerHTML = `<div class="wait">Tirage impossible : ${esc(e.message)}</div>`;
+    reportError(e, 'tirage');
+  }
+}
+function closePrint(){ $('#print-ov').classList.remove('open'); $('#print-stage').innerHTML = ''; }
+
+async function downloadPrint(teamId){
+  const t = teamOf(teamId), sub = printSubOf(t);
+  if(!sub){ toast('Aucune photo choisie','error'); return; }
+  toast('Composition du tirage…','',1600);
+  try{
+    const cv = await PrintFrame.build(sub, t, S.game);
+    PrintFrame.save(await PrintFrame.toBlob(cv), PrintFrame.fileName(S.game, t));
+    toast('Tirage téléchargé','success');
+  }catch(e){ toast('Tirage impossible : '+e.message,'error',5000); reportError(e,'tirage'); }
+}
+
+async function downloadAllPrints(){
+  if(typeof JSZip === 'undefined'){ toast('JSZip non chargé (réseau ?)','error',4500); return; }
+  const g = S.game;
+  const rows = g.teams.map(t => ({ t, sub: printSubOf(t) })).filter(r => r.sub);
+  if(!rows.length){ toast('Aucun tirage choisi','error'); return; }
+
+  S.printing = true;
+  const btn = $('#print-all'), st = $('#print-status');
+  if(btn){ btn.disabled = true; }
+  const say = m => { if(st) st.textContent = m; };
+
+  const zip = new JSZip();
+  let ok = 0; const failed = [];
+  for(let i = 0; i < rows.length; i++){
+    const r = rows[i];
+    say(`Composition ${i+1}/${rows.length} — ${r.t.name}…`);
+    try{
+      const cv = await PrintFrame.build(r.sub, r.t, g);
+      // STORE : le contenu est déjà du JPEG, deflate ne ferait que brûler du temps.
+      zip.file(`${String(i+1).padStart(2,'0')}_${PrintFrame.safeFile(r.t.name)}.jpg`, await PrintFrame.toBlob(cv));
+      ok++;
+    }catch(e){ failed.push(r.t.name); console.warn('Tirage', r.t.name, e); }
+  }
+
+  if(!ok){
+    say('Aucun tirage n\'a pu être composé.');
+    if(btn) btn.disabled = false;
+    S.printing = false;
+    toast('Aucun tirage produit','error',5000);
+    return;
+  }
+  say('Compression…');
+  const blob = await zip.generateAsync({ type:'blob', compression:'STORE' });
+  PrintFrame.save(blob, `${g.code}_tirages.zip`);
+  say(`✓ ${ok} tirage(s), ${(blob.size/1048576).toFixed(1)} Mo${failed.length?` · échecs : ${failed.join(', ')}`:''}`);
+  if(btn) btn.disabled = false;
+  S.printing = false;
+  toast(failed.length ? `${ok} tirage(s) — ${failed.length} échec(s)` : `${ok} tirage(s) téléchargés`,
+        failed.length ? 'error' : 'success', failed.length ? 6000 : 3000);
+}
+
+// Choix de secours en série : pour chaque équipe sans choix, sa photo la mieux notée.
+// Le tri privilégie les points de vote (le jury a désigné la plus belle), puis les points
+// d'indice, puis la plus récente. La photo d'équipe ne sert que de dernier recours — c'est
+// un souvenir, mais rarement la plus belle image de la chasse.
+async function fillMissingPrints(){
+  const g = S.game;
+  const todo = g.teams.filter(t => !t.printSubId);
+  if(!todo.length) return;
+  if(!confirm(`Compléter ${todo.length} choix manquant(s) ?\n\nPour chaque équipe sans choix, sa photo la mieux notée est retenue. Vous pourrez la changer ligne par ligne.`)) return;
+  let n = 0;
+  for(const t of todo){
+    const list = teamPhotos(t.id);
+    const real = list.filter(s => !s.isTeamPhoto);
+    const pool = real.length ? real : list;
+    if(!pool.length) continue;
+    const best = pool.slice().sort((a,b) =>
+      (b.bonusPoints||0) - (a.bonusPoints||0) ||
+      (b.points||0) - (a.points||0) ||
+      b.submittedAt - a.submittedAt)[0];
+    const { error } = await sb.from('teams').update({ print_submission_id: best.id }).eq('id', t.id);
+    if(error){ toast('Choix du tirage : '+error.message,'error',4500); break; }
+    t.printSubId = best.id; n++;
+  }
+  S.lastSig = ''; paintConsole();
+  toast(`${n} choix complété(s)`,'success');
+}
+
+/* ── Panneau : zone sensible ── */
+function paneDanger(){
+  return `<section class="pane danger">
+    <header><h3>Effacement (RGPD)</h3></header>
+    <div class="body">
+      <p class="hint" style="margin-top:0">Supprime définitivement cette chasse : équipes, preuves et <strong>toutes les photos</strong>. Irréversible. Sinon, tout est purgé automatiquement 90 jours après la création — mais <strong>les fichiers, eux, ne le sont plus</strong> (limite connue) : purger ici est le seul moyen fiable de vider le bucket.</p>
+      <button class="btn ghost wide sm ox" onclick="purgeGame()">🗑 Supprimer la chasse et ses photos</button>
+    </div>
+  </section>`;
+}
+
+/* ───────────────────────── Actions : cycle de vie ───────────────────────── */
+async function startHunt(){
+  const g = S.game;
+  if(!confirm(`Démarrer « ${g.name} » ?\n\n${g.teams.length} équipe(s) · ${g.durationMinutes} minutes.`)) return;
+  const now = Date.now();
+  if(!await patchGame({ status:'active', started_at:new Date(now).toISOString() })) return;
+  g.status = 'active'; g.startedAt = now;
+  S.tab = 'work'; S.fStatus = 'pending'; S.lastSig = '';
+  paintConsole(); toast('Chasse démarrée','success');
+}
+async function addMinutes(n){
+  const g = S.game;
+  const d = Math.max(1, (g.durationMinutes||0) + n);
+  if(!await patchGame({ duration_minutes:d })) return;
+  g.durationMinutes = d;
+  toast(`${n>0?'+':''}${n} min — durée : ${d} min`, 'success');
+  S.lastSig = ''; paintConsole();
+}
+async function endHunt(){
+  const g = S.game;
+  if(!confirm('Terminer la chasse maintenant ?\n\nLes équipes basculent en attente et vous passez à la validation.')) return;
+  const now = Date.now();
+  if(!await patchGame({ status:'validation', ended_at:new Date(now).toISOString() })) return;
+  g.status = 'validation'; g.endedAt = now;
+  S.fStatus = 'pending'; S.lastSig = ''; paintConsole();
+}
+// Reprise depuis la validation. On DÉCALE startedAt pour que le temps restant vaille
+// exactement `remain` : sans ce décalage, le contrôle de chrono rebasculerait aussitôt
+// en validation et la reprise serait invisible (#51).
+async function resumeHunt(){
+  const g = S.game;
+  const total = (g.durationMinutes||0)*60000;
+  const ref = g.endedAt || Date.now();
+  let remain = g.startedAt ? Math.max(0, g.startedAt + total - ref) : total;
+  if(remain < 60000){
+    const ans = prompt('Le temps de jeu est écoulé.\n\nCombien de minutes ajouter pour reprendre ?','15');
+    if(ans === null) return;
+    const m = Math.floor(Number(String(ans).replace(',','.')));
+    if(!Number.isFinite(m) || m <= 0){ toast('Durée invalide','error'); return; }
+    remain = m*60000;
+  } else if(!confirm(`Reprendre la chasse ?\n\nLes équipes retrouvent leurs indices, avec ${Math.ceil(remain/60000)} minute(s) restantes.`)) return;
+
+  const dur = Math.max(g.durationMinutes||0, Math.ceil(remain/60000));
+  const started = Date.now() - Math.max(0, dur*60000 - remain);
+  if(!await patchGame({ status:'active', started_at:new Date(started).toISOString(), ended_at:null, duration_minutes:dur })) return;
+  g.status = 'active'; g.startedAt = started; g.endedAt = null; g.durationMinutes = dur;
+  S.lastSig = ''; paintConsole(); toast('Chasse reprise','success');
+}
+async function goJudging(){
+  if(S.subs.some(s => s.status === 'pending')){ toast('Des photos restent à trancher','error'); return; }
+  if(!confirm('Passer au vote du jury ?')) return;
+  if(!await patchGame({ status:'judging' })) return;
+  S.game.status = 'judging'; S.fStatus = 'all'; S.lastSig = ''; paintConsole();
+}
+async function backToValidation(){
+  if(!confirm('Revenir à la phase de validation ?')) return;
+  if(!await patchGame({ status:'validation' })) return;
+  S.game.status = 'validation'; S.lastSig = ''; paintConsole();
+}
+async function finalize(){
+  if(!confirm('Clôturer la chasse ?\n\nLes scores sont figés et le diaporama souvenir devient disponible.')) return;
+  if(!await patchGame({ status:'ended' })) return;
+  S.game.status = 'ended'; S.tab = 'pilot'; S.lastSig = ''; paintConsole();
+  toast('Chasse clôturée','success');
+}
+async function reopenJudging(){
+  if(!confirm('Rouvrir le vote du jury ?\n\nLes équipes repassent en écran d\'attente.')) return;
+  if(!await patchGame({ status:'judging' })) return;
+  S.game.status = 'judging'; S.lastSig = ''; paintConsole();
+}
+
+/* ───────────────────────── Actions : équipes ───────────────────────── */
+async function setStart(teamId, clueId){
+  S.startDraft[teamId] = clueId || null;
+  const { error } = await sb.from('teams').update({ start_clue_id: clueId || null }).eq('id', teamId);
+  if(error){ toast('Indice de départ : '+error.message,'error',4500); return; }
+  const t = teamOf(teamId); if(t) t.startClueId = clueId || null;
+  S.lastSig = ''; paintConsole();
+}
+async function autoAssign(){
+  const g = S.game;
+  if(!g.clues.length){ toast('Aucun indice','error'); return; }
+  const pool = g.clues.map(c => c.id);
+  for(let i = pool.length-1; i > 0; i--){ const j = Math.floor(Math.random()*(i+1)); [pool[i],pool[j]] = [pool[j],pool[i]]; }
+  for(let i = 0; i < g.teams.length; i++){
+    const cid = pool[i % pool.length];
+    S.startDraft[g.teams[i].id] = cid;
+    await sb.from('teams').update({ start_clue_id: cid }).eq('id', g.teams[i].id);
+    g.teams[i].startClueId = cid;
+  }
+  S.lastSig = ''; paintConsole();
+  toast('Indices de départ répartis','success');
+}
+async function removeTeam(teamId, name){
+  if(!confirm(`Retirer l'équipe « ${name} » ?\n\nSes preuves seront supprimées (cascade).`)) return;
+  const { error } = await sb.from('teams').delete().eq('id', teamId);
+  if(error){ toast('Suppression : '+error.message,'error',4500); return; }
+  await refresh(); toast('Équipe retirée');
+}
+
+/* ───────────────────────── Actions : arbitrage ───────────────────────── */
+async function decide(subId, conforme){
+  const s = S.subs.find(x => x.id === subId); if(!s) return;
+  const c = clueOf(s.clueId);
+  const fields = {
+    status: conforme ? 'approved' : 'rejected',
+    points: conforme ? (c?.points || 0) : 0,
+    bonus_points: s.bonusPoints || 0,
+    judged_at: new Date().toISOString()
+  };
+  // Optimiste : l'écran répond au clic, le realtime confirmera.
+  s.status = fields.status; s.points = fields.points;
+  S.lastSig = ''; if(!S.burst) paintConsole();
+  if(!await patchSub(subId, fields)) refresh();
+}
+async function resetDecision(subId){
+  const s = S.subs.find(x => x.id === subId); if(!s) return;
+  s.status = 'pending'; s.points = 0; s.bonusPoints = 0;
+  S.lastSig = ''; paintConsole();
+  if(!await patchSub(subId, { status:'pending', points:0, bonus_points:0 })) refresh();
+}
+async function bulkApprove(){
+  let list = S.subs.filter(s => s.status === 'pending');
+  if(S.fTeam) list = list.filter(s => s.teamId === S.fTeam);
+  if(S.fClue) list = list.filter(s => s.clueId === S.fClue);
+  if(!list.length) return;
+  if(!confirm(`Marquer ${list.length} photo(s) comme conformes ?\n\nVous pourrez revenir sur chaque décision individuellement.`)) return;
+  for(const s of list){
+    const c = clueOf(s.clueId);
+    s.status = 'approved'; s.points = c?.points || 0;
+    await patchSub(s.id, { status:'approved', points:s.points, bonus_points:s.bonusPoints||0, judged_at:new Date().toISOString() });
+  }
+  S.lastSig = ''; paintConsole();
+  toast(`${list.length} photo(s) validée(s)`,'success');
+}
+// Unicité par indice : un seul 🥇, un seul 🥈, un seul 🥉.
+async function setVote(subId, value){
+  const s = S.subs.find(x => x.id === subId); if(!s) return;
+  const changed = [];
+  if(value > 0){
+    S.subs.forEach(x => { if(x.id !== subId && x.clueId === s.clueId && (x.bonusPoints||0) === value){ x.bonusPoints = 0; changed.push(x); } });
+  }
+  s.bonusPoints = value; changed.push(s);
+  S.lastSig = ''; paintConsole();
+  for(const x of changed) await patchSub(x.id, { bonus_points: x.bonusPoints });
+}
+
+function setFilter(key, val){ S[key] = val; S.lastSig = ''; paintConsole(); }
+function clearFilters(){ S.fStatus = 'all'; S.fTeam = ''; S.fClue = ''; S.lastSig = ''; paintConsole(); }
+
+/* ───────────────────────── Mode rafale ───────────────────────── */
+function pendingForBurst(){
+  let l = S.subs.filter(s => s.status === 'pending');
+  if(S.fTeam) l = l.filter(s => s.teamId === S.fTeam);
+  if(S.fClue) l = l.filter(s => s.clueId === S.fClue);
+  return l.sort((a,b) => a.submittedAt - b.submittedAt);
+}
+function openBurst(){
+  const list = pendingForBurst();
+  if(!list.length){ toast('Aucune photo à trancher'); return; }
+  S.burst = { ids: list.map(s => s.id), i: 0 };
+  $('#burst-ov').classList.add('open');
+  renderBurst();
+}
+function closeBurst(){
+  S.burst = null;
+  $('#burst-ov').classList.remove('open');
+  S.lastSig = ''; paintConsole();
+}
+function renderBurst(){
+  const b = S.burst; if(!b) return;
+  if(b.i >= b.ids.length){
+    const left = pendingForBurst().length;
+    $('#burst-stage').innerHTML = `<div style="color:var(--parchment);text-align:center">
+      <div class="display" style="font-size:44px">✓</div>
+      <p style="opacity:.75">${left ? `${left} photo(s) encore en attente (passées ou arrivées entre-temps).` : 'Toutes les photos sont tranchées.'}</p>
+    </div>`;
+    $('#burst-info').innerHTML = '';
+    $('#burst-ctl').innerHTML = `${left ? '<button class="btn gold" onclick="openBurst()">Reprendre les restantes</button>' : ''}<button class="btn ghost" onclick="closeBurst()">Fermer</button>`;
+    $('#burst-count').textContent = `${b.ids.length} / ${b.ids.length}`;
+    $('#burst-pg').style.width = '100%';
+    return;
+  }
+  const s = S.subs.find(x => x.id === b.ids[b.i]);
+  if(!s){ b.i++; return renderBurst(); }
+  const t = teamOf(s.teamId), c = clueOf(s.clueId);
+  $('#burst-stage').innerHTML = `<img src="${esc(s.photoUrl)}" alt="">`;
+  $('#burst-info').innerHTML = `<b>${esc(t?.name||'?')} — ${esc(c?.title||'indice inconnu')}</b>
+    <small>${hhmm(s.submittedAt)} · ${c?c.points:0} pts si conforme · statut : ${s.status==='pending'?'à trancher':s.status==='approved'?'conforme':'refusée'}</small>`;
+  $('#burst-ctl').innerHTML = `
+    <button class="btn ghost ox" onclick="burstDecide(false)">✗ Refuser <kbd>←</kbd></button>
+    <button class="btn ghost" onclick="burstSkip()">Passer <kbd>S</kbd></button>
+    <button class="btn forest" onclick="burstDecide(true)">✓ Conforme <kbd>→</kbd></button>`;
+  $('#burst-count').textContent = `${b.i+1} / ${b.ids.length}`;
+  $('#burst-pg').style.width = ((b.i)/b.ids.length*100).toFixed(1)+'%';
+}
+async function burstDecide(ok){
+  const b = S.burst; if(!b || b.i >= b.ids.length) return;
+  const id = b.ids[b.i];
+  b.i++; renderBurst();
+  await decide(id, ok);
+}
+function burstSkip(){ const b = S.burst; if(!b) return; b.i++; renderBurst(); }
+function burstBack(){ const b = S.burst; if(!b || b.i === 0) return; b.i--; renderBurst(); }
+
+/* ───────────────────────── Visionneuse zoom ───────────────────────── */
+// Pointer Events, sans dépendance : pincer, molette, double-clic, glisser. 1–6×.
+function makeZoom(box, img){
+  let scale = 1, tx = 0, ty = 0;
+  const pts = new Map(); let startD = 0, startS = 1, last = null;
+  const apply = () => { img.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`; };
+  const clamp = () => {
+    const r = box.getBoundingClientRect(), w = img.clientWidth*scale, h = img.clientHeight*scale;
+    const mx = Math.max(0,(w-r.width)/2), my = Math.max(0,(h-r.height)/2);
+    tx = Math.max(-mx, Math.min(mx, tx)); ty = Math.max(-my, Math.min(my, ty));
+  };
+  const set = v => { scale = Math.max(1, Math.min(6, v)); if(scale === 1){ tx = 0; ty = 0; } clamp(); apply(); };
+  box.addEventListener('wheel', e => { e.preventDefault(); set(scale * (e.deltaY < 0 ? 1.14 : 1/1.14)); }, { passive:false });
+  box.addEventListener('dblclick', () => set(scale > 1 ? 1 : 2.5));
+  box.addEventListener('pointerdown', e => { box.setPointerCapture(e.pointerId); pts.set(e.pointerId, e);
+    if(pts.size === 2){ const [a,b] = [...pts.values()]; startD = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); startS = scale; }
+    last = e; });
+  box.addEventListener('pointermove', e => {
+    if(!pts.has(e.pointerId)) return; pts.set(e.pointerId, e);
+    if(pts.size === 2){ const [a,b] = [...pts.values()]; const d = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); if(startD) set(startS * d/startD); return; }
+    if(scale > 1 && last){ tx += e.clientX-last.clientX; ty += e.clientY-last.clientY; clamp(); apply(); }
+    last = e;
+  });
+  const up = e => { pts.delete(e.pointerId); if(pts.size < 2) startD = 0; last = pts.size ? [...pts.values()][0] : null; };
+  box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
+  return { zoom: d => set(scale * (d > 0 ? 1.35 : 1/1.35)), reset: () => set(1) };
+}
+function openZoom(id){
+  const s = findAnySub(id); if(!s) return;
+  const t = teamOf(s.teamId), c = clueOf(s.clueId);
+  $('#zoom-title').textContent = `${t?.name || '?'} — ${s.isTeamPhoto ? 'photo d\'équipe' : (c?.title || 'photo')}`;
+  const wrap = $('#zoomwrap');
+  wrap.innerHTML = `<img src="${esc(s.photoUrl)}" alt="">`;
+  $('#zoom-ov').classList.add('open');
+  const img = wrap.querySelector('img');
+  img.onload = () => { PZ = makeZoom(wrap, img); };
+}
+function closeZoom(){ $('#zoom-ov').classList.remove('open'); $('#zoomwrap').innerHTML = ''; PZ = null; }
+
+/* ───────────────────────── QR ───────────────────────── */
+const joinUrl  = c => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}${APP_URL}?join=${c}`;
+const diapoUrl = c => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}${APP_URL}?diapo=${c}`;
+const QR_MODES = {
+  join : { title:'Rejoindre la chasse', url:joinUrl,
+           hint:'À montrer aux capitaines d\'équipe : l\'appli s\'ouvre avec le code déjà rempli.' },
+  diapo: { title:'Emporter le diaporama', url:diapoUrl,
+           hint:'Chacun scanne pour revoir toutes les photos, sans appli ni inscription — aucune adresse mail à collecter.' }
+};
+function showQR(mode){
+  const g = S.game; if(!g) return;
+  const m = QR_MODES[mode] || QR_MODES.join;
+  const url = m.url(g.code);
+  const box = $('#qr-canvas');
+  try{
+    if(typeof qrcode === 'undefined') throw new Error('lib QR absente');
+    const qr = qrcode(0,'M'); qr.addData(url); qr.make();
+    box.innerHTML = qr.createDataURL ? `<img alt="QR ${esc(g.code)}" src="${qr.createDataURL(8,4)}">` : qr.createSvgTag({cellSize:8,margin:4});
+  }catch(e){
+    box.innerHTML = `<p class="hint">QR indisponible (réseau requis au premier chargement). Communiquez le lien : <strong>${esc(url)}</strong></p>`;
+  }
+  $('#qr-title').textContent = m.title;
+  $('#qr-hint').textContent = m.hint;
+  $('#qr-code-text').textContent = mode === 'diapo' ? '' : g.code;
+  $('#qr-url-text').textContent = url;
+  $('#qr-ov').classList.add('open');
+}
+function closeQR(){ $('#qr-ov').classList.remove('open'); }
+async function copyShare(){
+  const i = $('#share-url'); if(!i) return;
+  try{ await navigator.clipboard.writeText(i.value); toast('Lien copié','success'); }
+  catch(_){ i.select(); document.execCommand('copy'); toast('Lien copié','success'); }
+}
+
+/* ───────────────────────── Export ZIP ───────────────────────── */
+function openExport(){
+  const g = S.game; if(!g){ toast('Aucune chasse','error'); return; }
+  if(typeof JSZip === 'undefined'){ toast('JSZip non chargé (réseau ?)','error',4500); return; }
+  const subs = S.subs;
+  const shots = g.teams.filter(t => t.photoUrl).length;
+  if(!subs.length && !shots){ toast('Aucune photo à exporter','error'); return; }
+  const n = st => subs.filter(s => s.status === st).length;
+  $('#exp-stats').innerHTML = `
+    <div class="stat"><div class="n">${subs.length}</div><div class="l">Total</div></div>
+    <div class="stat ok"><div class="n">${n('approved')}</div><div class="l">Conformes</div></div>
+    <div class="stat ko"><div class="n">${n('rejected')}</div><div class="l">Refusées</div></div>
+    <div class="stat wait"><div class="n">${n('pending')}</div><div class="l">Attente</div></div>`;
+  $('#exp-note').innerHTML = shots
+    ? `<p class="hint">+ ${shots} photo${shots>1?'s':''} d'équipe, jointe${shots>1?'s':''} d'office en tête du dossier de chaque équipe (elle n'a pas de statut, elle échappe donc aux filtres).</p>` : '';
+  $('#exp-prog').hidden = true; $('#exp-log').innerHTML = '';
+  $('#exp-fill').style.width = '0'; $('#exp-count').textContent = '0 / 0'; $('#exp-time').textContent = '';
+  const b = $('#exp-run'); b.disabled = false; b.textContent = 'Télécharger le ZIP →';
+  $('#export-ov').classList.add('open');
+}
+function closeExport(){ $('#export-ov').classList.remove('open'); }
+
+async function runExport(){
+  const g = S.game;
+  const want = { approved:$('#exp-ok').checked, rejected:$('#exp-ko').checked, pending:$('#exp-pd').checked };
+  const items = [...g.teams.map(teamPhotoSub).filter(Boolean), ...S.subs.filter(s => want[s.status])];
+  if(!items.length){ toast('Aucune photo sélectionnée','error'); return; }
+
+  const btn = $('#exp-run'); btn.disabled = true;
+  $('#exp-prog').hidden = false;
+  const fill = $('#exp-fill'), log = $('#exp-log'); log.innerHTML = '';
+  const line = (m, c='') => { const d = document.createElement('div'); if(c) d.className = c; d.textContent = m; log.appendChild(d); log.scrollTop = 1e9; };
+
+  const total = items.length; let done = 0, errors = 0;
+  const t0 = performance.now();
+  const upd = () => {
+    fill.style.width = `${(done/total)*100}%`;
+    $('#exp-count').textContent = `${done} / ${total}`;
+    $('#exp-time').textContent = `${((performance.now()-t0)/1000).toFixed(1)} s`;
+  };
+
+  const zip = new JSZip();
+  const queue = items.slice();
+  const worker = async () => {
+    while(queue.length){
+      const s = queue.shift(); if(!s) break;
+      const tn = teamOf(s.teamId)?.name || 'inconnu';
+      const cn = clueOf(s.clueId)?.title || s.clueId || 'indice';
+      const path = s.isTeamPhoto
+        ? `${safeFile(tn)}/00_photo-equipe.jpg`
+        : `${safeFile(tn)}/${hhmm(s.submittedAt)}_${s.status}_${safeFile(cn)}_${s.id}.jpg`;
+      try{
+        const r = await fetch(s.photoUrl);
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        zip.file(path, await r.blob());
+      }catch(e){ errors++; line(`✗ ${tn} · ${cn} — ${e.message}`,'err'); }
+      done++; upd();
+    }
+  };
+  await Promise.all(Array.from({length:8}, worker));
+
+  if(done - errors === 0){ btn.disabled = false; btn.textContent = 'Télécharger le ZIP →'; line('Aucune photo récupérée.','err'); return; }
+
+  btn.textContent = 'Compression…';
+  // STORE : du JPEG ne se recompresse pas, deflate ne ferait que brûler du temps.
+  const blob = await zip.generateAsync({ type:'blob', compression:'STORE' }, m => { btn.textContent = `Compression ${Math.round(m.percent)} %`; });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `${g.code}_photos.zip`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  line(`✓ ZIP prêt — ${done-errors} photo(s), ${(blob.size/1048576).toFixed(1)} Mo${errors?` · ${errors} échec(s)`:''}`,'ok');
+  btn.disabled = false; btn.textContent = 'Télécharger à nouveau';
+}
+
+/* ───────────────────────── Choix du tirage (secours admin) ───────────────────────── */
+function openPick(teamId){
+  const t = teamOf(teamId); if(!t) return;
+  const photos = teamPhotos(teamId);
+  $('#pick-title').textContent = `Tirage — ${t.name}`;
+  $('#pick-body').innerHTML = photos.length ? `
+    <p class="hint" style="margin-top:0">Choisissez à la place d'une équipe partie sans choisir. La photo d'équipe est proposée en premier.</p>
+    <div class="shots" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
+      ${photos.map(s => `<article class="shot ${t.printSubId===s.id?'ok':''}">
+        <div class="im" onclick="pickPrint('${t.id}','${esc(s.id)}')">
+          <img src="${esc(s.photoUrl)}" alt="" loading="lazy">
+          ${s.isTeamPhoto?'<span class="tag">Équipe</span>':''}
+          ${t.printSubId===s.id?'<span class="tag ok" style="left:auto;right:6px">Choisie</span>':''}
+        </div>
+        <div class="mt"><small>${s.isTeamPhoto?'photo d\'équipe':esc(clueOf(s.clueId)?.title||'—')}</small></div>
+      </article>`).join('')}
+    </div>
+    ${t.printSubId ? `<button class="btn ghost wide sm" style="margin-top:12px" onclick="pickPrint('${t.id}','')">Retirer le choix</button>` : ''}
+  ` : '<div class="empty">Cette équipe n\'a aucune photo.</div>';
+  $('#pick-ov').classList.add('open');
+}
+function closePick(){ $('#pick-ov').classList.remove('open'); }
+// `teams.print_submission_id` est un `text` SANS clé étrangère : c'est ce qui permet d'y
+// stocker l'id sentinelle `team:<id>` de la photo d'équipe (#48).
+async function pickPrint(teamId, subId){
+  const { error } = await sb.from('teams').update({ print_submission_id: subId || null }).eq('id', teamId);
+  if(error){ toast('Choix du tirage : '+error.message,'error',4500); return; }
+  const t = teamOf(teamId); if(t) t.printSubId = subId || null;
+  closePick(); S.lastSig = ''; paintConsole();
+  toast(subId ? 'Tirage choisi' : 'Choix retiré','success');
+}
+
+/* ═══════════════════ Tirages à la demande (photos supplémentaires) ═══════════════════
+   Le tirage souvenir est UNE photo par équipe, offerte ou incluse dans la formule. Ici,
+   c'est autre chose : n'importe quelle photo de la chasse, en autant d'exemplaires que
+   voulu, pour une équipe qui veut repartir avec plus. Même cadre, même format 10×15.
+   ⚠️ Aucun prix n'est codé en dur : la grille tarifaire n'a rien à faire dans un dépôt
+   public. Le prix unitaire est une préférence LOCALE (localStorage), saisie une fois sur
+   l'appareil du maître du jeu, et ne sert qu'à afficher un total d'aide-mémoire.
+   ══════════════════════════════════════════════════════════════════════════════════ */
+const PRICE_KEY = 'print_unit_price';
+const orderKey = () => 'order:' + (S.game?.code || '');
+
+function loadOrder(){
+  try{ S.order = JSON.parse(localStorage.getItem(orderKey()) || '{}') || {}; }
+  catch(_){ S.order = {}; }
+}
+// La commande survit à un rechargement : le jour J, la console peut être rafraîchie ou
+// l'onglet rouvert entre deux paiements. Rien ne part en base — c'est un panier local.
+function saveOrder(){
+  try{
+    const n = orderCount();
+    if(n) localStorage.setItem(orderKey(), JSON.stringify(S.order));
+    else localStorage.removeItem(orderKey());
+  }catch(_){}
+}
+function orderCount(){ return Object.values(S.order).reduce((a,b)=>a+(b||0), 0); }
+function orderLines(){
+  return Object.entries(S.order)
+    .map(([id,q]) => ({ id, q, sub: findAnySub(id) }))
+    .filter(r => r.sub && r.q > 0);
+}
+
+// Toutes les photos de la chasse : selfies d'équipe compris, refusées comprises — une belle
+// photo n'est pas forcément une preuve conforme, et c'est souvent celle-là qu'on veut acheter.
+function allPhotos(){
+  const g = S.game; if(!g) return [];
+  const rank = {}; g.clues.forEach((c,i) => rank[c.id] = i);
+  const out = [];
+  g.teams.forEach(t => {
+    const tp = teamPhotoSub(t); if(tp) out.push(tp);
+    S.subs.filter(s => s.teamId === t.id)
+          .sort((a,b) => (rank[a.clueId] ?? 99) - (rank[b.clueId] ?? 99))
+          .forEach(s => out.push(s));
+  });
+  return out;
+}
+
+function openOrder(){
+  if(!S.game) return;
+  loadOrder();
+  $('#order-price').value = localStorage.getItem(PRICE_KEY) || '';
+  $('#order-ov').classList.add('open');
+  renderOrder();
+}
+function closeOrder(){ $('#order-ov').classList.remove('open'); S.lastSig = ''; paintConsole(); }
+
+function renderOrder(){
+  const g = S.game; if(!g) return;
+  let list = allPhotos();
+  if(S.oTeam) list = list.filter(s => s.teamId === S.oTeam);
+  if(S.oClue) list = list.filter(s => (s.clueId || '') === S.oClue);
+
+  $('#order-body').innerHTML = `
+    <p class="hint" style="margin:0 0 10px">Le tirage <strong>offert</strong> de chaque équipe se gère dans le panneau Tirages. Ici : les exemplaires <strong>supplémentaires</strong>, n'importe quelle photo, y compris les refusées et les selfies d'équipe. Cliquez une photo pour l'ajouter, la loupe pour voir le cadre.</p>
+    <div class="filters" style="margin-bottom:12px">
+      <select class="input" style="width:auto;font-size:12.5px;padding:6px 9px" onchange="S.oTeam=this.value;renderOrder()">
+        <option value="">Toutes les équipes</option>
+        ${g.teams.map(t => `<option value="${t.id}"${S.oTeam===t.id?' selected':''}>${esc(t.name)}</option>`).join('')}
+      </select>
+      <select class="input" style="width:auto;font-size:12.5px;padding:6px 9px" onchange="S.oClue=this.value;renderOrder()">
+        <option value="">Tous les indices</option>
+        ${g.clues.map(c => `<option value="${c.id}"${S.oClue===c.id?' selected':''}>${esc(c.title)}</option>`).join('')}
+      </select>
+      ${(S.oTeam||S.oClue) ? '<button class="btn ghost xs" onclick="S.oTeam=\'\';S.oClue=\'\';renderOrder()">✕ Filtres</button>' : ''}
+    </div>
+    ${list.length ? `<div class="shots">${list.map(orderCard).join('')}</div>`
+                  : '<div class="empty">Aucune photo pour ces filtres.</div>'}`;
+  refreshOrderTotals();
+}
+
+function orderCard(s){
+  const t = teamOf(s.teamId), c = clueOf(s.clueId);
+  const q = S.order[s.id] || 0;
+  const id = s.id.replace(/'/g, '\\\'');
+  return `<article class="shot ${q?'sel':''}">
+    <div class="im" onclick="toggleOrder('${id}')" title="${q?'Retirer de la commande':'Ajouter à la commande'}">
+      <img src="${esc(s.photoUrl)}" alt="" loading="lazy">
+      ${s.isTeamPhoto ? '<span class="tag">Équipe</span>' : s.status==='rejected' ? '<span class="tag ko">Refusée</span>' : ''}
+      ${q ? `<span class="vt">×${q}</span>` : ''}
+      <button class="pick" onclick="event.stopPropagation();previewAny('${id}')" title="Voir le tirage encadré">🔍</button>
+    </div>
+    <div class="mt"><b>${esc(t?.name||'?')}</b><small>${s.isTeamPhoto ? 'photo d\'équipe' : esc(c?.title||'—')} · ${hhmm(s.submittedAt)}</small></div>
+    ${q ? `<div class="qty">
+        <button onclick="setQty('${id}',-1)" aria-label="Moins">−</button>
+        <span>${q} ex.</span>
+        <button onclick="setQty('${id}',1)" aria-label="Plus">+</button>
+      </div>`
+      : `<div class="ac"><button class="btn ghost sm" style="flex:1" onclick="downloadOne('${id}')">⬇ Ce tirage seul</button></div>`}
+  </article>`;
+}
+
+function toggleOrder(id){ S.order[id] ? delete S.order[id] : (S.order[id] = 1); saveOrder(); renderOrder(); }
+function setQty(id, d){
+  const n = (S.order[id] || 0) + d;
+  if(n <= 0) delete S.order[id]; else if(n <= 99) S.order[id] = n;
+  saveOrder(); renderOrder();
+}
+function clearOrder(){
+  if(orderCount() && !confirm('Vider la commande en cours ?')) return;
+  S.order = {}; saveOrder(); renderOrder();
+}
+function setOrderPrice(v){
+  try{ v.trim() ? localStorage.setItem(PRICE_KEY, v.trim()) : localStorage.removeItem(PRICE_KEY); }catch(_){}
+  refreshOrderTotals();
+}
+function unitPrice(){
+  const v = parseFloat(String(localStorage.getItem(PRICE_KEY) || '').replace(',', '.'));
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+function refreshOrderTotals(){
+  const n = orderCount(), p = unitPrice();
+  $('#order-count').textContent = n ? `${n} exemplaire${n>1?'s':''}` : 'vide';
+  $('#order-total').innerHTML = n
+    ? `<b>${n}</b> tirage${n>1?'s':''} · ${orderLines().length} photo${orderLines().length>1?'s':''}${p?` · <b>${(n*p).toFixed(2).replace('.',',')} €</b>`:''}`
+    : '<span class="muted">Aucun tirage sélectionné.</span>';
+  const b = $('#order-run'); if(b) b.disabled = !n;
+}
+
+async function previewAny(subId){
+  const s = findAnySub(subId); if(!s) return;
+  const t = teamOf(s.teamId);
+  $('#print-title').textContent = `Tirage — ${t?.name || '?'}`;
+  $('#print-stage').innerHTML = '<div class="wait">Composition du tirage…</div>';
+  $('#print-ctl').innerHTML = '';
+  $('#print-ov').classList.add('open');
+  try{
+    const cv = await PrintFrame.build(s, t, S.game);
+    $('#print-stage').innerHTML = `<img src="${cv.toDataURL('image/jpeg', PrintFrame.Q)}" alt="">`;
+    const q = S.order[subId] || 0;
+    $('#print-ctl').innerHTML = `
+      <button class="btn gold" onclick="downloadOne('${subId.replace(/'/g,"\\'")}')">⬇ Télécharger ce tirage</button>
+      <button class="btn ghost" onclick="closePrint();toggleOrder('${subId.replace(/'/g,"\\'")}')">${q?'Retirer de la commande':'Ajouter à la commande'}</button>`;
+  }catch(e){
+    $('#print-stage').innerHTML = `<div class="wait">Tirage impossible : ${esc(e.message)}</div>`;
+    reportError(e, 'tirage');
+  }
+}
+
+async function downloadOne(subId){
+  const s = findAnySub(subId); if(!s){ toast('Photo introuvable','error'); return; }
+  const t = teamOf(s.teamId), c = clueOf(s.clueId);
+  toast('Composition du tirage…','',1600);
+  try{
+    const cv = await PrintFrame.build(s, t, S.game);
+    const label = s.isTeamPhoto ? 'equipe' : (c?.title || 'photo');
+    PrintFrame.save(await PrintFrame.toBlob(cv),
+      `Expedition_${PrintFrame.safeFile(S.game.code)}_${PrintFrame.safeFile(t?.name||'equipe')}_${PrintFrame.safeFile(label)}.jpg`);
+    toast('Tirage téléchargé','success');
+  }catch(e){ toast('Tirage impossible : '+e.message,'error',5000); reportError(e,'tirage'); }
+}
+
+// Un fichier par photo commandée (le labo prend un fichier + une quantité), la quantité
+// étant portée par le nom ET par le bon de commande joint. Envoyer N copies du même JPEG
+// ferait payer N fois le transfert pour rien.
+async function downloadOrder(){
+  if(typeof JSZip === 'undefined'){ toast('JSZip non chargé (réseau ?)','error',4500); return; }
+  const g = S.game, rows = orderLines();
+  if(!rows.length){ toast('Commande vide','error'); return; }
+
+  S.printing = true;
+  const btn = $('#order-run'), tot = $('#order-total');
+  if(btn) btn.disabled = true;
+  const say = m => { if(tot) tot.innerHTML = m; };
+
+  const zip = new JSZip();
+  const recap = []; let ok = 0; const failed = [];
+  for(let i = 0; i < rows.length; i++){
+    const { sub, q } = rows[i];
+    const t = teamOf(sub.teamId), c = clueOf(sub.clueId);
+    const label = sub.isTeamPhoto ? 'photo-equipe' : (c?.title || 'photo');
+    say(`Composition ${i+1}/${rows.length} — ${t?.name || '?'}…`);
+    try{
+      const cv = await PrintFrame.build(sub, t, g);
+      const name = `${String(i+1).padStart(2,'0')}_${PrintFrame.safeFile(t?.name||'equipe')}_${PrintFrame.safeFile(label)}${q>1?`_x${q}`:''}.jpg`;
+      zip.file(name, await PrintFrame.toBlob(cv));
+      recap.push(`${String(q).padStart(2,' ')} ex.  ${t?.name || '?'} — ${label}   [${name}]`);
+      ok++;
+    }catch(e){ failed.push(`${t?.name||'?'} — ${label}`); console.warn('Tirage', sub.id, e); }
+  }
+
+  if(!ok){
+    say('Aucun tirage n\'a pu être composé.');
+    if(btn) btn.disabled = false; S.printing = false;
+    toast('Aucun tirage produit','error',5000); return;
+  }
+
+  const n = rows.reduce((a,r)=>a+r.q, 0), p = unitPrice();
+  const d = new Date();
+  const stamp = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${String(d.getHours()).padStart(2,'0')}h${String(d.getMinutes()).padStart(2,'0')}`;
+  zip.file('bon-de-commande.txt', [
+    `EXPÉDITION — tirages supplémentaires`,
+    `Chasse : ${g.name} (${g.code})${g.location ? ' · '+g.location : ''}`,
+    `Date de la commande : ${d.toLocaleString('fr-FR')}`,
+    '',
+    ...recap,
+    '',
+    `TOTAL : ${n} tirage(s) 10×15${p ? ` · ${(n*p).toFixed(2).replace('.',',')} € (${String(p).replace('.',',')} €/tirage)` : ''}`,
+    failed.length ? `\nÉCHECS (à refaire) : ${failed.join(' ; ')}` : ''
+  ].join('\n'));
+
+  say('Compression…');
+  const blob = await zip.generateAsync({ type:'blob', compression:'STORE' });
+  PrintFrame.save(blob, `${g.code}_commande_${stamp}.zip`);
+  S.printing = false;
+  refreshOrderTotals();
+  toast(failed.length ? `${ok} photo(s) — ${failed.length} échec(s)` : `Commande prête : ${n} tirage(s)`,
+        failed.length ? 'error' : 'success', failed.length ? 6000 : 3500);
+}
+
+/* ───────────────────────── Purge RGPD ───────────────────────── */
+// ⚠️ Ordre impératif : fichiers d'abord (API Storage), lignes ensuite (RPC).
+// Le bucket n'est pas listable : une fois les lignes parties, les chemins des photos
+// ne sont plus reconstructibles et les fichiers restent orphelins pour toujours.
+async function purgeGamePhotos(code){
+  const paths = [];
+  const { data: subs } = await sb.from('submissions').select('id').eq('game_code', code);
+  (subs||[]).forEach(s => paths.push(`${code}/${s.id}.jpg`));
+  const { data: teams } = await sb.from('teams').select('id').eq('game_code', code);
+  (teams||[]).forEach(t => paths.push(`${code}/team_${t.id}.jpg`));
+  paths.push(`${code}/logo.png`);
+  let err = null;
+  for(let i = 0; i < paths.length; i += 100){
+    const { error } = await sb.storage.from('photos').remove(paths.slice(i, i+100));
+    if(error) err = error;
+  }
+  return { error: err };
+}
+async function purgeGame(){
+  const g = S.game; if(!g) return;
+  if(!confirm(`Supprimer DÉFINITIVEMENT « ${g.name} » (${g.code}) : équipes, preuves et toutes les photos ?\n\nAction irréversible.`)) return;
+  if(!confirm('Dernière confirmation — suppression définitive et immédiate.')) return;
+  const ph = await purgeGamePhotos(g.code);
+  if(ph.error) console.warn('Photos non supprimées :', ph.error.message);
+  const { error } = await sb.rpc('admin_purge_game', { p_code: g.code });
+  if(error){ toast('Suppression impossible : '+error.message,'error',5500); return; }
+  toast(ph.error ? 'Chasse supprimée — photos possiblement conservées' : 'Chasse et photos supprimées',
+        ph.error ? 'error' : 'success', ph.error ? 6000 : 3000);
+  backToPicker();
+}
+
+/* ───────────────────────── Aide + raccourcis ───────────────────────── */
+function openHelp(){ $('#help-ov').classList.add('open'); }
+function closeHelp(){ $('#help-ov').classList.remove('open'); }
+
+const anyOpen = () => $$('.ov.open').length > 0;
+function closeTop(){
+  if(S.burst) return closeBurst();
+  if($('#print-ov').classList.contains('open')) return closePrint();
+  if($('#order-ov').classList.contains('open')) return closeOrder();
+  if($('#zoom-ov').classList.contains('open')) return closeZoom();
+  if($('#pick-ov').classList.contains('open')) return closePick();
+  if($('#export-ov').classList.contains('open')) return closeExport();
+  if($('#qr-ov').classList.contains('open')) return closeQR();
+  if($('#help-ov').classList.contains('open')) return closeHelp();
+}
+
+document.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if(['input','select','textarea'].includes(tag)) return;   // ne jamais voler la frappe
+  if(e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+
+  if(k === 'Escape'){ closeTop(); return; }
+  if(k === '?'){ e.preventDefault(); openHelp(); return; }
+
+  if(S.burst){
+    if(k === 'ArrowRight' || k === 'a' || k === 'A' || k === ' ' || k === 'Enter'){ e.preventDefault(); burstDecide(true); return; }
+    if(k === 'ArrowLeft'  || k === 'r' || k === 'R'){ e.preventDefault(); burstDecide(false); return; }
+    if(k === 's' || k === 'S'){ e.preventDefault(); burstSkip(); return; }
+    if(k === 'Backspace'){ e.preventDefault(); burstBack(); return; }
+    return;
+  }
+  if(anyOpen() || S.view !== 'console') return;
+
+  if(k === 'v' || k === 'V'){ e.preventDefault(); openBurst(); return; }
+  if(k === 'q' || k === 'Q'){ e.preventDefault(); showQR('join'); return; }
+  if(k === 'e' || k === 'E'){ e.preventDefault(); openExport(); return; }
+  if(k === 't' || k === 'T'){ e.preventDefault(); openOrder(); return; }
+  if(k === '1'){ setTab('pilot'); return; }
+  if(k === '2'){ setTab('work'); return; }
+  if(k === '3'){ setTab('tools'); return; }
+});
+
+// Retour sur l'onglet : on resynchronise (un websocket peut avoir été suspendu).
+document.addEventListener('visibilitychange', () => { if(!document.hidden && S.game) refresh(); });
+window.addEventListener('online', () => { if(S.game) refresh(); });
+
+/* ───────────────────────── Démarrage ───────────────────────── */
+console.log('%cExpédition · Régie', 'font-weight:700', 'build', BUILD);
+(async () => {
+  initClient();
+  // Reprise directe par URL : regie.html?code=XXXX
+  const code = new URLSearchParams(location.search).get('code');
+  S.user = await currentUser();
+  if(S.user && code){ await openGame(code.toUpperCase()); if(S.game) return; }
+  render();
+})();
+</script>
+</body>
+</html>
