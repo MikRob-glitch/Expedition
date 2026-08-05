@@ -2,7 +2,10 @@
 
 Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse au trésor multi-équipes. Les équipes résolvent des indices, prouvent chaque trouvaille par une **photo**, l'admin **valide** la conformité, puis un **jury vote** les meilleures photos. Synchronisation temps réel entre tous les téléphones.
 
-> Mono-fichier, sans build. Dépôt : `github.com/MikRob-glitch/Expedition`. Déploiement : GitHub Pages → `https://mikrob-glitch.github.io/Expedition/expedition.html`.
+> Sans build. Dépôt : `github.com/MikRob-glitch/Expedition`. Déploiement : GitHub Pages.
+> **Deux surfaces** : `expedition.html` (joueurs + parcours admin mobile) et `regie.html`
+> (console du maître du jeu, grand écran). Elles partagent la base, la session d'auth et
+> **un module**, `print-frame.js` — le moteur du cadre de tirage.
 > Le **journal des correctifs détaillé** (chronologique, numéroté) est dans [`CLAUDE.md`](CLAUDE.md).
 
 ---
@@ -11,7 +14,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 
 | Couche | Choix | Pourquoi |
 |---|---|---|
-| Frontend | HTML5 + Vanilla JS, fichier unique (~3970 lignes) | Zéro build, démarrage instantané, debug trivial |
+| Frontend | HTML5 + Vanilla JS : `expedition.html` (~3670 l.) + `regie.html` (~2055 l.) + `print-frame.js` | Zéro build, démarrage instantané, debug trivial |
 | Backend | Supabase (Postgres + Realtime + Storage + Auth) | Synchro websockets, photos hébergées, auth OTP, tier gratuit |
 | Caméra | `<input type="file" capture>` | Caméra native iOS/Android sans permission custom |
 | Carte | Leaflet 1.9.4 + tuiles OpenStreetMap | Carte d'orientation des indices (géoloc optionnelle) |
@@ -27,7 +30,9 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 ## Fichiers du projet
 
 ```
-expedition.html            ← app complète, single-file SPA (~3970 lignes)
+expedition.html            ← app joueurs + parcours admin mobile, SPA (~3670 lignes)
+regie.html                 ← console maître du jeu, grand écran (~2055 lignes)
+print-frame.js             ← moteur du cadre de tirage, PARTAGÉ par les deux (ne jamais dupliquer)
 sw.js                      ← service worker (app-shell offline, cache, tuiles OSM)
 confidentialite.html       ← politique de confidentialité RGPD (servie par Pages)
 manifest.json              ← manifeste PWA (icônes any + maskable)
@@ -42,7 +47,12 @@ migration-venue-logo.sql   ← games.logo_url (logo du lieu sur le tirage)
 migration-storage-delete-fix.sql ← policy DELETE du bucket : `name` mal résolu (obligatoire)
 .github/workflows/keepalive.yml ← ping Supabase (anti-pause tier gratuit)
 .nojekyll                  ← désactive Jekyll sur GitHub Pages
-commercial/                ← supports de vente de la prestation (hors app)
+site/                      ← SITE VITRINE (hors dépôt Git) — en prod sur www.expedition-selfiesafari.fr
+  index.html               ←   fichier unique (~88 Ko) : accueil + campings + entreprises + devis
+  confidentialite.html     ←   copie enrichie de la politique RGPD (§1 et §2 renseignés)
+  .htaccess                ←   canonique www, forçage HTTPS, 404, cache HTML nul, compression
+  test-site.js             ←   banc de 85 tests JSDOM ⚠️ NE JAMAIS DÉPLOYER (www est public)
+commercial/                ← supports de vente + grille tarifaire (hors app, hors dépôt Git)
   plaquette.css            ←   feuille de style commune aux deux livrets
   livret-campings.html     ←   source — campings, villages de vacances, parcs
   livret-entreprises.html  ←   source — séminaires, incentive, CSE
@@ -51,23 +61,62 @@ commercial/                ← supports de vente de la prestation (hors app)
   Expedition_livret_entreprises.pdf ←  6 pages A4, à envoyer aux entreprises
 README.md                  ← présentation + démarrage rapide
 PROJECT.md                 ← ce fichier
-ANALYSE_CONCURRENCE.md     ← paysage concurrentiel + positionnement retenu
+ANALYSE_CONCURRENCE.md     ← paysage concurrentiel + positionnement retenu (hors dépôt Git)
 CLAUDE.md                  ← guide de travail + journal des correctifs
 ```
 
-> `commercial/` ne fait pas partie de l'application : aucun fichier n'y est servi par Pages,
-> et une modification n'entraîne **ni bump de `BUILD` ni bump de `CACHE`**.
+> **`site/` et `commercial/` ne font pas partie de l'application** : aucun fichier n'y est servi
+> par Pages, et une modification n'entraîne **ni bump de `BUILD` ni bump de `CACHE`**. Le service
+> worker ne les connaît pas.
+>
+> **Site vitrine — en production depuis le 2026-08-05** : <https://www.expedition-selfiesafari.fr>,
+> domaine + hébergement **OVHcloud** (`hosting-free-100m`, 100 Mo, FTP, pas de SSH), déployé en
+> copiant le **contenu** de `site/` dans le dossier `www`. Deux hébergements indépendants : l'app
+> reste sur GitHub Pages. Détail complet et pièges : #61 dans [`CLAUDE.md`](CLAUDE.md).
+>
+> ⚠️ **AUCUN TARIF dans `site/`** — même règle que `commercial/` et que le mode commande de la
+> régie (#60), pour la même raison : ce qui est servi sur le web est lisible par un concurrent.
+> Trois tests du banc échouent si un `€`, un montant de la grille ou un « HT » réapparaît.
+>
+> ⚠️ **`test-site.js` ne doit jamais partir sur le serveur** : `www` est intégralement
+> téléchargeable à une URL devinable. Même raison qui a fait sortir un fichier de codes de
+> secours OVH du dossier le 2026-08-03. **Règle : rien n'entre dans `site/` qui ne soit destiné
+> à être public.**
+>
+> ⚠️ **La maquette du tirage de `index.html` recopie les cotes de `print-frame.js`** (portrait
+> 1080×1440 dans 1200×1800, paysage 1347×1010 dans 1800×1200, sceau à cheval sur le filet bas).
+> **Rien ne relie les deux** : une retouche du cadre laisserait la vitrine afficher de fausses
+> proportions sans qu'aucun test ne le signale — sur la page qui sert justement à vendre le
+> tirage.
+>
+> ⚠️ **Le site n'est pas versionné** : déployé par FTP, il n'a ni historique ni retour arrière.
+> La copie locale de `site/` est la seule référence.
+>
+> Vérification : `npm i jsdom && node site/test-site.js` — **85 tests** hors ligne (routeur,
+> injection de l'e-mail de contact, fenêtre d'envoi du devis, géométrie de la boussole,
+> contrastes en section sombre, règles du `.htaccess`, conformité tarifaire).
 >
 > **Deux livrets, une cible chacun** — le camping ne doit pas lire « séminaire », ni voir le
-> tarif entreprise. Chacun n'affiche que **sa** grille : campings 390 / 690 / 1 190 € HT
-> (30 / 50 / 100 participants), entreprises 690 / 990 / 1 690 € HT (20 / 30 / 60). ⚠️ Rien ne
-> synchronise les deux fichiers : une révision de prix se répercute **à la main dans les deux**.
+> tarif entreprise. Chacun n'affiche que **sa** grille (montants dans `commercial/`, hors dépôt).
+> ⚠️ Rien ne synchronise les deux fichiers : une révision de prix se répercute **à la main dans
+> les deux**.
 >
-> ⚠️ **Les plafonds de participants viennent d'une contrainte produit, pas commerciale** :
-> la validation photo par photo et le vote 50/30/10 sont manuels et faits par une seule
-> personne sur un seul écran. Au-delà de ~10 équipes, l'arbitrage annoncé (15 min) devient
-> intenable. Ne pas les remonter pour « faire un meilleur prix » sans avoir d'abord réglé
-> le goulot d'arbitrage. Détail du calcul : #47 dans [`CLAUDE.md`](CLAUDE.md).
+> ⚠️ **Toute révision de prix doit repasser deux tests** (voir #47) : le **prix par tête à plein
+> doit décroître** le long de l'échelle, et **pousser une formule au plafond de la suivante doit
+> coûter au moins le prix de la suivante**. La première grille échouait aux deux, ce qui rendait
+> les formules hautes strictement moins intéressantes que l'entrée de gamme.
+>
+> ⚠️ **Deux plafonds différents, à ne pas confondre.** Le plafond **commercial** (affiché dans
+> les livrets) suit l'effectif réellement attendu à une animation. Le plafond **opérationnel**
+> (~10 équipes, soit 50 participants pour un animateur seul) vient de la validation photo par
+> photo et du vote 50/30/10, tous deux manuels sur un seul écran. Le premier est aujourd'hui
+> bien en dessous du second : c'est confortable, et il ne faut pas remonter le commercial
+> jusqu'au technique sans avoir d'abord réglé le goulot d'arbitrage.
+>
+> ⚠️ **Le modèle économique repose sur la répétition, pas sur la date isolée** : rapportée aux
+> heures réellement travaillées, une date unique paie mal. Repérage et écriture s'amortissent
+> dès la deuxième date sur le même site, d'où le **forfait saison** qui est le cœur de l'offre
+> et non une option. Détail : #47 dans [`CLAUDE.md`](CLAUDE.md).
 >
 > Regénération : `weasyprint commercial/livret-campings.html commercial/Expedition_livret_campings.pdf`
 > (idem pour `entreprises`), **puis `python3 commercial/verif-pages.py commercial/*.pdf`**.
@@ -134,7 +183,9 @@ setup → active → validation → judging → ended
 | `judging` | **Vote du jury** : 50/30/10 par indice (toutes photos) | Jury/Admin |
 | `ended` | Classement final + galerie + **choix du tirage souvenir** | Équipes (choix) / Admin (récupération) |
 
-> `active → validation` est calculé à la fin du temps imparti, mais **persisté uniquement par l'admin** (les équipes le calculent en local).
+> `active → validation` est calculé à la fin du temps imparti, mais **persisté uniquement par l'admin** (les équipes le calculent en local). La console `regie.html` étant elle aussi admin, elle persiste la bascule de la même façon.
+
+> Toutes ces transitions existent **des deux côtés** : écrans admin de `expedition.html` et panneau « Pilotage » de `regie.html`. La régie y ajoute `±5/±10 min` en cours de partie et « rouvrir le vote du jury » depuis une chasse clôturée.
 
 **Retours en arrière** (le maître du jeu n'est jamais coincé) :
 
@@ -145,7 +196,8 @@ setup → active → validation → judging → ended
 
 ### Routeur `render()`
 
-SPA mono-fichier sans framework. `render()` lit `STATE` et choisit l'écran : configuration Supabase, sélection de rôle, **login admin (code email)**, puis côté **admin** (setup → lobby → live → validation → vote jury → fin) et côté **équipe** (join → lobby → active/capture → attente → fin). Deep-links : **diaporama public** `?diapo=CODE`, **accès joueur** `?join=CODE` (inscription pré-remplie).
+SPA mono-fichier sans framework, propre à `expedition.html` (la console `regie.html` a son
+propre rendu, décrit plus bas). `render()` lit `STATE` et choisit l'écran : configuration Supabase, sélection de rôle, **login admin (code email)**, puis côté **admin** (setup → lobby → live → validation → vote jury → fin) et côté **équipe** (join → lobby → active/capture → attente → fin). Deep-links : **diaporama public** `?diapo=CODE`, **accès joueur** `?join=CODE` (inscription pré-remplie).
 
 ### Identité & temps réel
 
@@ -156,6 +208,84 @@ SPA mono-fichier sans framework. `render()` lit `STATE` et choisit l'écran : co
 ---
 
 ## Fonctionnalités clés
+
+### Console maître du jeu (`regie.html`)
+
+Fichier **autonome** servi à côté de `expedition.html`, même projet Supabase, même schéma,
+**même session d'auth** — le client supabase-js range son jeton en `localStorage` sur l'origine,
+donc se connecter d'un côté connecte l'autre. `expedition.html` n'est pas modifié.
+
+**Pourquoi.** Le parcours admin de l'app est une suite d'écrans mobiles (lobby → live →
+validation → jury → fin) : on n'y voit jamais le chrono, les équipes et le flux de photos en
+même temps. La régie met tout sur un écran, en **1 / 2 / 3 colonnes** selon la largeur ; sous
+900 px elle bascule en trois onglets **Pilotage / Travail / Outils**.
+
+**Le vrai gain est l'arbitrage.** La validation peut se faire **pendant** la chasse, au fil des
+arrivées, au lieu de tout empiler à la fin — c'est le goulot chiffré au §&nbsp;#47 de
+[`CLAUDE.md`](CLAUDE.md) (~11 s par photo à 8 équipes × 10 indices, intenable à 14). S'y ajoutent
+un **mode rafale** plein écran et un « tout marquer conforme » sur la sélection filtrée.
+
+| Panneau | Contenu |
+|---|---|
+| Pilotage | Chrono + barre de progression, compteurs, actions de phase (démarrer, ±5/±10 min, terminer, reprendre, jury, clôturer, rouvrir) |
+| Équipes | Score live, progression indice par indice (pastilles), dernière activité, indices de départ + « Répartir auto », retrait en `setup` |
+| Preuves | Flux filtrable **statut × équipe × indice**, ✓/✗ en un clic, annulation d'une décision, lot « tout conforme » |
+| Jury | Photos groupées par indice, 🥇50/🥈30/🥉10 avec compteur `n/3` par indice |
+| Classement | Temps réel, mêmes règles de score que l'app |
+| Diffusion | QR d'accès joueurs, QR du diaporama, lien copiable, export ZIP |
+| Tirages | Choix de chaque équipe, choix de secours pour une équipe absente, **aperçu du tirage encadré, téléchargement à l'unité ou en ZIP**, complétion automatique des choix manquants |
+| Commande | **Tirages à la demande** : n'importe quelle photo, en n exemplaires, panier persistant + bon de commande (voir plus bas) |
+| RGPD | Purge de la chasse et de ses photos |
+
+**Raccourcis clavier** : `V` rafale · `→`/`A`/`Espace` conforme · `←`/`R` refuser · `S` passer ·
+`Retour arrière` revenir · `Q` QR · `E` export · `T` tirages à la demande · `1`–`3` onglets ·
+`?` aide · `Échap` fermer.
+
+#### Tirages à la demande (exemplaires vendus en plus)
+
+Le tirage souvenir est **une** photo par équipe, offerte ou incluse dans la formule. Les livrets
+prévoient en plus des tirages payants : le mode commande (`🛒 Tirages`, raccourci `T`) sert
+exactement à ça.
+
+- Grille de **toutes** les photos de la chasse, triées par équipe puis par ordre d'indice,
+  **refusées et selfies d'équipe compris** — une belle photo n'est pas forcément une preuve
+  conforme, et c'est souvent celle-là qu'on achète.
+- Clic pour ajouter, `−/+` pour la quantité, loupe pour voir le cadre réel avant de vendre.
+- Panier stocké en `localStorage` sous `order:{CODE}` : **rien en base**. ⚠️ La persistance
+  n'est pas un luxe — la console peut être rechargée entre deux paiements, et un panier perdu
+  se reconstitue de mémoire, donc mal.
+- Sortie : ZIP `{CODE}_commande_{AAAAMMJJ-HHhMM}.zip`, **un fichier par photo** (le labo prend
+  un fichier + une quantité ; envoyer N copies du même JPEG ferait payer N fois le transfert),
+  quantité portée par le nom (`_x3`) **et** par un `bon-de-commande.txt` récapitulatif.
+  Téléchargement à l'unité possible sans passer par le panier.
+
+⚠️ **Aucun prix n'est codé en dur** : le dépôt est public, les grilles tarifaires n'y ont rien à
+faire. Le prix unitaire est une **préférence locale** (`localStorage.print_unit_price`) saisie
+une fois sur l'appareil du maître du jeu ; il ne sert qu'à afficher un total et à le reporter
+sur le bon de commande. Un test du banc échoue si un tarif réapparaît dans le source.
+
+⚠️ Ce mode n'existe **que** dans la console : la vente est un geste d'organisateur. Côté équipe,
+la règle tient — épreuve filigranée, aucun téléchargement (voir `CLAUDE.md` #46).
+
+**Hors périmètre, volontairement** : création/édition d'indices, tiroir des chasses types, carte
+Leaflet. Tout le reste du travail du jour J est là.
+
+**Points d'implémentation à connaître** :
+
+- **Écritures** : uniquement des `UPDATE` ciblés (`games`, `submissions`, `teams`), jamais
+  d'`upsert` — `games.is_template` n'apparaît dans aucun payload et ne peut donc pas être effacé.
+- ⚠️ **`.select()` sur chaque `update()`** : sous RLS, un UPDATE qui ne touche aucune ligne
+  (chasse d'un autre compte, `admin_id` legacy) renvoie **0 ligne sans erreur**. Sans ce contrôle,
+  l'écran afficherait un changement de phase jamais écrit — même famille de pannes muettes que
+  #26 / #43 / #50, attrapée cette fois à l'écriture.
+- **Purge** : `purgeGamePhotos` (API Storage) **puis** RPC `admin_purge_game`, jamais l'inverse.
+- **Chrono** : la régie étant admin, elle **persiste** la bascule `active → validation`.
+- **Défilement** : chaque événement realtime repeint les panneaux ; le `scrollTop` des zones
+  scrollables est relevé et restauré, et un test de signature évite de repeindre pour rien. La
+  rafale n'est jamais repeinte sous les doigts.
+
+⚠️ **Jamais ouverte dans un vrai navigateur ni sur un événement** au 2026-08-05 : syntaxe validée
+et 45 tests fonctionnels JSDOM au vert, ce qui n'est pas un essai terrain.
 
 ### Indices de départ (dispersion)
 Dans le **lobby**, l'admin assigne un **indice de départ distinct par équipe** (menu + « Répartir auto »). Chaque équipe ne voit **que son indice de départ** ; dès qu'elle l'a **réalisé (photo envoyée)**, les autres se débloquent. Optionnel (`teams.start_clue_id`, « — Aucun — »).
@@ -225,6 +355,32 @@ Selfie **optionnel** à l'inscription (`capture="user"`), uploadé dans `{game_c
 ### Compression des photos
 `compressImage(file, {max, q})` — plus grand côté ramené à **1600 px**, JPEG **0,82**, rééchantillonnage `high`, jamais d'agrandissement ; si la dataURL dépasse ~3 Mo, la **qualité** baisse par paliers (plancher 0,45) et non la définition. La photo d'équipe suit le **même régime** depuis qu'elle est imprimable (~350 Ko par équipe, contre ~80 Ko en 800 px auparavant). ⚠️ Les photos d'équipe **enregistrées avant** ce changement restent en 800 px : imprimables en 10×15 à ~200 dpi, correct mais en deçà des preuves. Compromis : ~350–450 Ko par preuve (≈2× l'ancien plafond de 1000 px) contre un tirage net en 10×15 cm (~300 dpi) et 13×18 (~225 dpi).
 
+### Moteur du cadre (`print-frame.js`) — module partagé
+
+Le cadre de tirage est la seule pièce mutualisée entre les deux surfaces. Extrait de
+`expedition.html` le 2026-07-30 (#59) parce que la régie devait produire les tirages et que
+recopier ~250 lignes de composition canvas — remaniées en #41, #42, #44, #55 puis #58 — aurait
+figé ici une version dépassée dès le correctif suivant.
+
+```js
+PrintFrame.build(sub, team, game)   // → canvas 10×15 (1200×1800 ou 1800×1200)
+PrintFrame.proof(sub, team, game)   // → épreuve 700 px filigranée « ÉPREUVE »
+PrintFrame.toBlob(cv)               // → Blob JPEG (qualité PrintFrame.Q = 0,92)
+PrintFrame.save(blob, nom)          // → téléchargement
+PrintFrame.fileName(game, team)     // → Expedition_CODE_Equipe.jpg
+PrintFrame.dateStr(game) · PrintFrame.safeFile(s) · PrintFrame.loadImage(url)
+```
+
+**Aucune dépendance** : ni Supabase, ni `STATE`, ni DOM applicatif. La chasse est passée en
+argument — c'est la seule différence avec l'ancienne fonction, qui lisait `STATE.game`.
+`expedition.html` conserve tous ses noms via des alias d'une ligne, donc **aucun appelant n'a
+changé** : `const buildPrintCanvas = (sub, team) => PrintFrame.build(sub, team, STATE.game);`
+
+⚠️ **`<script src="print-frame.js">` doit précéder le script inline** de `expedition.html`, qui
+évalue `const PRINT_Q = PrintFrame.Q;` dès son chargement. Ni `defer`, ni fin de body.
+⚠️ Le module est dans le `CORE` du service worker : disponible hors ligne comme le reste de
+l'app-shell. Le retirer casserait le démarrage, en ligne comme hors ligne.
+
 ### Tirage souvenir encadré
 Écran de fin **équipe** : l'équipe choisit **une** photo parmi les siennes (`teams.print_submission_id`) — sa **photo d'équipe est proposée en première vignette** —, avec une **loupe sur chaque vignette** pour l'ouvrir en grand et zoomer (pincer / molette / double-clic) avant de trancher. Écran de fin **admin** : liste des choix, choix de secours pour une équipe absente, aperçu, téléchargement à l'unité ou en ZIP `{CODE}_tirages.zip`. Le cadre est composé **en canvas** (`buildPrintCanvas`) — la photo passe par `fetch → blob → objectURL` pour ne pas souiller le canvas. Composition : parchemin, double filet, la **rose des vents en sceau à cheval sur le filet bas de la photo** (bord gauche collé à ce filet, 35 % du diamètre sous lui, dessinée **en dernier** pour recouvrir le filet — dessinée avant, elle paraissait derrière une vitre), « EXPÉDITION » sous elle, le **bloc de texte centré sur un axe commun** (équipe / chasse / lieu / date, chacun sur sa ligne en portrait ; **deux lignes** en paysage : équipe puis `chasse · lieu · date`) et le **logo du lieu** à droite du cartouche s'il a été joint à la chasse. ⚠️ Le sceau est ancré sur le rectangle **réellement dessiné** de la photo et dimensionné sur le **petit côté du tirage**, jamais sur la hauteur du cartouche. **Sortie au format fixe 10×15 cm** (1200×1800 portrait / 1800×1200 paysage, ~300 dpi) selon l'orientation de la photo : le labo imprime plein format, sans recadrage ; la photo est posée entière (jamais rognée), le parchemin absorbe l'écart de ratio. Fenêtre photo : 1080×1440 en portrait (3:4 exact) ; en paysage marge 40 px et cartouche 150 px, soit **1347×1010 pour une 4:3 (+23 % de surface)** — en paysage la photo est limitée par la hauteur, donc seuls la marge et le cartouche peuvent l'agrandir. Migration : `migration-print-choice.sql`.
 
@@ -233,6 +389,8 @@ Selfie **optionnel** à l'inscription (`capture="user"`), uploadé dans `{game_c
 
 ### Dupliquer une chasse passée
 Voie principale : **liste de toutes mes chasses** (`loadGamesForDuplicate`, tout statut, tri par date) → sélection → « Dupliquer cette chasse ». Repli replié : **par code** (`duplicateByCode`), seul moyen de dupliquer la chasse d'un autre compte. Les deux passent par `duplicateFromCode` : indices (nouveaux `id`) + réglages (dont `location`) copiés dans le formulaire → **nouvelle session vierge**. La source n'est jamais modifiée.
+
+Après la copie (chasse type, liste ou code), l'écran **remonte sur le champ « Date de la chasse »** et le surligne 4 s : les pickers vivent en bas de page et « Créer la chasse → » est un bouton sticky toujours visible — sans cette remontée, la nouvelle chasse partait à la date du jour sans que la **date prévue** ait été vue (voir `CLAUDE.md` #62).
 
 ### Supprimer une chasse
 Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Double confirmation, puis **deux étapes dans cet ordre** : (1) `purgeGamePhotos` retire les fichiers par l'**API Storage** — Supabase interdit tout `DELETE` SQL sur `storage.objects` ; (2) RPC `admin_purge_game` supprime les lignes (cascade). ⚠️ Jamais l'inverse : le bucket n'étant pas listable, les chemins ne se reconstruisent que depuis `submissions.id` / `teams.id`.
@@ -276,6 +434,26 @@ Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Doub
 | `loadGamesForDuplicate` / `duplicateFromCode` | Liste de mes chasses + duplication |
 | `purgeGamePhotos` + `purgeCurrentGame` / `admin_purge_game` | Effacement RGPD in-app : fichiers par l'API Storage **puis** lignes (RPC SECURITY DEFINER) |
 | `renderLeaderboard` | Classement (points d'indice + vote) |
+
+### Côté `regie.html`
+
+| Fonction | Rôle |
+|---|---|
+| `openGame` / `backToPicker` | Charger une chasse dans la console / revenir à la liste |
+| `paintConsole` / `paintIfChanged` | Rendu des panneaux + test de signature (évite les repeints inutiles et la perte de défilement) |
+| `panePilot` / `paneTeams` / `paneShots` / `paneJury` / `paneBoard` / `paneShare` / `panePrints` / `paneDanger` | Les huit panneaux |
+| `patchGame` / `patchSub` | `UPDATE` ciblés **avec `.select()`** — détecte les écritures refusées silencieusement par les RLS |
+| `decide` / `resetDecision` / `bulkApprove` | Conforme / refusée / validation en lot |
+| `openBurst` / `burstDecide` / `burstSkip` / `burstBack` | Mode rafale plein écran (clavier) |
+| `startHunt` / `addMinutes` / `endHunt` / `resumeHunt` / `goJudging` / `finalize` / `reopenJudging` | Cycle de vie de la chasse |
+| `setVote` | Vote jury 50/30/10, unicité par indice |
+| `openZoom` / `makeZoom` | Visionneuse zoom/pan (accepte la sentinelle `team:<id>`) |
+| `openPick` / `pickPrint` | Choix de tirage de secours pour une équipe absente |
+| `previewPrint` / `downloadPrint` / `downloadAllPrints` | Tirages encadrés via `PrintFrame` : aperçu, unité, ZIP `{CODE}_tirages.zip` |
+| `fillMissingPrints` | Complète les choix manquants par la photo la mieux notée de chaque équipe |
+| `openOrder` / `renderOrder` / `toggleOrder` / `setQty` | Commande de tirages supplémentaires (panier `localStorage`, quantités) |
+| `previewAny` / `downloadOne` / `downloadOrder` | Aperçu et sortie d'une photo quelconque · ZIP de commande + `bon-de-commande.txt` |
+| `purgeGamePhotos` / `purgeGame` | Effacement RGPD : fichiers **puis** lignes |
 
 ---
 
@@ -323,6 +501,11 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 7. **Stockage** : ~350–450 Ko par preuve depuis le passage à 1600 px, tier gratuit plafonné à **1 Go**, et la purge automatique n'efface plus les fichiers → vider les vieilles chasses après chaque événement.
 8. **Tirage souvenir** : composé côté client (canvas), sortie fixe 10×15 à ~300 dpi — la qualité plafonne à ce que vaut la photo envoyée (1600 px).
 9. **Reprise d'une chasse terminée** : `resumeHunt` restitue le temps restant mais ne « rejoue » rien — une équipe déjà déconnectée doit se reconnecter par la liste des équipes.
+10. **Deux surfaces, un seul module partagé.** Le cadre de tirage est mutualisé (`print-frame.js`, #59) ; le socle — mapping DB, export ZIP, purge, zoom, QR — reste **dupliqué** entre `expedition.html` et `regie.html`. **Un changement de schéma se répercute à la main dans les deux.** Prochain candidat à l'extraction si la douleur vient : le mapping DB.
+11. **`regie.html` n'a jamais tourné en conditions réelles** (au 2026-08-05) : validée par 45 tests JSDOM — 71 en comptant le moteur du cadre et le branchement de l'app —, jamais ouverte dans un navigateur ni sur un événement. Le parcours admin de `expedition.html` reste le chemin éprouvé.
+12. **Le site vitrine n'a ni versionnement ni retour arrière** (déployé par FTP), et son **devis n'est pas un envoi garanti** : le formulaire prépare le message et propose trois sorties (Gmail, `mailto:`, copie), mais rien ne prouve que le visiteur aille au bout, et aucune trace n'est conservée. Un envoi certain supposerait un service tiers (Formspree, Web3Forms, Netlify Forms).
+13. **Aucun banc ne voit les pixels — deux défauts du site l'ont prouvé le 2026-08-05.** Chromium ne s'installe pas dans l'environnement de développement : les 85 tests JSDOM vérifient le comportement et la géométrie, jamais le rendu. Sont passés au travers, et ont été vus à l'œil : un `mailto:` **muet** sur un Windows sans client mail (échec silencieux sur le seul appel à l'action), et du **gras noir sur fond noir** dans les sections sombres. Les deux sont désormais couverts par des tests — mais la leçon vaut pour la suite.
+14. **Les tests du cadre ne dessinent pas de pixels** : `node-canvas` ne s'installe pas dans l'environnement de développement, le banc utilise un contexte 2D *enregistreur* et vérifie la **géométrie** (dimensions, rectangle dessiné, rayon et centre du sceau, textes tracés). Il attraperait une régression de mise en page, pas un défaut de rendu. C'est un tirage réel, pas un test, qui a corrigé #55 — voir #58.
 
 ---
 
@@ -332,9 +515,14 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 - **Supabase Pro** : plus de pause, backups quotidiens (remplace le keep-alive). Devient un
   **pré-requis commercial** dès la première date vendue : une pause du projet le jour J est
   inacceptable face à un client payant.
-- **Commercialisation** (voir `commercial/` et #47) : compléter téléphone / SIRET dans les
-  deux livrets, souscrire une **RC pro** (annoncée page 4), puis fermer la dette Edge Functions
-  avant de démarcher un grand compte.
+- **Commercialisation** (voir `commercial/`, `site/` et #47/#61) : le site vitrine et l'adresse
+  `contact@expedition-selfiesafari.fr` sont en place. Restent **avant toute prospection réelle** :
+  compléter téléphone / SIRET / statut juridique dans les deux livrets **et dans les deux copies
+  de la politique de confidentialité** (`confidentialite.html` à la racine, `site/confidentialite.html`),
+  souscrire une **RC pro** (annoncée page 4 des livrets), vérifier « Selfie Safari » à la **base
+  Marques de l'INPI**, puis fermer la dette Edge Functions avant de démarcher un grand compte.
+  ⚠️ Le domaine dicté au téléphone se transcrit naturellement `expedition-selfie-safari.fr`
+  (trois tirets) — variante libre, à réserver en redirection si les erreurs se constatent.
 - **Vote du public — étudié le 2026-07-29, non retenu pour l'instant.** Le maître du jeu reste
   seul jury (comportement actuel, décrit tel quel dans les livrets) ; à revoir après les
   premiers événements réels. Ce qu'il faudrait construire : table `votes` (INSERT ouvert comme
@@ -355,6 +543,11 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
   ⚠️ Un vote 100 % public ferait aussi perdre le grand écran et la réaction de la salle, que
   `ANALYSE_CONCURRENCE.md` identifie comme le différenciateur n° 1. Toute évolution doit garder
   le diaporama comme spectacle.
+- **Éprouver `regie.html` sur un vrai événement**, et produire un **tirage portrait réel** (le
+  seul tirage produit à ce jour est un paysage, celui qui a corrigé #55). Ensuite seulement,
+  décider s'il faut **factoriser le socle** (mapping DB, export ZIP, purge) comme on l'a fait
+  pour le cadre : tant que la régie reste un complément, la duplication restante coûte moins
+  cher que l'abstraction.
 - **App native** (Expo/React Native) : le schéma et la logique ne changent pas.
 - Notifications push quand le jury vote ; replay animé ; etc.
 
@@ -365,8 +558,25 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 ```bash
 # Serveur local (HTTPS recommandé pour la caméra)
 python3 -m http.server 8000
-# puis http://localhost:8000/expedition.html
+# puis http://localhost:8000/expedition.html      (joueurs + admin mobile)
+#      http://localhost:8000/regie.html           (console maître du jeu)
+#      http://localhost:8000/regie.html?code=XXXX (console, chasse ouverte directement)
 ```
+
+```bash
+# Contrôle de syntaxe avant livraison (blocs <script> inline + scripts autonomes)
+for f in expedition.html regie.html; do
+  node -e "const h=require('fs').readFileSync('$f','utf8');
+           new Function([...h.matchAll(/<script>([\s\S]*?)<\/script>/g)].pop()[1]);
+           console.log('$f OK')"
+done
+node --check sw.js print-frame.js
+```
+
+> ⚠️ **Mise en ligne en un seul commit atomique** (`expedition.html` + `regie.html` +
+> `print-frame.js` + `sw.js` ensemble) : l'app ne démarre plus sans le module, et un
+> `cache.addAll` sur un 404 fait échouer l'installation du service worker. Un commit atomique
+> supprime tout état intermédiaire — Pages déploie l'arbre entier d'un coup.
 
 ```sql
 -- Effacer les LIGNES d'une chasse (cascade → teams + submissions)
@@ -379,4 +589,6 @@ select public.purge_game('XXXX');
 
 ## Historique des évolutions
 
-Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu, **épreuve filigranée** et **sortie de secours de la phase validation**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
+Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu, **épreuve filigranée**, **sortie de secours de la phase validation**, tiroir de chasses types, QR du diaporama, **sceau et centrage du cadre**, la **console maître du jeu `regie.html`**, l'extraction du moteur de cadre dans **`print-frame.js`**, les **tirages à la demande** et le **site vitrine mis en ligne**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
+
+> ⚠️ **Un bug de service worker trouvé en ajoutant la régie** (#57, `CACHE` v25→v26) : depuis #35, le handler de navigation écrivait **toute** réponse sous `'./expedition.html'`. Ouvrir `regie.html` une seule fois écrasait donc l'app-shell en cache — hors ligne, un **joueur** serait retombé sur la console du maître du jeu. Le chemin de cache est désormais celui du document réellement demandé.

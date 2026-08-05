@@ -3,17 +3,36 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-07-30, `BUILD` `2026-07-30.2`,
-> `CACHE` `expedition-v26`). Les écarts connus (travail local non poussé) sont signalés ⚠️.
-> Local et distant alignés sur `expedition.html` et `sw.js`, vérifié par re-clonage + `diff`
-> le 2026-07-30. ⚠️ `CLAUDE.md` diverge volontairement : la copie locale porte le § #47
-> (livrets) enrichi, avec la grille tarifaire, qui n'a rien à faire dans un dépôt public.
-> ⚠️ **#54 (QR du diaporama) et #55 (cadre du tirage) sont poussés mais PAS ENCORE TESTÉS en
-> conditions réelles** : syntaxe validée, aucun tirage réellement produit depuis #55.
-> Les maquettes qui ont servi à valider #55 sont des rendus **PIL hors app** (dossier local
-> `maquettes/`, hors dépôt) : elles répliquent la géométrie, pas le rendu canvas ni les
-> polices Fraunces. **Produire un tirage réel dans les deux orientations avant toute date
-> vendue** — c'est le seul contrôle qui vaut.
+> **réellement poussé sur GitHub** (HEAD = 2026-08-05, commit `e0fa1b3`, `BUILD`
+> `2026-08-05.1`, `CACHE` `expedition-v29`, vérifié par re-clone frais + `diff` le
+> 2026-08-05 : publié = local sur les quatre fichiers de code). Les écarts connus
+> (travail local non poussé) sont signalés ⚠️.
+> ✅ **Les lots #56 à #60 et #62 sont poussés depuis le 2026-08-05** (commit `e0fa1b3`,
+> un seul commit atomique — `expedition.html`, `regie.html`, `print-frame.js`, `sw.js` —
+> conformément à la règle : l'app ne démarre pas sans `print-frame.js` et un `cache.addAll`
+> sur un 404 ferait échouer l'installation du service worker).
+> ✅ **Docs publiées le 2026-08-05 en versions expurgées** (#63) : `README.md` et `PROJECT.md`
+> du dépôt sont à jour du code et **identiques au local** — les tarifs n'y figurent plus, ils
+> ne vivent que dans `commercial/` et dans le § #47 du présent fichier. Le `CLAUDE.md` du dépôt
+> est une **copie expurgée** de ce fichier : § #47 résumé sans aucun montant, identifiants FTP
+> OVH retirés du § #61. L'ancienne grille tarifaire qui traînait dans le CLAUDE.md du dépôt
+> est retirée.
+> ⚠️ **Règle inchangée : jamais un tarif sur GitHub.** Seule la version locale de ce fichier
+> porte la grille et le raisonnement de marge. Toute future poussée de `CLAUDE.md` doit être
+> **ré-expurgée** (§ #47 + identifiants FTP) — ne jamais pousser ce fichier tel quel, et
+> vérifier par grep (`€` collé à un chiffre, montants de la grille, login FTP) avant push.
+> ⚠️ **État des tests réels** : #58 vient d'un **vrai tirage paysage** (chasse « Chasse test »,
+> équipe « Les nanas », logo Capfun) — c'est lui qui a montré que #55 (4) était faux. En
+> revanche **aucun tirage PORTRAIT n'a encore été produit** avec le cadre de #55/#58, #54 (QR
+> du diaporama) n'a jamais été scanné en conditions réelles, et la régie (#56/#59/#60) n'a que
+> ses **71 tests JSDOM** (19 géométrie du cadre + 45 régie + 7 branchement de l'app) : jamais
+> ouverte dans un vrai navigateur ni sur un événement, et aucun tirage n'a été produit depuis
+> qu'elle sait le faire.
+> ⚠️ **`site/` est EN PRODUCTION mais hors du dépôt GitHub** (#61) : le site vitrine
+> <https://www.expedition-selfiesafari.fr> est déployé **par FTP chez OVHcloud**, indépendamment
+> de l'application. Il ne contient aucun tarif (règle du § #47) et pourrait donc être publié,
+> mais la décision n'est pas prise : le poser à la racine sous le nom `index.html` en ferait la
+> page d'accueil de GitHub Pages, alors que l'app y est servie par `expedition.html`.
 > ⚠️ `commercial/` et `ANALYSE_CONCURRENCE.md` sont **volontairement hors dépôt** (`.gitignore`) :
 > le dépôt est public et servi par Pages, les grilles tarifaires et l'analyse des faiblesses
 > n'ont rien à y faire. Ne pas les y remettre.
@@ -29,12 +48,20 @@ des photos comme preuves ; un maître du jeu (admin) valide puis fait juger les 
 
 - **Repo** : `MikRob-glitch/Expedition`
 - **Déploiement** : GitHub Pages → `https://mikrob-glitch.github.io/Expedition/expedition.html`
-- **Fichier principal** : `expedition.html` (application mono-fichier, ~3770 lignes)
+- **Fichier principal** : `expedition.html` (application joueurs + admin mobile, ~3670 lignes)
+- **Console maître du jeu** : `regie.html` (~2055 lignes, voir #56 et #60)
+- **Module partagé** : `print-frame.js` (moteur du cadre de tirage, voir #59)
 
 ## Stack & conventions
 
-- **Front** : HTML/CSS/JS vanilla, **un seul fichier** `expedition.html`. Pas de framework,
-  pas de TypeScript, pas de build. ES2022+.
+- **Front** : HTML/CSS/JS vanilla, **un fichier par surface** — `expedition.html` (joueurs +
+  parcours admin mobile) et `regie.html` (console maître du jeu grand écran) — **plus un module
+  partagé**, `print-frame.js`. Pas de framework, pas de TypeScript, pas de build. ES2022+.
+  ⚠️ **Une seule chose est mutualisée : le cadre de tirage** (`print-frame.js`, #59), parce que
+  c'est la seule pièce assez grosse et assez remaniée pour que deux copies divergent à coup sûr.
+  Le reste du socle (`rowToGame`/`rowToSub`, export ZIP, `purgeGamePhotos`, zoom, QR) est encore
+  dupliqué : assumé, mais **un changement de schéma se répercute dans les deux fichiers**.
+  La règle générale reste : au-delà d'une poignée de lignes, **extraire un module, jamais copier**.
 - **Back** : Supabase (Postgres + Realtime + Storage).
   - Projet Supabase : **`rwagwbzztcehvdztkscj`** (« Expedition catching », région eu-north-1).
   - URL + clé `anon` codées en dur dans `SUPABASE_DEFAULTS` (fallback), surchargées si
@@ -95,6 +122,15 @@ dissocier les deux.
 
 ## Fonctionnalités clés
 
+- **Console maître du jeu (`regie.html`)** : tableau de bord autonome, responsive 1/2/3 colonnes
+  (onglets Pilotage / Travail / Outils au téléphone). Chrono et actions de phase, équipes avec
+  score live et progression indice par indice, flux de preuves filtrable (statut × équipe ×
+  indice) **validable dès l'arrivée des photos**, mode rafale plein écran au clavier, vote
+  50/30/10 groupé par indice, classement temps réel, QR d'accès et QR diaporama, export ZIP,
+  **tirages souvenir** (aperçu, unité, ZIP, complétion des choix manquants — via
+  `print-frame.js`, #59), **tirages à la demande** pour les exemplaires vendus en plus
+  (panier, quantités, bon de commande — #60), purge RGPD. Même session d'auth que l'app (même origine).
+  Hors périmètre volontaire : édition d'indices, chasses types, carte Leaflet.
 - **Indices de départ (dispersion)** : dans le lobby, l'admin assigne un indice de départ
   distinct par équipe (`teams.start_clue_id`, bouton « Répartir auto »). Chaque équipe ne voit
   que son indice de départ ; il se débloque tous les autres dès la première photo envoyée.
@@ -253,12 +289,18 @@ Pas de build : GitHub Pages sert les fichiers du dépôt tels quels (`.nojekyll`
 
 **Checklist à chaque livraison :**
 
-1. Incrémenter **`BUILD`** dans `expedition.html` (affiché en bas de l'écran de préparation et
-   logué au démarrage). Sans ça, impossible de savoir quelle version tourne sur un appareil.
-2. Incrémenter **`CACHE`** dans `sw.js` si l'app-shell change (`expedition.html`, icônes,
-   `manifest.json`, CDN précachés). Dans le doute, incrémenter.
-3. Vérifier la **syntaxe JS** avant de pousser : extraire le bloc `<script>` inline de
-   `expedition.html` et le passer à `new Function(...)`, plus `node --check sw.js`.
+1. Incrémenter **`BUILD`** dans le(s) fichier(s) touché(s) — `expedition.html` (affiché en bas
+   de l'écran de préparation) et/ou `regie.html` (logué au démarrage). Sans ça, impossible de
+   savoir quelle version tourne sur un appareil.
+2. Incrémenter **`CACHE`** dans `sw.js` si l'app-shell change (`expedition.html`, `regie.html`,
+   `print-frame.js`, icônes, `manifest.json`, CDN précachés). Dans le doute, incrémenter.
+3. Vérifier la **syntaxe JS** avant de pousser : extraire le bloc `<script>` inline de chaque
+   HTML et le passer à `new Function(...)`, plus `node --check sw.js print-frame.js`. Les bancs
+   JSDOM du § « Workflow attendu » vont plus loin (géométrie du cadre, rendu de la régie,
+   filtres, rafale, transitions, branchement de `expedition.html` sur le module).
+   ⚠️ **Toute retouche du cadre se vérifie d'abord au banc géométrie** (il connaît les cotes de
+   #55/#58 : 1080×1440, 1347×1010, sceau 117/90,5), **puis sur un tirage réel** — c'est un
+   tirage réel, pas un test, qui a corrigé #55.
 4. Vérifier l'**intégrité du fichier** : il doit finir par `</script></body></html>`, et les
    ancres de fin (`function escapeHtml`, `async function logout`, `// ---------- TICK`) doivent
    être présentes. Voir l'avertissement sur le mount OneDrive dans « Workflow attendu ».
@@ -745,122 +787,35 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     ils n'empêchent pas de le copier. Une vraie protection supposerait des URLs signées et un
     rendu du cadre côté serveur (Edge Function) — non fait.
 
-### Local, non poussé (2026-07-27 → 2026-07-29) — Livrets commerciaux
+### Local, hors dépôt (2026-07-27 → 2026-07-29) — Livrets commerciaux
 
-47. **Dossier `commercial/`** — supports de vente de la **prestation** (scénario B de
-    `ANALYSE_CONCURRENCE.md` : Mika anime les événements avec son outil ; l'appli est le
-    différenciateur, pas un SaaS vendu seul). **Aucun fichier applicatif touché** : ni `BUILD`
-    ni `CACHE` à bumper. Les PDF sont produits par **WeasyPrint** depuis les HTML — pas de
-    dépendance ajoutée au dépôt, la génération est hors app.
-
-    **Deux livrets, une cible chacun** (2026-07-29). Un livret unique parlait à la fois de
-    vacanciers et de collaborateurs : le camping lisait « séminaire », le DRH lisait
-    « familles », et chacun voyait le prix de l'autre. Scindé en deux fichiers de 6 pages A4
-    qui partagent la feuille de style `plaquette.css` :
-
-    | Fichier | Cible | Grille |
-    |---|---|---|
-    | `livret-campings.html` → `Expedition_livret_campings.pdf` | campings, villages de vacances, parcs résidentiels, OT | DÉCOUVERTE 390 € / 30 pers. · SIGNATURE 690 € / 50 · GRANDE SEMAINE 1 190 € / 2 sessions, 100 cumulés |
-    | `livret-entreprises.html` → `Expedition_livret_entreprises.pdf` | séminaires, intégration, incentive, CSE | COHÉSION 690 € / 20 pers. · SÉMINAIRE 990 € / 30 · GRAND FORMAT 1 690 € / 60, 2 animateurs |
-
-    Dépassement : 6 / 5 / 5 € par personne côté camping, 25 / 22 / 18 € côté entreprise.
-    Options camping : −15 % dès 5 dates, tirage suppl. 4 € HT (revendable 8–10 €), 2ᵉ session
-    −40 %. Options entreprise : parcours à vos couleurs +290 € HT, tirage suppl. 6 € HT,
-    2ᵉ session −40 %. **Chaque livret n'affiche que sa propre grille** — c'est tout l'objet de
-    la scission, ne pas y remettre les formules de l'autre cible.
-    ⚠️ **Cohérence tarifaire à tenir à la main** : les deux grilles vivent dans deux fichiers
-    séparés, rien ne les synchronise. Une révision de prix doit être répercutée dans les deux.
-
-    **Positionnement produit** : l'accroche de couverture est **« Selfie Safari en équipe »** ;
-    « chasse au trésor photo » reste employé en explication dans le corps du texte, quand il
-    faut être clair sur le concept. Les deux formulations cohabitent volontairement — la
-    première vend, la seconde rassure. Le nom interne de l'app et du dépôt ne change pas.
-    ⚠️ Le pied de page dit « EXPÉDITION · Selfie Safari en équipe » : le changer suppose de le
-    reprendre sur les 5 pages intérieures de **chaque** livret.
-
-    Structure commune des 6 pages : couverture · déroulé en 4 temps + bandeau de chiffres ·
-    bénéfices (deux colonnes propres à la cible) · logistique jour J · formules · tirage
-    souvenir + FAQ + contact. Charte reprise de l'app (parchemin, oxblood, filets dorés,
-    rose des vents de `icons/favicon.svg` inlinée en SVG).
-
-    **Repères marché ayant servi de calage** : animateur pro **300–800 €/jour**, team-building
-    **15–50 €/pers** sur une base forfaitaire **~990 € HT**. L'hypothèse initiale à 5 €/pers a
-    été écartée : elle met un groupe de 20 à 100 € pour une journée de travail. Le principe
-    retenu est le **forfait avec plafond de participants inclus**, **jamais de pur per-capita**
-    (un camping ne connaît pas sa fréquentation à l'avance et ne signe pas un prix variable).
-
-    ⚠️ **Les plafonds de participants sont bornés par l'arbitrage, pas par le prix** (revu le
-    2026-07-29 ; les premiers chiffres — 70 / 90 / 140 côté camping, 80 côté entreprise — étaient
-    déduits du calage tarifaire et intenables). Le goulot est la **validation photo par photo**
-    puis le **vote 50/30/10 par indice**, tous deux manuels et faits par une seule personne sur
-    un seul écran. Avec 10 indices : 8 équipes = 80 photos = 11 s par photo sur les 15 min
-    annoncées (jouable) ; 14 équipes = 140 photos = 6 s (intenable) ; 18 équipes = 5 s
-    (impossible). Le jury est pire : classer 3 photos parmi 14, dix fois, en 20 min devant une
-    salle, ne se fait pas. **Plafond retenu : ~10 équipes, soit 50 participants pour un animateur
-    seul.** Au-delà, seconde session plutôt que second animateur — deux personnes n'accélèrent
-    pas l'arbitrage (un seul admin, un seul écran ; deux sessions Supabase simultanées sur le
-    même compte seraient possibles mais **non testées** et sujettes à double jugement).
-    ⚠️ Le vrai levier d'ajustement est le **nombre d'indices**, volontairement absent des livrets :
-    à 15 équipes, descendre à 6 indices repasse sous les 90 photos. À garder en main au devis.
-    ⚠️ **Aucune donnée historique pour calibrer** : au 2026-07-29 la base contient 2 chasses,
-    0 équipe, 0 preuve (tout a été purgé, cf. #50). Les chiffres ci-dessus sont un raisonnement,
-    pas une mesure — à corriger après le premier événement réel.
-
-    ⚠️ **Trois champs restent en `[ à compléter ]`** dans les deux PDF : téléphone, SIRET — et
-    les livrets **annoncent une RC pro** (page 4, « ce que j'apporte »), à souscrire avant tout
-    démarchage réel.
-    ⚠️ **Pré-requis avant un gros compte** : la dette « Lot Edge Functions » (voir § Dette
-    technique) est jugée *disqualifiante en B2B* par `ANALYSE_CONCURRENCE.md`. Volontairement
-    absente des livrets, mais bloquante face à un service informatique (DRH, grand groupe).
-
-    **Regénération** (depuis la racine du dépôt) :
-
-    ```bash
-    weasyprint commercial/livret-campings.html    commercial/Expedition_livret_campings.pdf
-    weasyprint commercial/livret-entreprises.html commercial/Expedition_livret_entreprises.pdf
-    python3 commercial/verif-pages.py commercial/*.pdf     # obligatoire, voir ci-dessous
-    ```
-
-    ⚠️ **`commercial/verif-pages.py` n'est pas optionnel.** `overflow:hidden` **masque** un
-    débordement au lieu de le paginer : un bloc trop long glisse **sous le pied de page** sans
-    qu'aucun outil ne signale d'erreur, et le PDF reste « valide » à 6 pages. Le piège s'est
-    déclenché **cinq fois** pendant la rédaction, et **aucune** relecture visuelle ne l'a
-    attrapé de façon fiable. Le script rend chaque page à 150 dpi, mesure le bas du dernier
-    élément dessiné et exige **5 mm de dégagement** sous lui ; code retour 1 sinon.
-
-    ⚠️ **Deux erreurs de calibrage à ne pas refaire** — elles ont l'une et l'autre produit un
-    script qui validait des pages débordantes :
-    1. **Le filet du pied de page est à 278,8 mm, pas 282,8** (282,8 = son *texte*). Viser
-       282,8 revient à contrôler l'espace vide *entre* le filet et le texte : tout passe.
-    2. **Le seuil de gris doit être à 233, pas 200.** Un seuil bas ne voit que l'encre, or
-       c'est le **fond teinté** d'un encadré (`--parchment-2` #ebe2cf, L = 226) qui dépasse
-       en premier, bien avant son texte — c'est exactement ce qui est arrivé page 4 du livret
-       camping. Le fond de page `--parchment` est à L = 238 : la fenêtre est étroite.
-
-    Dégagement actuel sous le dernier bloc, en mm :
-
-    | | p2 | p3 | p4 | p5 | p6 |
-    |---|---|---|---|---|---|
-    | campings | 10,1 | 33,1 | **6,5** | 29,0 | **5,7** |
-    | entreprises | 8,9 | 28,9 | **6,3** | 23,6 | 7,9 |
-
-    Les pages 4 et 6 sont les plus tendues : y ajouter une puce ou une ligne de FAQ déborde.
-    Leviers déjà utilisés pour les desserrer, dans l'ordre de préférence : fusionner deux
-    puces de la liste « j'apporte », ramener une réponse de FAQ à une ligne, puis
-    `style="margin-top:4mm"` sur le `.callout` ou le bloc `.contact` de la page concernée.
-
-    ⚠️ **Contraintes WeasyPrint, apprises à la dure** — le CSS est calibré pour lui, pas pour un
-    navigateur :
-    - le support **flex est partiel** : `flex-wrap` est **ignoré** (les cartes s'empilent sur
-      toute la largeur) et `margin-top:auto` **ne pousse rien** vers le bas ;
-    - les grilles utilisent donc `inline-block` (cartes, options), `display:table` (deux
-      colonnes) et `float` (étapes, vignette du tirage) — **ne pas les repasser en flexbox** ;
-    - chaque `.page` est en `height:297mm; overflow:hidden`, avec le `.ftr` en
-      `position:absolute; bottom:11mm` ;
-    - `overflow:hidden` **masque** un débordement au lieu de le paginer : après toute retouche
-      de texte, **re-rendre en images et regarder chaque page**
-      (`pdftoppm -jpeg -r 110 fichier.pdf p`), sinon un bloc passe sous le pied de page sans
-      la moindre erreur. C'est ce qui est arrivé à la page 6 du livret entreprises.
+47. **Dossier `commercial/`** (hors dépôt, `.gitignore`) — supports de vente de la
+    **prestation** : Mika anime les événements avec son outil, l'appli est le différenciateur,
+    pas un SaaS vendu seul. **Aucun fichier applicatif touché** : ni `BUILD` ni `CACHE`.
+    Deux livrets de 6 pages A4 (campings / entreprises), une cible chacun, partageant
+    `plaquette.css` ; PDF produits par **WeasyPrint** depuis les HTML.
+    ⚠️ **Les grilles tarifaires, leur construction et les plafonds commerciaux sont documentés
+    uniquement en local** — le dépôt est public, ils n'y ont rien à faire (même règle que le
+    site vitrine et que le mode commande de la régie, #60/#61). Points transposables :
+    - Le goulot opérationnel est l'**arbitrage** (validation photo par photo + vote 50/30/10,
+      manuels sur un seul écran) : plafond **~10 équipes / ~50 participants** pour un
+      animateur seul ; au-delà, seconde session plutôt que second animateur. Le vrai levier
+      d'ajustement est le **nombre d'indices**, volontairement absent des livrets.
+    - Le modèle repose sur la **répétition** : repérage et écriture s'amortissent dès la
+      deuxième date sur un même site — d'où un **forfait saison** au cœur de l'offre.
+    - Accroche de couverture « **Selfie Safari en équipe** » ; « chasse au trésor photo » en
+      explication dans le corps. Aucun tiret cadratin dans le corps des livrets.
+    - Maquette du tirage aux **proportions réelles de `buildPrintCanvas`** (portrait et
+      paysage), avec l'encart « VOTRE LOGO ».
+    - `commercial/verif-pages.py` est **obligatoire** après chaque rendu : `overflow:hidden`
+      **masque** un débordement au lieu de le paginer — un bloc trop long glisse sous le pied
+      de page sans erreur, le PDF reste « valide ». Le script mesure le bas du dernier élément
+      dessiné à 150 dpi et exige 5 mm de dégagement. Deux pièges de calibrage : viser le
+      **filet** du pied de page (pas son texte), et un **seuil de gris à 233** (le fond teinté
+      d'un encadré déborde avant son texte).
+    - Contraintes WeasyPrint : support flex **partiel** (`flex-wrap` ignoré, `margin-top:auto`
+      inopérant) — grilles en `inline-block` / `display:table` / `float`, à ne **pas**
+      repasser en flexbox ; pages en `height:297mm; overflow:hidden`.
 
 ### Poussés sur GitHub (2026-07-27, commit `22d69d8`) — La photo d'équipe devient une photo à part entière
 
@@ -1128,6 +1083,67 @@ réutilisation d'un modèle et création de la chasse à partir de lui — parco
     `downloadAllPrints` fonctionnent sans modification. `BUILD` → `2026-07-30.1`,
     `CACHE` **v24→v25**.
 
+    Portrait inchangé côté fenêtre : `pad` 60, `foot` 300, photo 1080×1440 (3:4 exact).
+    **Aucune migration, aucun changement de schéma** ; `buildProofCanvas`, `downloadPrint` et
+    `downloadAllPrints` fonctionnent sans modification. `BUILD` → `2026-07-30.1`,
+    `CACHE` **v24→v25**.
+
+### Poussés sur GitHub (2026-08-05, commit `e0fa1b3`) — Console maître du jeu `regie.html`
+
+⚠️ **Écrit et testé hors ligne (JSDOM), jamais ouvert dans un vrai navigateur ni sur un
+événement.**
+
+56. **`regie.html` — tableau de bord du maître du jeu**, fichier **autonome** servi à côté de
+    `expedition.html`. Même projet Supabase, même schéma, **même session d'auth** (le client
+    supabase-js range le jeton en `localStorage` sur l'origine : se connecter d'un côté connecte
+    l'autre). `expedition.html` **n'est pas modifié**.
+    (1) **Raison d'être** : le parcours admin de l'app est une suite d'écrans mobiles
+    (lobby → live → validation → jury → fin) ; on ne voit jamais le chrono, les équipes et le
+    flux de photos en même temps. La régie met tout sur un seul écran, en 1 / 2 / 3 colonnes
+    selon la largeur (téléphone : trois onglets Pilotage / Travail / Outils).
+    (2) **Le vrai gain est l'arbitrage.** La validation peut désormais se faire **pendant** la
+    chasse, au fil des arrivées, au lieu de tout empiler à la fin — c'est le goulot chiffré au
+    § #47 (~11 s par photo à 8 équipes × 10 indices, intenable à 14 équipes). S'y ajoutent un
+    **mode rafale** plein écran (une photo, `→` conforme / `←` refuser / `S` passer /
+    `Retour arrière` revenir) et un **« tout marquer conforme »** sur la sélection filtrée.
+    (3) **Périmètre** : pilotage du cycle de vie (démarrer, ±5/±10 min, terminer, reprendre,
+    jury, clôturer, rouvrir), équipes (score live, progression indice par indice, indices de
+    départ + répartition auto, retrait en `setup`), flux filtrable (statut × équipe × indice),
+    vote 50/30/10 groupé par indice avec compteur `n/3`, classement temps réel, QR d'accès et
+    QR du diaporama, export ZIP, choix de tirage de secours, purge RGPD.
+    (4) **Hors périmètre, volontairement** : création/édition d'indices, tiroir des chasses
+    types, carte Leaflet et **production des tirages encadrés**. Le cadre est un moteur canvas
+    de ~250 lignes qui vient d'être remanié (#55) : le recopier ici garantissait la divergence.
+    La régie affiche donc les choix et renvoie à l'app pour les produire. ⚠️ **Si ce partage
+    devient gênant, la bonne réponse est d'extraire un `print-frame.js` chargé par les deux
+    fichiers, pas de dupliquer.**
+    ⚠️ **Point (4) périmé le jour même : voir #59.** Les tirages se produisent désormais depuis
+    la régie — non pas en copiant le moteur, mais en l'extrayant dans `print-frame.js`, comme
+    annoncé ici. Seuls l'édition d'indices, les chasses types et la carte restent hors périmètre.
+    (5) **Écritures** : uniquement des `UPDATE` ciblés (`games`, `submissions`, `teams`), jamais
+    d'`upsert` — `games.is_template` n'apparaît dans aucun payload et ne peut donc pas être
+    effacé. ⚠️ **`.select()` est ajouté à chaque `update()`** : sous RLS, un UPDATE qui ne touche
+    aucune ligne (chasse d'un autre compte, `admin_id` legacy) renvoie **0 ligne sans erreur** —
+    l'écran afficherait un changement de phase jamais écrit. Même famille de pannes muettes que
+    #26 / #43 / #50, attrapée cette fois à l'écriture.
+    (6) **Purge** : `purgeGamePhotos` (API Storage) **puis** RPC `admin_purge_game`, jamais
+    l'inverse.
+    (7) **Chrono** : la régie étant admin, elle **persiste** la bascule `active → validation` à
+    l'expiration, comme `render()` dans l'app.
+    (8) **Défilement préservé** : chaque événement realtime repeint les panneaux ; le `scrollTop`
+    des zones scrollables est relevé et restauré, sinon le flux remonterait en haut au milieu
+    d'une session d'arbitrage. Un test de signature évite de repeindre pour rien, et la rafale
+    n'est jamais repeinte sous les doigts.
+    **Aucune migration, aucun changement de schéma.** `BUILD` de `expedition.html` inchangé.
+
+57. **`sw.js` : la navigation ne poisonne plus l'app-shell des joueurs.** `CACHE` **v25→v26**,
+    `./regie.html` ajouté à `CORE`. ⚠️ **Bug réel introduit par #35 et révélé par la régie** :
+    le handler de navigation écrivait **toute** réponse sous `'./expedition.html'`
+    (`c.put('./expedition.html', net.clone())`). Ouvrir `regie.html` une seule fois écrasait donc
+    l'app-shell mise en cache — et hors ligne, un **joueur** serait retombé sur la console du
+    maître du jeu. Le chemin de cache est désormais celui du document réellement demandé
+    (`regie.html` / `confidentialite.html` / `expedition.html`), avec repli sur `expedition.html`.
+
 ### Poussés sur GitHub (2026-07-30) — Cartouche paysage vraiment centré (1er tirage réel)
 
 58. **Deux corrections dictées par le premier tirage produit pour de vrai** (chasse « Chasse
@@ -1153,8 +1169,259 @@ réutilisation d'un modèle et création de la chasse à partir de lui — parco
     `expedition-v26` sans être poussé. Il est passé à **v27** en local pour ne pas exister en
     deux versions différentes sous le même nom de cache.
 
+### Poussés sur GitHub (2026-08-05, commit `e0fa1b3`) — `print-frame.js` + tirages depuis la régie
+
+59. **Le moteur du cadre sort de `expedition.html` dans `print-frame.js`, chargé par les DEUX
+    fichiers.** Demande : produire les tirages depuis la console. #56 (4) l'avait laissé de côté
+    en écrivant que la bonne réponse serait d'extraire un module plutôt que de copier
+    `buildPrintCanvas` (~250 lignes, remaniées en #41/#42/#44/#55/#58). C'est fait.
+    (1) **Contenu du module** : `build`, `proof`, `dateStr`, `safeFile`, `fileName`, `loadImage`,
+    `ensureFonts`, `toBlob`, `dataUrlToBlob`, `save`, + les constantes `Q`/`LONG`/`SHORT`/
+    `PROOF_LONG`. Exposé en `window.PrintFrame` par une IIFE. **Aucune dépendance** : ni
+    Supabase, ni `STATE`, ni DOM applicatif — `build(sub, team, game)` reçoit la chasse en
+    argument, là où l'ancienne fonction lisait `STATE.game`.
+    (2) **`expedition.html` ne perd aucun nom** : les appelants (`openPrintPreview`,
+    `downloadPrint`, `downloadAllPrints`, `renderTeamPrintCard`…) sont **inchangés**, le fichier
+    garde des alias d'une ligne (`const buildPrintCanvas = (sub,team) => PrintFrame.build(sub,
+    team, STATE.game);`). Bilan : **−298 lignes** (3970 → 3672).
+    ⚠️ **`<script src="print-frame.js">` doit précéder le script inline** : celui-ci évalue
+    `const PRINT_Q = PrintFrame.Q;` dès son chargement. Un `defer` ou un placement en fin de
+    body casserait l'app au démarrage.
+    (3) **`regie.html`** gagne l'aperçu plein écran (`previewPrint`), le téléchargement à
+    l'unité (`downloadPrint`), le ZIP `{CODE}_tirages.zip` (`downloadAllPrints`, séquentiel
+    avec indicateur de progression) et **`fillMissingPrints`** : pour chaque équipe partie sans
+    choisir, retient sa photo la mieux notée (points de vote, puis points d'indice, puis la plus
+    récente), la photo d'équipe ne servant que de dernier recours. Réversible ligne par ligne.
+    ⚠️ Un tirage prend ~1 s à composer. Pendant une série, un événement realtime repeindrait les
+    panneaux et effacerait l'indicateur : `S.printing` gèle le rendu, comme le fait déjà la rafale.
+    (4) **`sw.js`** : `./print-frame.js` ajouté à `CORE`, `CACHE` **v27→v28**.
+    ⚠️ **Ordre de poussée impératif** : `print-frame.js` et `regie.html` **avant** `sw.js`
+    (un `cache.addAll` sur un 404 fait échouer l'installation du worker) et avant
+    `expedition.html` (qui ne démarre plus sans le module).
+    (5) **Vérification** : banc de 19 tests sur le moteur seul (canvas *enregistreur* sous JSDOM,
+    faute de `node-canvas` dans le sandbox) — il rejoue la géométrie documentée et l'aurait vue
+    bouger : portrait 1200×1800 avec photo 1080×1440 posée en (60,60), paysage 1800×1200 avec
+    fenêtre **1347×1010**, sceau de rayon **117** px en portrait / **90,5** en paysage calé à
+    `bas_du_filet − 0,30 R`, quatre lignes de cartouche en portrait contre deux en paysage,
+    logo du lieu à droite, échec de chargement du logo non bloquant, épreuve à 700 px avec
+    filigrane répété. Plus 45 tests sur la régie et 7 sur le branchement de `expedition.html`,
+    soit **71 au total** — tous rejouables hors ligne, sans réseau ni base.
+    ⚠️ **Ce banc ne dessine rien** : il vérifie les *appels* et la géométrie, pas les pixels.
+    Un tirage réel reste à produire — c'est encore lui qui a corrigé #55 (voir #58).
+    **Aucune migration.** `BUILD` `expedition.html` → `2026-07-30.3`, `regie.html` → `2026-07-30.2`.
+
+### Poussés sur GitHub (2026-08-05, commit `e0fa1b3`) — Tirages à la demande (vente d'exemplaires supplémentaires)
+
+60. **`regie.html` : mode « commande », n'importe quelle photo en n exemplaires.** Le tirage
+    souvenir (#39) est **une** photo par équipe, offerte ou incluse dans la formule ; les
+    livrets prévoient en plus des **tirages supplémentaires payants** (#47). Il manquait donc
+    le geste le plus simple du jour J : « je veux aussi celle-là, en double ».
+    (1) **Ouverture** : bouton `🛒 Tirages` dans la barre haute (et depuis le panneau Tirages),
+    raccourci `T`. Grille de **toutes** les photos de la chasse, triées par équipe puis par
+    ordre d'indice — **refusées et selfies d'équipe compris** : une belle photo n'est pas
+    forcément une preuve conforme, et c'est souvent celle-là qu'on achète.
+    (2) **Panier** : clic = ajouter, `−/+` = quantité (1–99), loupe = aperçu du cadre réel.
+    Stocké en `localStorage` sous `order:{CODE}` — **rien en base**, c'est un panier local.
+    ⚠️ La persistance n'est pas un luxe : le jour J la console peut être rechargée entre deux
+    paiements, et un panier perdu se reconstitue de mémoire, donc mal.
+    (3) **Sortie** : ZIP `{CODE}_commande_{AAAAMMJJ-HHhMM}.zip`, **un fichier par photo** (le
+    labo prend un fichier + une quantité ; envoyer N copies du même JPEG ferait payer N fois
+    le transfert), quantité portée par le nom (`_x3`) **et** par un `bon-de-commande.txt` joint
+    qui récapitule équipe, indice, quantités et total. Téléchargement à l'unité également
+    possible sans passer par le panier.
+    (4) ⚠️ **AUCUN PRIX N'EST CODÉ EN DUR** — le dépôt est public, la règle du § #47 s'applique.
+    Le prix unitaire est une **préférence locale** (`localStorage.print_unit_price`), saisie une
+    fois sur l'appareil du maître du jeu ; il ne sert qu'à afficher un total d'aide-mémoire et
+    à le reporter sur le bon de commande. Un test du banc échoue si un tarif réapparaît dans
+    le source.
+    (5) **Rendu** : `S.printing` gèle le repeint pendant la série, comme pour la rafale et le
+    ZIP des tirages. La commande vit dans son propre overlay, hors de `#app`, donc un événement
+    realtime ne l'efface pas.
+    **Aucune migration, aucun changement de schéma.** `BUILD` `regie.html` → `2026-07-30.3`.
+    ⚠️ `expedition.html` **n'a pas** ce mode : la vente est un geste d'organisateur, pas de
+    joueur — côté équipe, la règle de #46 (épreuve filigranée, aucun téléchargement) tient.
+
+### EN LIGNE sur OVH, non poussé sur GitHub (2026-08-03 → 2026-08-05) — Site vitrine `site/`
+
+✅ **En production depuis le 2026-08-05** : <https://www.expedition-selfiesafari.fr>
+(domaine + hébergement OVHcloud, voir « Mise en ligne » plus bas). **Le dossier `site/` n'est
+pas dans le dépôt GitHub** : il est déployé par FTP, indépendamment de l'application.
+
+⚠️ **Le rendu réel a tranché — et il a trouvé deux défauts que le banc ne pouvait pas voir.**
+Chromium ne s'installe pas dans le sandbox (téléchargement bloqué) : les 85 tests JSDOM
+vérifient le comportement et la géométrie, **jamais les pixels ni les couleurs**. Ont échappé
+au banc, et ont été signalés par l'organisateur en regardant l'écran :
+1. le `mailto:` du formulaire **ne produisait rien** sur un Windows sans client mail associé —
+   échec silencieux sur le seul appel à l'action du site, voir (4) ;
+2. le **gras des listes était noir sur fond noir** dans les sections sombres, voir (9).
+Même leçon que #55 corrigé par #58 : le banc protège des régressions, il ne remplace pas un
+essai réel. Les deux défauts sont désormais couverts par des tests.
+
+61. **`site/index.html` — vitrine commerciale, fichier unique autonome.** Aucun fichier
+    applicatif touché : ni `BUILD` ni `CACHE` à bumper, et le service worker de l'app ne
+    connaît pas ce fichier. Contenu repris des deux livrets (#47), **tarifs retirés**.
+    (1) **Architecture** : un seul `index.html` (~88 Ko), zéro build, zéro dépendance à
+    installer. Trois vues dans le même DOM, basculées par un routeur d'ancre
+    (`#/`, `#/campings`, `#/entreprises`) + une section devis **partagée, hors des `.view`**.
+    Seule ressource externe : les polices Google (Fraunces / Geist), avec repli système.
+    (2) ⚠️ **AUCUN TARIF, décision explicite** — même règle que #47 et #60. Trois tests
+    échouent si un `€`, un montant de la grille ou un « HT »
+    réapparaît. La conversion passe par le formulaire de devis.
+    (3) **E-mail de contact : une seule constante** `CONTACT_EMAIL` en tête du script inline,
+    injectée dans le pied de page, le bloc contact et le `mailto` du formulaire. Un test
+    échoue si un `href="mailto:` en dur revient dans le HTML — c'est ce qui garantit qu'une
+    seule ligne suffira le jour où l'adresse pro d'EXPÉDITION existera.
+    (4) **Formulaire de devis : trois sorties, plus un `mailto:` d'autorité** (revu le
+    2026-08-05 après essai réel). Première version : la validation posait
+    `window.location.href = 'mailto:…'`. **Sur un Windows sans client mail associé — le cas
+    par défaut — le clic ne produit RIEN**, et le visiteur croit sa demande envoyée. Constaté
+    sur le poste de l'organisateur ; la limite était documentée mais jugée théorique, elle ne
+    l'était pas. Le formulaire ouvre désormais une fenêtre `#devis-out` qui propose
+    **Gmail** (`https://mail.google.com/mail/?view=cm&fs=1&…`, nouvel onglet), **la messagerie
+    du système** (`mailto:`, conservé pour ceux qui en ont une) et **la copie du message**
+    (`navigator.clipboard`, repli `execCommand`), le corps étant affiché en clair dans un
+    `<textarea readonly>`. Deux des trois chemins ne dépendent d'aucun logiciel installé.
+    Aucun backend, aucune donnée stockée, aucun service tiers.
+    ⚠️ **Ne jamais revenir à une navigation `mailto:` sans retour visuel** : c'est un échec
+    silencieux sur le seul appel à l'action du site. Un test du banc échoue si la soumission
+    navigue au lieu d'ouvrir la fenêtre.
+    ⚠️ Reste vrai : un envoi *garanti* supposerait Formspree, Web3Forms ou Netlify Forms,
+    donc un compte tiers.
+    (5) **Boussole toujours visible** (`#roseDock`) : élément **fixe** qui démarre à la taille
+    de son emplacement dans le héros (`#rose-slot .slot`, mesuré par `getBoundingClientRect`)
+    puis rétrécit et se range en bas à droite sur 62 % de la hauteur du héros. Une fois rangée
+    elle sert de « retour en haut » (focusable, `aria-hidden` basculé). ⚠️ Première version :
+    la boussole vivait dans le héros et sortait de l'écran au bout d'un écran de défilement —
+    sa rotation liée au scroll ne servait à rien. ⚠️ Sous `prefers-reduced-motion`, le badge
+    disparaît au profit d'un `.rose-static` posé dans le héros : **rien ne suit le défilement**.
+    (6) **Maquette du tirage** aux proportions réelles de `PrintFrame.build` (portrait 1080×1440
+    dans 1200×1800, paysage 1347×1010 dans 1800×1200, sceau à cheval sur le filet bas), avec
+    bascule portrait/paysage. ⚠️ Si les cotes du cadre bougent (#55/#58 l'ont déjà fait deux
+    fois), **cette maquette ment en silence** : aucun test ne la relie au module.
+    (7) **Politique de confidentialité recopiée dans `site/`** (2026-08-03) : le lien pointait
+    `../confidentialite.html`, cassé dès que le dossier est déployé seul. `site/confidentialite.html`
+    est une **copie enrichie** — §1 renseigné (Mickaël Hague + `contact@expedition-selfiesafari.fr`),
+    §2 nouveau décrivant le site vitrine (aucun cookie, aucune mesure d'audience, `mailto`
+    sans backend, polices Google donc IP transmise, hébergement OVHcloud) et OVH ajouté aux
+    sous-traitants. ⚠️ **Deux copies à tenir à jour** : celle-ci et
+    `confidentialite.html` à la racine (servie par l'app). Restent en « À COMPLÉTER » dans
+    les deux : statut juridique, SIRET, adresse professionnelle.
+    (8) **Vérification** : `site/test-site.js`, **85 tests JSDOM** hors ligne
+    (`npm i jsdom && node site/test-site.js`) — routeur, injection de l'e-mail, fenêtre d'envoi
+    du devis et liens produits, géométrie de la boussole, contrastes en section sombre, règles
+    du `.htaccess`, labels, lien d'évitement, conformité tarifaire.
+    (9) **Contraste sur fond sombre** (2026-08-05, signalé à l'œil) : `.ul b{color:var(--ink)}`
+    et le ✓ en `--forest` s'appliquaient aussi dans les sections `.dark` — **du gras noir sur
+    fond noir**, sur la section « Le tirage encadré » et sur le bloc de devis. Ajout des
+    pendants `.dark .ul li` / `b` / `::before` (parchemin + doré) et de quatre tests qui
+    échouent si ces règles disparaissent. ⚠️ **Règle générale : toute règle de couleur d'encre
+    doit avoir son pendant `.dark`** — le site alterne les fonds clairs et sombres.
+    (10) **Forçage HTTPS en `.htaccess`, et non par l'espace client** : l'offre
+    `hosting-free-100m` **n'expose aucune case « Forcer le HTTPS »** (l'écran Multisite →
+    Modifier un domaine se limite à « SSL : Activé »). La règle teste
+    **`X-Forwarded-Proto` ET `%{HTTPS}`** : OVH place un proxy devant Apache, et selon le
+    chemin emprunté c'est l'un ou l'autre qui porte l'information — n'en tester qu'un seul
+    crée une **boucle de redirection infinie**, donc un site totalement inaccessible. Une
+    troisième condition restreint la règle au domaine réel, pour que l'URL provisoire
+    l'URL provisoire OVH (`*.hosting.ovh.net`) reste joignable en http comme accès de secours.
+    ⚠️ Quatre pièges du banc, documentés en tête du fichier : jsdom refuse la navigation
+    `mailto:` (d'où le wrapper `(function(window, location){…})(proxy, faux)`), n'implémente pas
+    `scrollTo`, ne calcule **aucune** géométrie (`fakeLayout` la simule) et le site filtre ses
+    `scroll` par `requestAnimationFrame` — deux défilements dans la même tâche et le second est
+    perdu, d'où `await scrollTo(...)`.
+    ⚠️ **`site/` n'est pas dans `.gitignore`** : contrairement à `commercial/`, il est fait pour
+    être public. Le poser à la racine sous le nom `index.html` en ferait la page d'accueil de
+    GitHub Pages — décision non prise, l'app est aujourd'hui servie par `expedition.html`.
+
+    **Mise en ligne (2026-08-03 → 2026-08-05, EN PRODUCTION)** : domaine
+    **`expedition-selfiesafari.fr`** acheté chez OVHcloud avec l'offre `hosting-free-100m`
+    (100 Mo, FTP, **pas de SSH** — identifiants dans l'espace client OVH). Le site
+    pèse ~96 Ko déployé : le quota n'est pas un sujet. DNS propagé en moins de 24 h ; l'apex et `www`
+    pointent tous deux sur `51.91.236.255`, MX `mx1`/`mx2.mail.ovh.net` + SPF en place.
+    - **Déploiement** = dépôt FTP du **contenu** de `site/` dans `www` (et non du dossier
+      lui-même, sinon le site répond sur `/site/`). Trois fichiers : `index.html`,
+      `confidentialite.html`, `.htaccess`. ⚠️ **`test-site.js` ne doit jamais partir** —
+      `www` est publiquement téléchargeable.
+    - ⚠️ **FileZilla masque les fichiers en `.`** : activer « forcer l'affichage des fichiers
+      cachés », sinon `.htaccess` n'est jamais transféré. L'Explorateur Windows
+      (`ftp://…`) les affiche, lui, mais **transmet le
+      mot de passe en clair** — pas de FTPS.
+    - **E-mail** : `contact@expedition-selfiesafari.fr` (MX Plan inclus). Envoi depuis Gmail
+      par « Ajouter une adresse » : SMTP **`ssl0.ovh.net`**, port 587 TLS (ou 465 SSL),
+      **identifiant = l'adresse complète**. ⚠️ `mx1.mail.ovh.net` est le serveur *entrant* :
+      le renseigner en SMTP fait échouer l'authentification. Réception dans Gmail par
+      **redirection OVH avec conservation d'une copie**, plus fiable que la relève POP de
+      Gmail, irrégulière.
+    - `site/.htaccess` gère la forme canonique `www`, **le forçage HTTPS** (voir (10)), la
+      page 404, deux en-têtes de sécurité, la compression et surtout
+      `ExpiresByType text/html "access plus 0 seconds"` — même leçon que #35 : un HTML mis en
+      cache masque les correctifs.
+    ⚠️ **Le contenu de `site/` part tel quel sur un serveur web public.** Un fichier
+    « code de secours OVH.txt » s'y trouvait le 2026-08-03 ; déposé dans `www`, il aurait été
+    téléchargeable par n'importe qui à une URL devinable. Déplacé à la racine du projet et
+    couvert par `.gitignore` (`code de secours*`, `*secours*.txt`). **Règle : rien d'autre que
+    des fichiers destinés à être publics ne doit entrer dans `site/`.**
+
+### Poussés sur GitHub (2026-08-05, commit `e0fa1b3`) — La date prévue redevient visible en dupliquant
+
+62. **`duplicateFromCode` : retour au formulaire, date mise en évidence.** Constat d'usage :
+    en prenant une chasse type (« Utiliser cette chasse type → »), impossible en pratique de
+    poser la **date prévue** de la nouvelle chasse. Le champ existait pourtant (`#g-date`,
+    pré-rempli à la date du jour) — mais les pickers (tiroir, duplication) vivent **en bas**
+    de l'écran de préparation et « Créer la chasse → » est un bouton **sticky** toujours
+    visible : après la duplication, `screenAdminSetup()` re-rend la page **sans changer le
+    défilement**, le formulaire (nom, date, lieu) reste hors écran et la chasse partait avec
+    la date du jour sans que l'utilisateur l'ait vue. Correctif : après le re-rendu,
+    `scrollIntoView` sur `#g-date` (`block:'center'`) + surlignage doré 4 s (outline posé et
+    retiré en inline, aucun CSS ajouté), et le toast dit désormais « choisissez la date
+    prévue puis créez la session ». Vaut pour **les trois voies** (tiroir, liste, par code),
+    qui passent toutes par `duplicateFromCode`. Aucune migration, aucun changement de schéma.
+    `BUILD` → `2026-08-05.1`, `CACHE` **v28→v29**.
+
+### Poussés sur GitHub (2026-08-05) — Docs publiées en versions expurgées
+
+63. **`README.md`, `PROJECT.md` et `CLAUDE.md` poussés, sans tarifs.** Les docs du dépôt
+    étaient en retard sur le code (aucune mention de la régie, du module ni du mode commande)
+    et le CLAUDE.md publié affichait encore une ancienne grille tarifaire.
+    (1) `README.md` / `PROJECT.md` : mis à jour (console, module, mode commande, #62, règle du
+    **commit atomique** en remplacement de l'ancien ordre de poussée), **tarifs et taux
+    retirés**, et liens vers `site/`, `commercial/` et `ANALYSE_CONCURRENCE.md` remplacés par
+    du texte simple — ces dossiers sont hors dépôt, les liens étaient cassés sur GitHub.
+    Les deux fichiers sont désormais **identiques local = dépôt**.
+    (2) `CLAUDE.md` : le dépôt reçoit une **copie expurgée** du fichier local — § #47 résumé
+    sans montants ni raisonnement de marge, identifiants FTP OVH retirés du § #61 (le login
+    fait partie des identifiants), montants retirés de la description des tests du site (#61).
+    La version locale reste la seule complète.
+    ⚠️ **À chaque future poussée de docs, ré-expurger** : remplacement du § #47 + chaînes
+    sensibles, puis grep de contrôle (`€` collé à un chiffre, montants de la grille, login
+    FTP) qui doit rendre zéro sur l'arbre à pousser.
+    Aucun fichier applicatif touché : ni `BUILD` ni `CACHE`.
+
 ## Dette technique / points de vigilance connus
 
+- **[ARCHI — depuis 2026-07-30] Deux surfaces, un seul module partagé** (`expedition.html` /
+  `regie.html` + `print-frame.js`). Le cadre de tirage est mutualisé depuis #59 — c'était le
+  point chaud, il est traité. Reste dupliqué : `rowToGame`/`rowToSub`, l'export ZIP,
+  `purgeGamePhotos`, le zoom photo, la génération de QR. ⚠️ **Un changement de schéma doit être
+  répercuté dans les deux fichiers** — c'est aujourd'hui le vrai risque, plus le cadre.
+  Prochain candidat à l'extraction si la douleur vient : le socle de mapping DB.
+  ⚠️ **`expedition.html` ne démarre plus sans `print-frame.js`** (il lit `PrintFrame.Q` à
+  l'évaluation du script inline). Le module est dans `CORE` du service worker, donc disponible
+  hors ligne, mais ne jamais retirer le `<script src>` ni le passer en `defer`.
+- **[VITRINE — depuis 2026-08-03] La maquette du tirage de `site/index.html` duplique les cotes
+  de `print-frame.js`** (portrait 1080×1440, paysage 1347×1010, sceau à cheval sur le filet).
+  Aucun test ne relie les deux : une retouche du cadre laisserait la vitrine **mentir en
+  silence**, sur la page qui sert justement à vendre le tirage. À revérifier à chaque évolution
+  de #55/#58/#59.
+- **[VITRINE — depuis 2026-08-05] Le site est en production mais hors du dépôt** : `site/` se
+  déploie par FTP chez OVH, sans versionnement ni historique. Une modification écrase la
+  précédente et **rien ne permet de revenir en arrière** — seule la copie locale fait foi.
+  À traiter le jour où le site bougera souvent : dépôt Git dédié, ou simple copie datée avant
+  chaque envoi.
+- **[VITRINE — depuis 2026-08-05] Le devis n'est pas un envoi garanti** : le formulaire prépare
+  un message et propose trois sorties (Gmail, `mailto:`, copie), mais rien ne prouve que le
+  visiteur aille au bout. Aucune trace, aucun accusé. Si les demandes n'arrivent pas, la réponse
+  est un service tiers (Formspree, Web3Forms, Netlify Forms) — donc un compte de plus.
 - **[STOCKAGE — depuis 2026-07-26] Les preuves pèsent ~2× plus lourd** (1600 px, #40) alors
   que le tier gratuit Supabase plafonne à 1 Go et que la purge automatique n'efface plus les
   fichiers (voir ci-dessous). À surveiller après chaque événement.
@@ -1227,3 +1494,24 @@ JS avant livraison.
 - ⚠️ **L'API REST Supabase n'est pas joignable depuis le sandbox** (proxy) : impossible de
   vérifier une hypothèse sur les données par `curl`. Passer par le table editor ou une requête
   SQL demandée à l'utilisateur, plutôt que supposer.
+- ⚠️ **`regie.html` se teste hors ligne, sous JSDOM, sans réseau.** Recette éprouvée
+  (`npm i jsdom`) : retirer les `<script src>` du HTML, instancier `JSDOM` avec
+  `runScripts:'outside-only'`, poser des stubs `window.supabase` / `qrcode` / `JSZip` /
+  `confirm` / `fetch`, puis `window.eval(scriptInline)`. On exerce ensuite le rendu, les
+  filtres, la rafale et les transitions de phase.
+  ⚠️ **Deux pièges de ce banc**, tous deux déjà rencontrés :
+  1. `const S = {…}` déclaré dans un `eval` **n'est pas** exposé sur `window` (seules les
+     `function` le sont). Pour l'inspecter, concaténer une sonde au source évalué :
+     `window.eval(src + ';window.__p={get S(){return S}};')`. En vrai navigateur le problème
+     n'existe pas : un `<script>` classique met `const` dans le global lexical, que les
+     handlers `onclick` inline voient parfaitement.
+  2. `startRealtime` pose des `setInterval` : sans `process.exit()` final, le script Node ne
+     rend jamais la main et le test part en timeout.
+- ⚠️ **`print-frame.js` se teste avec un canvas ENREGISTREUR**, pas avec un vrai rendu :
+  `node-canvas` ne s'installe pas dans le sandbox. On remplace `document.createElement('canvas')`
+  par un objet dont le contexte 2D note les appels (`drawImage`, `arc`, `fillText`, `strokeRect`)
+  et dont `measureText` renvoie `longueur × taille × 0,5`. On assert ensuite la **géométrie**
+  (dimensions du canvas, rectangle réellement dessiné, rayon et centre du sceau, textes tracés).
+  ⚠️ **Le sceau n'est pas le dernier `arc` tracé** : `drawRose` en dessine d'autres derrière lui
+  (disque à `31·s`, cercle à `30·s`, moyeu à `3,4·s`). Prendre l'arc de **plus grand rayon**,
+  jamais `.pop()` — l'erreur coûte deux faux échecs.
