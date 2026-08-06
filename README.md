@@ -94,3 +94,4 @@ L'application sert d'abord à **animer des événements** — commercialisés so
 > Les plafonds affichés dans les livrets suivent l'effectif réellement attendu ; la limite technique est ailleurs, autour de 10 équipes (validation photo par photo + vote du jury, manuels sur un seul écran). Le modèle repose sur la **répétition** : le parcours est écrit une fois puis rejoué.
 
 Le positionnement — sur-mesure, zéro friction joueur (ni app à installer ni compte), vote de jury artistique et tirage souvenir encadré — est analysé face au marché dans `ANALYSE_CONCURRENCE.md` (hors dépôt).
+
