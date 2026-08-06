@@ -422,7 +422,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-08-05.1';
+const BUILD = '2026-08-06.1';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -945,6 +945,49 @@ function stopRealtime(){
   if(STATE.realtimeChannel){ sb?.removeChannel(STATE.realtimeChannel); STATE.realtimeChannel=null; }
   if(STATE.pollTimer){ clearInterval(STATE.pollTimer); STATE.pollTimer=null; }
 }
+
+// ============ POSITION LIVE (équipe → régie) ============
+// Pendant la phase `active`, l'appareil de l'équipe émet sa position GPS sur un canal
+// Realtime BROADCAST (`pos:{code}`), que la régie écoute pour afficher les équipes sur
+// sa carte. ⚠️ Rien n'est écrit en base : le canal est éphémère, aucune donnée de
+// localisation n'est stockée ni conservée (voir confidentialite.html).
+// Limites navigateur, assumées : n'émet que l'app ouverte AU PREMIER PLAN et si le
+// joueur a autorisé le GPS (refus = silencieux, l'équipe joue sans partage).
+const POSCTX = { code:null, chan:null, ready:false, watchId:null, lastSent:0 };
+const POS_PERIOD = 15000;   // ms minimum entre deux émissions (batterie + quota Realtime)
+
+function syncPosShare(){
+  const ok = STATE.me?.role==='team' && STATE.me.teamId && STATE.me.gameCode
+          && STATE.game?.status==='active' && !!navigator.geolocation && !!sb;
+  if(ok) startPosShare(STATE.me.gameCode); else stopPosShare();
+}
+function startPosShare(code){
+  if(POSCTX.code===code && POSCTX.watchId!=null) return;   // déjà en route
+  stopPosShare();
+  POSCTX.code = code;
+  POSCTX.chan = sb.channel('pos:'+code);
+  POSCTX.chan.subscribe(st=>{ POSCTX.ready = (st==='SUBSCRIBED'); });
+  POSCTX.watchId = navigator.geolocation.watchPosition(pos=>{
+    const now = Date.now();
+    if(!POSCTX.ready || !POSCTX.chan || now - POSCTX.lastSent < POS_PERIOD) return;
+    POSCTX.lastSent = now;
+    try{
+      const r = POSCTX.chan.send({ type:'broadcast', event:'pos', payload:{
+        teamId: STATE.me?.teamId,
+        lat: pos.coords.latitude, lng: pos.coords.longitude,
+        acc: Math.round(pos.coords.accuracy||0), t: now
+      }});
+      if(r && typeof r.catch==='function') r.catch(()=>{});
+    }catch(_){ /* émission best-effort : jamais bloquant pour le jeu */ }
+  }, ()=>{ /* GPS refusé ou indisponible : silencieux */ },
+  { enableHighAccuracy:true, maximumAge:10000, timeout:15000 });
+}
+function stopPosShare(){
+  if(POSCTX.watchId!=null && navigator.geolocation){ try{ navigator.geolocation.clearWatch(POSCTX.watchId); }catch(_){} }
+  POSCTX.watchId = null;
+  if(POSCTX.chan){ try{ sb?.removeChannel(POSCTX.chan); }catch(_){} POSCTX.chan = null; }
+  POSCTX.ready = false; POSCTX.code = null;
+}
 async function refreshState(){
   flushOutbox(); // tentative de vidage de la file d'envoi (non bloquant)
   if(!STATE.me?.gameCode) return;
@@ -991,6 +1034,10 @@ async function render(){
       if(STATE.me?.role==='admin') await saveGame(STATE.game);
     }
   }
+
+  // Partage de position équipe (broadcast éphémère — voir section POSITION LIVE).
+  // Appelé à chaque render : démarre en phase active, s'arrête partout ailleurs.
+  syncPosShare();
 
   // Pick screen
   if(!STATE.me){

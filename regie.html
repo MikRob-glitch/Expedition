@@ -18,6 +18,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<!-- Leaflet : carte live (indices + positions des équipes). Mêmes URLs que
+     expedition.html, déjà précachées par le service worker. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- Moteur du cadre de tirage, PARTAGÉ avec expedition.html. Une seule source de vérité :
      ne jamais recopier sa composition canvas ici (voir #59). -->
 <script src="print-frame.js"></script>
@@ -187,6 +191,20 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
 .close-x{appearance:none;border:1.5px solid rgba(244,237,224,.35);background:transparent;color:var(--parchment);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;flex-shrink:0}
 .box .close-x{border-color:var(--line-strong);color:var(--ink)}
 
+/* ───────── Carte live (indices + équipes) ───────── */
+#map-ov .mapbox{flex:1;min-height:0;position:relative;border-radius:14px;overflow:hidden;background:var(--parchment-3)}
+#map-canvas{position:absolute;inset:0}
+#map-foot{color:var(--parchment);font-size:12.5px;padding-top:10px;display:flex;gap:6px 16px;flex-wrap:wrap;align-items:center}
+#map-foot .lg{display:flex;gap:12px;flex-wrap:wrap}
+#map-foot .lg span{display:inline-flex;align-items:center;gap:5px}
+#map-foot .lg i{width:11px;height:11px;border-radius:50%;display:inline-block;border:1.5px solid #fff}
+.pin{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.4);border:2px solid #fff;font-size:13px;font-weight:700}
+.pin>span{transform:rotate(45deg);line-height:1;color:#fff}
+.pin-clue{background:var(--gold-dark)}
+.pin-team{background:var(--forest)}
+.pin-team.stale{background:#8a8068}
+.team-tip{font-family:'Geist',sans-serif;font-weight:600;font-size:11.5px}
+
 #zoomwrap{flex:1;min-height:0;display:grid;place-items:center;overflow:hidden;touch-action:none}
 #zoomwrap img{max-width:100%;max-height:100%;object-fit:contain;transform-origin:0 0;will-change:transform;user-select:none;-webkit-user-drag:none}
 .zbar{display:flex;gap:8px;justify-content:center;padding-top:12px}
@@ -273,6 +291,17 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
   <div class="info" id="burst-info"></div>
   <div class="ctl" id="burst-ctl"></div>
   <div class="pg"><i id="burst-pg"></i></div>
+</div>
+
+<!-- Carte live : indices + positions des équipes (broadcast émis par expedition.html) -->
+<div id="map-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="ohead">
+    <h3>Carte — indices &amp; équipes</h3>
+    <span class="chip gold" id="map-count"></span>
+    <button class="close-x" onclick="closeMap()" aria-label="Fermer">✕</button>
+  </div>
+  <div class="mapbox"><div id="map-canvas"></div></div>
+  <div id="map-foot"></div>
 </div>
 
 <!-- QR -->
@@ -372,6 +401,7 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
         <tr><td style="padding:6px 0"><kbd>Q</kbd></td><td>QR code d'accès joueurs</td></tr>
         <tr><td style="padding:6px 0"><kbd>E</kbd></td><td>Export ZIP des photos</td></tr>
         <tr><td style="padding:6px 0"><kbd>T</kbd></td><td>Tirages à la demande (photos supplémentaires)</td></tr>
+        <tr><td style="padding:6px 0"><kbd>M</kbd></td><td>Carte des indices et des équipes (positions live)</td></tr>
         <tr><td style="padding:6px 0"><kbd>1</kbd>–<kbd>3</kbd></td><td>Onglets (écran étroit)</td></tr>
         <tr><td style="padding:6px 0"><kbd>?</kbd></td><td>Cette aide</td></tr>
         <tr><td style="padding:6px 0"><kbd>Échap</kbd></td><td>Fermer la fenêtre courante</td></tr>
@@ -406,7 +436,7 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
      n'utilise que des UPDATE ciblés, jamais d'upsert sur `games`.
    ===================================================================== */
 
-const BUILD = '2026-07-30.3';
+const BUILD = '2026-08-06.1';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -427,6 +457,8 @@ const S = {
   game: null,
   subs: [],
   channel: null,
+  posChan: null,                   // canal broadcast des positions équipes (carte live)
+  pos: {},                         // { teamId: {lat,lng,acc,t} } — éphémère, jamais en base
   poll: null,
   tick: null,
   burst: null,                     // { ids:[], i:0 }
@@ -589,11 +621,24 @@ function startRealtime(code){
     .on('postgres_changes', { event:'*', schema:'public', table:'teams',       filter:`game_code=eq.${code}` }, refresh)
     .on('postgres_changes', { event:'*', schema:'public', table:'submissions', filter:`game_code=eq.${code}` }, refresh)
     .subscribe();
+  // Positions live des équipes : broadcast éphémère émis par expedition.html pendant la
+  // phase active (rien en base). On écoute dès l'ouverture de la chasse, pour que la
+  // carte ait déjà les dernières positions au moment où on l'ouvre.
+  S.pos = {};
+  S.posChan = sb.channel('pos:'+code)
+    .on('broadcast', { event:'pos' }, msg => {
+      const p = msg?.payload;
+      if(!p?.teamId || typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
+      S.pos[p.teamId] = { lat:p.lat, lng:p.lng, acc:p.acc||0, t:p.t||Date.now() };
+      if($('#map-ov')?.classList.contains('open')) paintTeamMarkers();
+    })
+    .subscribe();
   S.poll = setInterval(refresh, 15000);            // filet si le websocket lâche
   if(!S.tick) S.tick = setInterval(tick, 1000);    // chrono
 }
 function stopRealtime(){
   if(S.channel){ sb?.removeChannel(S.channel); S.channel = null; }
+  if(S.posChan){ sb?.removeChannel(S.posChan); S.posChan = null; }
   if(S.poll){ clearInterval(S.poll); S.poll = null; }
 }
 
@@ -856,6 +901,7 @@ function paintConsole(){
       </div>
       <div id="clock" class="clock off">--:--</div>
       <div class="acts">
+        <button class="btn ghost sm" onclick="openMap()" title="Carte des indices et des équipes (M)">🗺️ Carte</button>
         <button class="btn ghost sm" onclick="showQR('join')" title="QR code d'accès (Q)">📱 QR</button>
         <button class="btn ghost sm" onclick="openExport()" title="Export ZIP (E)">📦 ZIP</button>
         <button class="btn ghost sm" onclick="openOrder()" title="Tirages à la demande (T)">🛒 Tirages</button>
@@ -1994,6 +2040,95 @@ async function purgeGame(){
 }
 
 /* ───────────────────────── Aide + raccourcis ───────────────────────── */
+/* ───────────────────────── Carte live (indices + équipes) ───────────────────────── */
+// Le maître du jeu voit TOUT : indices nommés et numérotés (pas d'anonymisation ici,
+// contrairement à la carte équipe de l'app) + position de chaque équipe reçue par
+// broadcast. ⚠️ Une position n'arrive que si l'app de l'équipe est au premier plan
+// avec le GPS autorisé : un marqueur figé n'est pas une équipe immobile, regarder l'âge.
+const MAP = { map:null, teamMarkers:{}, timer:null };
+const POS_STALE = 60000;   // au-delà : marqueur grisé (position ancienne)
+
+function pinIcon(kind, label){
+  return L.divIcon({ className:'', html:`<div class="pin ${kind}"><span>${label!=null?label:''}</span></div>`,
+    iconSize:[30,30], iconAnchor:[15,30], popupAnchor:[0,-28] });
+}
+function openMap(){
+  const g = S.game; if(!g) return;
+  if(typeof L === 'undefined'){ toast('Carte indisponible (Leaflet non chargé)','error'); return; }
+  $('#map-ov').classList.add('open');
+  if(MAP.map){ try{ MAP.map.remove(); }catch(_){} }
+  MAP.map = null; MAP.teamMarkers = {};
+  const placed = g.clues.filter(c => c.lat != null && c.lng != null);
+  const positions = Object.values(S.pos);
+  const center = placed[0] ? [placed[0].lat, placed[0].lng]
+               : positions[0] ? [positions[0].lat, positions[0].lng]
+               : [46.6, 2.4];                        // rien à montrer : France entière
+  MAP.map = L.map('map-canvas', { zoomControl:true, attributionControl:true })
+    .setView(center, (placed.length || positions.length) ? 15 : 5);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' })
+    .addTo(MAP.map);
+  const bounds = [];
+  g.clues.forEach((c,i) => {
+    if(c.lat == null || c.lng == null) return;
+    bounds.push([c.lat, c.lng]);
+    L.marker([c.lat,c.lng], { icon:pinIcon('pin-clue', i+1) }).addTo(MAP.map)
+      .bindPopup(`<strong>${esc(c.title || ('Indice '+(i+1)))}</strong>${c.points?`<br>${c.points} pts`:''}`);
+  });
+  positions.forEach(p => bounds.push([p.lat, p.lng]));
+  paintTeamMarkers();
+  if(bounds.length > 1) MAP.map.fitBounds(bounds, { padding:[46,46] });
+  setTimeout(() => { if(MAP.map) MAP.map.invalidateSize(); }, 80);
+  MAP.timer = setInterval(paintTeamMarkers, 5000);   // vieillissement des marqueurs + pied
+}
+function closeMap(){
+  if(MAP.timer){ clearInterval(MAP.timer); MAP.timer = null; }
+  if(MAP.map){ try{ MAP.map.remove(); }catch(_){} MAP.map = null; }
+  MAP.teamMarkers = {};
+  $('#map-ov').classList.remove('open');
+}
+function paintTeamMarkers(){
+  if(!MAP.map || !S.game) return;
+  const now = Date.now();
+  S.game.teams.forEach(t => {
+    const p = S.pos[t.id]; if(!p) return;
+    const stale = now - p.t > POS_STALE;
+    const icon = pinIcon('pin-team' + (stale ? ' stale' : ''), (t.name||'?').trim().charAt(0).toUpperCase());
+    let m = MAP.teamMarkers[t.id];
+    if(!m){
+      m = L.marker([p.lat, p.lng], { icon, zIndexOffset:1000 }).addTo(MAP.map);
+      m.bindTooltip('', { permanent:true, direction:'bottom', offset:[0,4], className:'team-tip' });
+      MAP.teamMarkers[t.id] = m;
+    } else { m.setLatLng([p.lat, p.lng]); m.setIcon(icon); }
+    m.setTooltipContent(`${esc(t.name)} · ${posAge(now - p.t)}`);
+  });
+  paintMapFoot();
+}
+function posAge(ms){
+  const s = Math.max(0, Math.round(ms/1000));
+  return s < 90 ? `il y a ${s} s` : `il y a ${Math.round(s/60)} min`;
+}
+function paintMapFoot(){
+  const g = S.game; if(!g) return;
+  const now = Date.now();
+  const seen = g.teams.filter(t => S.pos[t.id]).length;
+  const mc = $('#map-count'); if(mc) mc.textContent = `${seen}/${g.teams.length} équipe${g.teams.length>1?'s':''} localisée${seen>1?'s':''}`;
+  const rows = g.teams.map(t => {
+    const p = S.pos[t.id];
+    if(!p) return `<span style="opacity:.5">◌ ${esc(t.name)} — jamais reçue</span>`;
+    const stale = now - p.t > POS_STALE;
+    return `<span style="${stale?'opacity:.65':''}">${stale?'○':'●'} ${esc(t.name)} — ${posAge(now - p.t)}${p.acc?` (±${p.acc} m)`:''}</span>`;
+  });
+  const mf = $('#map-foot'); if(!mf) return;
+  mf.innerHTML = `
+    <div class="lg">
+      <span><i style="background:var(--gold-dark)"></i>Indice</span>
+      <span><i style="background:var(--forest)"></i>Équipe</span>
+      <span><i style="background:#8a8068"></i>Position ancienne (&gt;1 min)</span>
+    </div>
+    ${rows.join('')}
+    <span style="opacity:.55">Position émise seulement si l'app de l'équipe est ouverte au premier plan, GPS autorisé. Rien n'est enregistré.</span>`;
+}
+
 function openHelp(){ $('#help-ov').classList.add('open'); }
 function closeHelp(){ $('#help-ov').classList.remove('open'); }
 
@@ -2001,6 +2136,7 @@ const anyOpen = () => $$('.ov.open').length > 0;
 function closeTop(){
   if(S.burst) return closeBurst();
   if($('#print-ov').classList.contains('open')) return closePrint();
+  if($('#map-ov').classList.contains('open')) return closeMap();
   if($('#order-ov').classList.contains('open')) return closeOrder();
   if($('#zoom-ov').classList.contains('open')) return closeZoom();
   if($('#pick-ov').classList.contains('open')) return closePick();
@@ -2031,6 +2167,7 @@ document.addEventListener('keydown', e => {
   if(k === 'q' || k === 'Q'){ e.preventDefault(); showQR('join'); return; }
   if(k === 'e' || k === 'E'){ e.preventDefault(); openExport(); return; }
   if(k === 't' || k === 'T'){ e.preventDefault(); openOrder(); return; }
+  if(k === 'm' || k === 'M'){ e.preventDefault(); openMap(); return; }
   if(k === '1'){ setTab('pilot'); return; }
   if(k === '2'){ setTab('work'); return; }
   if(k === '3'){ setTab('tools'); return; }
