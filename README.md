@@ -8,7 +8,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 
 ## Aperçu
 
-- **Console maître du jeu** — `regie.html` : chrono, équipes, flux de preuves, vote, classement et tirages **sur un seul écran** (1/2/3 colonnes selon la largeur, onglets au téléphone). Surtout, elle permet de **valider les photos pendant la chasse**, au fil des arrivées, au lieu de tout empiler à la fin — plus un **mode rafale** au clavier. Même connexion que l'app : se connecter d'un côté connecte l'autre.
+- **Console maître du jeu** — `regie.html`, **éprouvée sur un événement réel** (validation des photos et vote menés depuis la console, arbitrage au fil de l'eau pendant la chasse) : chrono, équipes, flux de preuves, vote, classement et tirages **sur un seul écran** (1/2/3 colonnes selon la largeur, onglets au téléphone). Surtout, elle permet de **valider les photos pendant la chasse**, au fil des arrivées, au lieu de tout empiler à la fin — plus un **mode rafale** au clavier. Même connexion que l'app : se connecter d'un côté connecte l'autre.
 - **Multi-équipes en temps réel** — websockets (Supabase Realtime) + poll de sécurité (~15 s).
 - **Preuve par photo** — caméra native, compression côté client (1600 px, qualité adaptée à l'impression 10×15).
 - **Accès joueurs par QR code** — l'admin affiche un QR ; au scan, l'appli s'ouvre sur l'inscription avec le code **pré-rempli** (`?join=CODE`).
