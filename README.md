@@ -79,7 +79,11 @@ python3 -m http.server 8000
 #           ou http://localhost:8000/regie.html   (console maître du jeu)
 ```
 
-> ⚠️ En modifiant `sw.js`, **bumper la constante `CACHE`** à chaque changement d'app-shell, sinon les appareils gardent l'ancienne version en cache. Le déploiement se fait par commit + push GitHub (procédure dans [`CLAUDE.md`](CLAUDE.md)).
+> ⚠️ **Toujours passer par un serveur local, jamais par un double-clic sur le fichier.** En `file://`, le service worker ne s'enregistre pas et le QR d'accès encoderait un chemin de votre disque : les deux surfaces retombent alors sur l'adresse publiée (constante `PUBLIC_BASE`) et la régie l'affiche en rouge, mais **vous ne testez plus ce qui sera servi**.
+>
+> ⚠️ Les bancs sont hors ligne et se rejouent en une commande : `npm i jsdom` puis `node tests/test-map.js` (50 tests — carte live, minimap, position) et `node tests/test-merge.js` (29 — fusion d'équipes). **Conserver tout nouveau banc dans `tests/`**, jamais dans `/tmp`.
+>
+> ⚠️ En modifiant `sw.js`, **bumper la constante `CACHE`** à chaque changement d'app-shell, sinon les appareils gardent l'ancienne version en cache. Le déploiement se fait par commit + push GitHub (procédure dans [`CLAUDE.md`](CLAUDE.md)) — **un seul push, puis attendre** : deux poussées rapprochées font annuler le déploiement en vol par Pages.
 >
 > ⚠️ Les deux fichiers HTML partagent **un seul module**, `print-frame.js` (le cadre du tirage). Tout le reste — mapping DB, export ZIP, purge, zoom, QR — est encore dupliqué : **un changement de schéma se répercute dans les deux**. Règle du projet : au-delà d'une poignée de lignes, extraire un module, jamais copier.
 >

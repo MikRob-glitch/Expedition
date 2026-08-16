@@ -461,7 +461,7 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
      n'utilise que des UPDATE ciblés, jamais d'upsert sur `games`.
    ===================================================================== */
 
-const BUILD = '2026-08-06.5';
+const BUILD = '2026-08-16.1';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -1825,7 +1825,7 @@ function closeZoom(){ $('#zoom-ov').classList.remove('open'); $('#zoomwrap').inn
 /* ───────────────────────── QR ───────────────────────── */
 /* ⚠️ Ouverte depuis le disque (double-clic → `file:///C:/…`), la console encodait ce chemin
    LOCAL dans le QR — illisible pour un capitaine, et invisible tant que personne ne scanne
-   (constaté le 2026-08-06). Hors http/https on retombe donc sur l'adresse publiée.
+   (constaté le 2026-08-16). Hors http/https on retombe donc sur l'adresse publiée.
    ⚠️ `PUBLIC_BASE` est le seul endroit à corriger si le site déménage. */
 const PUBLIC_BASE = 'https://mikrob-glitch.github.io/Expedition/';
 const isServed = () => location.protocol === 'http:' || location.protocol === 'https:';

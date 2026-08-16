@@ -384,6 +384,16 @@ Un seul overlay (`#qr-overlay`), deux modes portés par la table `QR_MODES` et s
 
 Lib `qrcode-generator` (CDN, cachée par le SW) ; repli affichant l'URL en clair si elle n'a pas pu être chargée.
 
+⚠️ **L'URL encodée suit l'origine servie, avec un repli hors http/https.** Ouvertes depuis le
+disque (`file:///C:/…`), les deux surfaces encodaient ce **chemin local** dans le QR — un
+capitaine qui le scanne n'arrive nulle part, et rien ne le signale tant que personne n'essaie.
+Une constante `PUBLIC_BASE` prend donc le relais quand le protocole n'est pas http(s), et la
+régie affiche alors un avertissement dans l'overlay. Servies normalement, les deux surfaces se
+comportent exactement comme avant : elles suivent leur origine, donc un déploiement ailleurs
+fonctionne sans retouche. ⚠️ **`PUBLIC_BASE` est en dur dans les deux fichiers** — c'est le seul
+endroit à corriger si le site déménage, et aucun test ne peut vérifier qu'une URL en dur est
+encore la bonne.
+
 > Le mode `diapo` remplace l'idée d'envoyer le lien par mail : **une adresse mail serait une donnée personnelle de plus**, non couverte par le consentement ni par `confidentialite.html`. Le lien `?diapo=` étant public depuis l'origine, le QR ne fait que le rendre distribuable sur place.
 > ⚠️ Le mode `diapo` n'a de sens qu'en statut `ended` : le diaporama ne montre que les photos **validées**. D'où le bouton placé sur l'écran de fin uniquement.
 > ⚠️ Lien **public et non signé** : qui a le code voit les photos (déjà vrai avant, via « Copier le lien »).
@@ -578,9 +588,9 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 8. **Tirage souvenir** : composé côté client (canvas), sortie fixe 10×15 à ~300 dpi — la qualité plafonne à ce que vaut la photo envoyée (1600 px).
 9. **Reprise d'une chasse terminée** : `resumeHunt` restitue le temps restant mais ne « rejoue » rien — une équipe déjà déconnectée doit se reconnecter par la liste des équipes.
 10. **Deux surfaces, un seul module partagé.** Le cadre de tirage est mutualisé (`print-frame.js`, #59) ; le socle — mapping DB, export ZIP, purge, zoom, QR — reste **dupliqué** entre `expedition.html` et `regie.html`. **Un changement de schéma se répercute à la main dans les deux.** Prochain candidat à l'extraction si la douleur vient : le mapping DB.
-11. **`regie.html` n'a jamais tourné en conditions réelles** (au 2026-08-06) : validée par 45 tests JSDOM — 105 en comptant le moteur du cadre, le branchement de l'app et la carte live —, jamais ouverte dans un navigateur ni sur un événement. Le parcours admin de `expedition.html` reste le chemin éprouvé.
+11. **`regie.html` n'a jamais tourné sur un événement** (au 2026-08-16) — mais elle a été ouverte en vrai navigateur : **carte live et minimap vérifiées**, marqueurs d'équipe qui bougent (donc la chaîne GPS complète fonctionne). Restent non vérifiés à l'œil : le **mode rafale**, la **fusion d'équipes** et l'affichage plein cadre des photos. Bancs **rejouables** conservés dans `tests/` : 50 (carte live, minimap, émetteur de position) + 29 (fusion d'équipes) = **79**. S'y ajoutent 71 tests écrits pour la console, le moteur du cadre et le branchement de l'app — ⚠️ **restés dans `/tmp`, donc perdus** : à réécrire dans `tests/` s'ils redeviennent nécessaires. Le parcours admin de `expedition.html` reste le chemin éprouvé.
 12. **Le site vitrine n'a ni versionnement ni retour arrière** (déployé par FTP), et son **devis n'est pas un envoi garanti** : le formulaire prépare le message et propose trois sorties (Gmail, `mailto:`, copie), mais rien ne prouve que le visiteur aille au bout, et aucune trace n'est conservée. Un envoi certain supposerait un service tiers (Formspree, Web3Forms, Netlify Forms).
-13. **Aucun banc ne voit les pixels — deux défauts du site l'ont prouvé le 2026-08-05.** Chromium ne s'installe pas dans l'environnement de développement : les 85 tests JSDOM vérifient le comportement et la géométrie, jamais le rendu. Sont passés au travers, et ont été vus à l'œil : un `mailto:` **muet** sur un Windows sans client mail (échec silencieux sur le seul appel à l'action), et du **gras noir sur fond noir** dans les sections sombres. Les deux sont désormais couverts par des tests — mais la leçon vaut pour la suite.
+13. **Aucun banc ne voit les pixels — quatre défauts l'ont prouvé.** Chromium ne s'installe pas dans l'environnement de développement : les bancs JSDOM vérifient le comportement et la géométrie, jamais le rendu. Sont passés au travers, et ont tous été **vus à l'œil par l'organisateur** : sur le site (2026-08-05) un `mailto:` **muet** sur un Windows sans client mail et du **gras noir sur fond noir** ; dans la régie (2026-08-16) des **photos tronquées à la validation** (`max-height:100%` sous un parent flexible : la contrainte saute, l'image s'affiche à sa taille réelle) et un **QR encodant un chemin `file://`**. Les deux premiers sont couverts par des tests ; les deux derniers ne peuvent pas l'être. **Règle qui en découle : borner une image en unités viewport ou dans un bloc positionné, jamais en pourcentage sous un parent flexible.**
 14. **Les tests du cadre ne dessinent pas de pixels** : `node-canvas` ne s'installe pas dans l'environnement de développement, le banc utilise un contexte 2D *enregistreur* et vérifie la **géométrie** (dimensions, rectangle dessiné, rayon et centre du sceau, textes tracés). Il attraperait une régression de mise en page, pas un défaut de rendu. C'est un tirage réel, pas un test, qui a corrigé #55 — voir #58.
 15. **La carte live dépend du premier plan.** Une équipe n'émet sa position que si son application est ouverte et visible, GPS autorisé : téléphone verrouillé, appareil photo ouvert ou onglet en arrière-plan → le marqueur se fige. L'âge de chaque position est affiché pour cette raison ; **un marqueur immobile n'est pas une équipe immobile**. Contournement impossible en web : il faudrait une application native. Aucun historique non plus — le transport est éphémère, une position perdue l'est définitivement.
 
@@ -650,6 +660,17 @@ done
 node --check sw.js print-frame.js
 ```
 
+```bash
+# Bancs JSDOM — hors ligne, sans réseau ni base. À rejouer avant toute livraison.
+npm i jsdom
+node tests/test-map.js      # 50 — carte live, minimap, émetteur de position
+node tests/test-merge.js    # 29 — fusion d'équipes (ordre des écritures)
+node site/test-site.js      # 85 — site vitrine (dossier hors dépôt)
+```
+
+> ⚠️ **Conserver tout nouveau banc dans `tests/`**, jamais dans `/tmp` : les 71 tests écrits
+> pour la console, le moteur du cadre et le branchement de l'app ont été perdus ainsi.
+
 > ⚠️ **Mise en ligne en un seul commit atomique** (`expedition.html` + `regie.html` +
 > `print-frame.js` + `sw.js` ensemble) : l'app ne démarre plus sans le module, et un
 > `cache.addAll` sur un 404 fait échouer l'installation du service worker. Un commit atomique
@@ -666,6 +687,6 @@ select public.purge_game('XXXX');
 
 ## Historique des évolutions
 
-Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu, **épreuve filigranée**, **sortie de secours de la phase validation**, tiroir de chasses types, QR du diaporama, **sceau et centrage du cadre**, la **console maître du jeu `regie.html`**, l'extraction du moteur de cadre dans **`print-frame.js`**, les **tirages à la demande**, le **site vitrine mis en ligne** et la **carte live du maître du jeu**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
+Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu, **épreuve filigranée**, **sortie de secours de la phase validation**, tiroir de chasses types, QR du diaporama, **sceau et centrage du cadre**, la **console maître du jeu `regie.html`**, l'extraction du moteur de cadre dans **`print-frame.js`**, les **tirages à la demande**, le **site vitrine mis en ligne**, la **carte live du maître du jeu**, la **minimap**, la **fusion d'équipes en doublon**, les **photos entières à la validation** et le **QR robuste hors http**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
 
 > ⚠️ **Un bug de service worker trouvé en ajoutant la régie** (#57, `CACHE` v25→v26) : depuis #35, le handler de navigation écrivait **toute** réponse sous `'./expedition.html'`. Ouvrir `regie.html` une seule fois écrasait donc l'app-shell en cache — hors ligne, un **joueur** serait retombé sur la console du maître du jeu. Le chemin de cache est désormais celui du document réellement demandé.
