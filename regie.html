@@ -191,6 +191,11 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
 .close-x{appearance:none;border:1.5px solid rgba(244,237,224,.35);background:transparent;color:var(--parchment);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;flex-shrink:0}
 .box .close-x{border-color:var(--line-strong);color:var(--ink)}
 
+/* ───────── Minimap permanente (panneau Pilotage) ───────── */
+.minimap{height:230px;position:relative;background:var(--parchment-3);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+#mini-canvas{position:absolute;inset:0}
+.minimap .leaflet-container{background:var(--parchment-3)}
+
 /* ───────── Carte live (indices + équipes) ───────── */
 #map-ov .mapbox{flex:1;min-height:0;position:relative;border-radius:14px;overflow:hidden;background:var(--parchment-3)}
 #map-canvas{position:absolute;inset:0}
@@ -205,14 +210,22 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
 .pin-team.stale{background:#8a8068}
 .team-tip{font-family:'Geist',sans-serif;font-weight:600;font-size:11.5px}
 
-#zoomwrap{flex:1;min-height:0;display:grid;place-items:center;overflow:hidden;touch-action:none}
-#zoomwrap img{max-width:100%;max-height:100%;object-fit:contain;transform-origin:0 0;will-change:transform;user-select:none;-webkit-user-drag:none}
+/* ⚠️ La photo est calée en POSITION ABSOLUE, pas centrée par une grille.
+   `max-height:100%` sur un enfant de conteneur en `flex:1` est un pourcentage dont la base
+   n'est pas toujours résoluble : la contrainte saute alors et l'image s'affiche à sa taille
+   réelle (1600 px), rognée par `overflow:hidden` — photo tronquée à la validation.
+   Avec `position:absolute;inset:0`, le bloc conteneur a une hauteur définie : le pourcentage
+   se résout toujours, et `margin:auto` centre. `width/height:auto` préserve les dimensions
+   réelles de l'image, dont dépend le calcul de recadrage du zoom (`clamp`). */
+#zoomwrap{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none}
+#zoomwrap img{position:absolute;inset:0;margin:auto;width:auto;height:auto;max-width:100%;max-height:100%;transform-origin:0 0;will-change:transform;user-select:none;-webkit-user-drag:none}
 .zbar{display:flex;gap:8px;justify-content:center;padding-top:12px}
 .zbar button{width:42px;height:42px;border-radius:50%;border:1.5px solid rgba(244,237,224,.35);background:transparent;color:var(--parchment);font-size:17px;cursor:pointer}
 
 /* mode rafale */
-#burst-ov .stage{flex:1;min-height:0;display:grid;place-items:center;overflow:hidden}
-#burst-ov .stage img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+/* Même piège que #zoomwrap : en rafale on juge sur la photo entière, jamais sur un cadrage. */
+#burst-ov .stage{flex:1;min-height:0;position:relative;overflow:hidden}
+#burst-ov .stage img{position:absolute;inset:0;margin:auto;width:auto;height:auto;max-width:100%;max-height:100%;border-radius:8px}
 #burst-ov .info{color:var(--parchment);text-align:center;padding:10px 0 4px}
 #burst-ov .info b{font-family:'Fraunces',serif;font-size:19px;display:block}
 #burst-ov .info small{font-family:'Geist Mono',monospace;font-size:12px;opacity:.66}
@@ -236,9 +249,10 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
 #order-price{width:82px;font-size:13px;padding:6px 8px}
 
 /* aperçu du tirage */
-#print-stage{flex:1;min-height:0;display:grid;place-items:center;overflow:auto;padding:4px}
-#print-stage img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 14px 50px rgba(0,0,0,.55)}
-#print-stage .wait{color:var(--parchment);opacity:.8;font-size:14px}
+/* Même piège que #zoomwrap : un tirage tronqué dans l'aperçu ne se contrôle pas. */
+#print-stage{flex:1;min-height:0;position:relative;overflow:hidden;padding:4px}
+#print-stage img{position:absolute;inset:4px;margin:auto;width:auto;height:auto;max-width:100%;max-height:100%;border-radius:4px;box-shadow:0 14px 50px rgba(0,0,0,.55)}
+#print-stage .wait{position:absolute;inset:0;display:grid;place-items:center;color:var(--parchment);opacity:.8;font-size:14px}
 #print-ctl{display:flex;gap:10px;justify-content:center;padding-top:12px;flex-wrap:wrap}
 #print-status{font-family:'Geist Mono',monospace;font-size:11.5px;color:var(--ink-soft);margin-top:8px;min-height:16px}
 
@@ -291,6 +305,17 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
   <div class="info" id="burst-info"></div>
   <div class="ctl" id="burst-ctl"></div>
   <div class="pg"><i id="burst-pg"></i></div>
+</div>
+
+<!-- Fusion d'équipes en doublon -->
+<div id="merge-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="box" style="max-width:560px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <h3 id="merge-title" style="flex:1">Fusionner une équipe</h3>
+      <button class="close-x" onclick="closeMerge()" aria-label="Fermer">✕</button>
+    </div>
+    <div id="merge-body"></div>
+  </div>
 </div>
 
 <!-- Carte live : indices + positions des équipes (broadcast émis par expedition.html) -->
@@ -436,7 +461,7 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
      n'utilise que des UPDATE ciblés, jamais d'upsert sur `games`.
    ===================================================================== */
 
-const BUILD = '2026-08-06.1';
+const BUILD = '2026-08-06.5';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -629,17 +654,33 @@ function startRealtime(code){
     .on('broadcast', { event:'pos' }, msg => {
       const p = msg?.payload;
       if(!p?.teamId || typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
+      const first = !S.pos[p.teamId];
       S.pos[p.teamId] = { lat:p.lat, lng:p.lng, acc:p.acc||0, t:p.t||Date.now() };
       if($('#map-ov')?.classList.contains('open')) paintTeamMarkers();
+      syncTeamMarkers(MINI, true);
+      // Première position d'une équipe : le panneau doit apparaître (ou se recadrer).
+      if(first){ if(!$('#mini-slot')){ S.lastSig = ''; paintConsole(); } else miniFit(); }
     })
     .subscribe();
   S.poll = setInterval(refresh, 15000);            // filet si le websocket lâche
   if(!S.tick) S.tick = setInterval(tick, 1000);    // chrono
+  // Vieillissement des marqueurs de la minimap (grisage au-delà de POS_STALE). L'overlay a
+  // son propre timer, ouvert seulement quand il l'est ; la minimap, elle, vit en permanence.
+  if(!MINI.timer) MINI.timer = setInterval(() => { if(MINI.map) syncTeamMarkers(MINI, true); }, 5000);
 }
 function stopRealtime(){
   if(S.channel){ sb?.removeChannel(S.channel); S.channel = null; }
   if(S.posChan){ sb?.removeChannel(S.posChan); S.posChan = null; }
   if(S.poll){ clearInterval(S.poll); S.poll = null; }
+  if(MINI.timer){ clearInterval(MINI.timer); MINI.timer = null; }
+  destroyMini();
+}
+// Quitter une chasse : on détruit l'instance (les coordonnées de la suivante n'ont rien à voir).
+function destroyMini(){
+  if(MINI.map){ try{ MINI.map.remove(); }catch(_){} }
+  MINI.map = null; MINI.teamMarkers = {}; MINI.clueLayer = null; MINI.fitted = false;
+  if(MINI.el && MINI.el.parentNode) MINI.el.parentNode.removeChild(MINI.el);
+  MINI.el = null;
 }
 
 async function refresh(){
@@ -919,6 +960,7 @@ function paintConsole(){
     <div class="wrap"><div class="grid">
       <div class="col c1 ${S.tab==='pilot'?'show':''}">
         ${panePilot()}
+        ${paneMini()}
         ${paneTeams()}
         ${g.status !== 'setup' ? paneBoard() : ''}
       </div>
@@ -935,8 +977,10 @@ function paintConsole(){
 
   Object.entries(scrolls).forEach(([id, top]) => { const el = document.getElementById(id); if(el) el.scrollTop = top; });
   paintClock();
+  mountMini();     // ⚠️ après le rendu : replace le nœud Leaflet persistant dans la page
 }
-function setTab(t){ S.tab = t; S.lastSig = ''; paintConsole(); }
+// ⚠️ Au téléphone, la colonne masquée mesure 0×0 : Leaflet doit re-mesurer en devenant visible.
+function setTab(t){ S.tab = t; S.lastSig = ''; paintConsole(); setTimeout(() => MINI.map?.invalidateSize(), 80); }
 
 /* ── Panneau : pilotage ── */
 function panePilot(){
@@ -1031,6 +1075,7 @@ function paneTeams(){
         <span class="dots">${dots}</span>
       </span>
       ${g.status === 'setup' ? '' : `<span class="sc">${scoreOf(t.id)}</span>`}
+      ${g.teams.length > 1 ? `<button class="btn ghost xs" title="Fusionner avec une autre équipe (doublon)" onclick="openMerge('${t.id}')">⇄</button>` : ''}
       ${setup ? `<button class="btn ghost xs ox" title="Retirer l'équipe" onclick="removeTeam('${t.id}','${jsq(t.name)}')">🗑</button>` : ''}
     </div>
     ${setup ? `<div class="row tight" style="margin:-3px 0 4px;padding-left:46px">
@@ -1049,7 +1094,7 @@ function paneTeams(){
     </header>
     <div class="body scroll" id="sc-teams">
       ${g.teams.length ? `<div class="tlist">${rows}</div>` : '<div class="empty">Aucune équipe inscrite.<br>Affichez le QR code d\'accès aux capitaines.</div>'}
-      ${dups.size ? `<p class="hint warn">⚠ Noms en double (${[...dups].map(esc).join(', ')}) — risque de fusion des preuves.</p>` : ''}
+      ${dups.size ? `<p class="hint warn">⚠ Noms en double (${[...dups].map(esc).join(', ')}) — leurs preuves sont éparpillées sur deux lignes. Le bouton ⇄ de la ligne à supprimer les regroupe sur l'équipe conservée.</p>` : ''}
       ${setup && hasDup ? '<p class="hint warn">⚠ Deux équipes ou plus partent du même indice.</p>' : ''}
       ${setup && g.clues.length < g.teams.length ? `<p class="hint warn">⚠ Moins d'indices (${g.clues.length}) que d'équipes (${g.teams.length}) : départ distinct impossible pour toutes.</p>` : ''}
     </div>
@@ -1506,6 +1551,133 @@ async function removeTeam(teamId, name){
   await refresh(); toast('Équipe retirée');
 }
 
+/* ─────────────── Fusion d'équipes en doublon ───────────────
+   Une équipe qui se réinscrit au lieu de se reconnecter fragmente ses preuves sur deux
+   lignes. La fusion réaffecte les preuves vers l'équipe conservée puis supprime le doublon,
+   devenu vide — c'est la procédure SQL de récupération de CLAUDE.md, rendue accessible.
+   ⚠️ JAMAIS l'inverse : `submissions` porte `on delete cascade` sur `teams`, supprimer
+   d'abord détruirait les preuves et laisserait leurs fichiers orphelins dans le bucket
+   (les chemins ne se reconstruisent que depuis les lignes effacées — voir #38/#50).
+   ⚠️ La fusion ne juge rien : si les deux équipes ont couvert le même indice, les DEUX
+   preuves survivent et `scoreOf` compte les deux. On le signale, on n'arbitre pas. */
+function openMerge(srcId){
+  const g = S.game; if(!g) return;
+  const src = teamOf(srcId); if(!src) return;
+  const others = g.teams.filter(t => t.id !== srcId);
+  if(!others.length){ toast('Une seule équipe : rien à fusionner','',3000); return; }
+  const srcSubs = S.subs.filter(s => s.teamId === srcId);
+  $('#merge-title').textContent = `Fusionner « ${src.name} »`;
+  $('#merge-body').innerHTML = `
+    <p class="hint">L'équipe <strong>${esc(src.name)}</strong> (${srcSubs.length} preuve${srcSubs.length>1?'s':''}${src.photoUrl?' + photo d\'équipe':''}) sera <strong>vidée puis supprimée</strong>. Ses preuves passeront à l'équipe que vous choisissez ci-dessous. Rien n'est perdu.</p>
+    <div class="tlist" style="margin-top:10px">
+      ${others.map(t => {
+        const n = S.subs.filter(s => s.teamId === t.id).length;
+        const clash = clueClash(srcId, t.id);
+        return `<div class="tcard" role="button" tabindex="0" style="cursor:pointer"
+             onclick="confirmMerge('${srcId}','${t.id}')"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();confirmMerge('${srcId}','${t.id}')}">
+          ${ava(t, 34, false)}
+          <span class="nm">
+            <b>${esc(t.name)}</b>
+            <small>garde ce nom · ${n} preuve${n>1?'s':''} → ${n+srcSubs.length} après fusion${clash.length?` · ⚠ ${clash.length} indice${clash.length>1?'s':''} en double`:''}</small>
+          </span>
+          <span class="sc">↤</span>
+        </div>`;
+      }).join('')}
+    </div>
+    <p class="hint" style="margin-top:10px">Choisissez l'équipe à <strong>conserver</strong> — c'est son nom, son score et sa photo qui subsistent.</p>`;
+  $('#merge-ov').classList.add('open');
+}
+function closeMerge(){ $('#merge-ov').classList.remove('open'); }
+
+// Indices couverts par les DEUX équipes : après fusion, leurs points comptent deux fois.
+function clueClash(aId, bId){
+  const ca = new Set(S.subs.filter(s => s.teamId === aId && s.clueId).map(s => s.clueId));
+  return S.subs.filter(s => s.teamId === bId && s.clueId && ca.has(s.clueId))
+               .map(s => clueOf(s.clueId)?.title || s.clueId);
+}
+
+function confirmMerge(srcId, dstId){
+  const src = teamOf(srcId), dst = teamOf(dstId);
+  if(!src || !dst || srcId === dstId) return;
+  const n = S.subs.filter(s => s.teamId === srcId).length;
+  const clash = clueClash(srcId, dstId);
+  let msg = `Fusionner « ${src.name} » dans « ${dst.name} » ?\n\n`
+          + `• ${n} preuve${n>1?'s':''} transférée${n>1?'s':''}\n`
+          + `• « ${src.name} » sera supprimée\n`;
+  if(src.photoUrl) msg += dst.photoUrl
+    ? `• la photo d'équipe de « ${src.name} » sera supprimée (« ${dst.name} » garde la sienne)\n`
+    : `• sa photo d'équipe sera reprise par « ${dst.name} »\n`;
+  if(clash.length) msg += `\n⚠ ${clash.length} indice${clash.length>1?'s':''} couvert${clash.length>1?'s':''} par les deux équipes (${clash.slice(0,3).join(', ')}${clash.length>3?'…':''}).\n`
+    + `Les deux photos seront conservées et leurs points s'additionneront : refusez-en une dans le flux si ce n'est pas voulu.\n`;
+  msg += `\nCette action est irréversible.`;
+  if(!confirm(msg)) return;
+  closeMerge();
+  mergeTeams(srcId, dstId);
+}
+
+async function mergeTeams(srcId, dstId){
+  const src = teamOf(srcId), dst = teamOf(dstId);
+  if(!src || !dst || srcId === dstId){ toast('Fusion impossible','error'); return; }
+  const code = S.game.code;
+  toast('Fusion en cours…','',2000);
+  try{
+    // 1. Preuves d'abord — le cascade rend l'ordre inverse destructif.
+    // `.select()` obligatoire : sous RLS, un UPDATE sans ligne touchée ne lève PAS d'erreur.
+    const { data: moved, error: e1 } = await sb.from('submissions')
+      .update({ team_id: dstId }).eq('team_id', srcId).select('id');
+    if(e1) throw new Error('transfert des preuves : ' + e1.message);
+    const nMoved = (moved || []).length;
+
+    // 2. Réglages que l'équipe conservée n'a pas : on ne remplace jamais ce qu'elle porte déjà.
+    const patch = {};
+    if(!dst.startClueId && src.startClueId) patch.start_clue_id = src.startClueId;
+    // Choix de tirage : on ignore une sentinelle `team:<src>` — elle pointe une photo qui disparaît.
+    if(!dst.printSubId && src.printSubId && !isTeamPhotoId(src.printSubId)) patch.print_submission_id = src.printSubId;
+    if(Object.keys(patch).length){
+      const { error: e2 } = await sb.from('teams').update(patch).eq('id', dstId).select('id');
+      if(e2) console.warn('fusion : report des réglages', e2.message);
+    }
+
+    // 3. Photo d'équipe. Le fichier est nommé d'après l'id du doublon : soit on le recopie
+    //    sous l'id conservé (si l'équipe gardée n'en a pas), soit on l'efface — jamais
+    //    l'abandonner en place, il deviendrait un orphelin impossible à retrouver (#50).
+    let photoNote = '';
+    if(src.photoUrl){
+      const srcPath = `${code}/team_${srcId}.jpg`;
+      if(!dst.photoUrl){
+        try{
+          const blob = await (await fetch(src.photoUrl, { cache:'no-store' })).blob();
+          const dstPath = `${code}/team_${dstId}.jpg`;
+          // Bucket sans policy UPDATE : jamais d'upsert (#26/#43/#50). Le chemin cible est
+          // libre puisque l'équipe conservée n'a pas de photo.
+          const { error: eUp } = await sb.storage.from('photos').upload(dstPath, blob, { contentType:'image/jpeg', upsert:false });
+          if(eUp && !/409|duplicate/i.test(eUp.message || '')) throw eUp;
+          const url = sb.storage.from('photos').getPublicUrl(dstPath).data.publicUrl + '?t=' + Date.now();
+          const { error: eSet } = await sb.from('teams').update({ photo_url: url }).eq('id', dstId).select('id');
+          if(eSet) throw eSet;
+          photoNote = ' · photo d\'équipe reprise';
+        }catch(err){
+          photoNote = ' · photo d\'équipe NON reprise';
+          reportError(err, 'fusion photo');
+        }
+      }
+      try{ await sb.storage.from('photos').remove([srcPath]); }catch(_){ /* orphelin toléré, jamais bloquant */ }
+    }
+
+    // 4. Le doublon est vide : sa suppression ne peut plus emporter de preuve.
+    const { error: e4 } = await sb.from('teams').delete().eq('id', srcId);
+    if(e4) throw new Error('suppression du doublon : ' + e4.message);
+
+    await refresh();
+    toast(`Fusion faite — ${nMoved} preuve${nMoved>1?'s':''} transférée${nMoved>1?'s':''} vers « ${dst.name} »${photoNote}`, 'success', 5000);
+  }catch(err){
+    reportError(err, 'fusion');
+    toast('Fusion : ' + err.message, 'error', 6000);
+    await refresh();
+  }
+}
+
 /* ───────────────────────── Actions : arbitrage ───────────────────────── */
 async function decide(subId, conforme){
   const s = S.subs.find(x => x.id === subId); if(!s) return;
@@ -1651,8 +1823,15 @@ function openZoom(id){
 function closeZoom(){ $('#zoom-ov').classList.remove('open'); $('#zoomwrap').innerHTML = ''; PZ = null; }
 
 /* ───────────────────────── QR ───────────────────────── */
-const joinUrl  = c => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}${APP_URL}?join=${c}`;
-const diapoUrl = c => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}${APP_URL}?diapo=${c}`;
+/* ⚠️ Ouverte depuis le disque (double-clic → `file:///C:/…`), la console encodait ce chemin
+   LOCAL dans le QR — illisible pour un capitaine, et invisible tant que personne ne scanne
+   (constaté le 2026-08-06). Hors http/https on retombe donc sur l'adresse publiée.
+   ⚠️ `PUBLIC_BASE` est le seul endroit à corriger si le site déménage. */
+const PUBLIC_BASE = 'https://mikrob-glitch.github.io/Expedition/';
+const isServed = () => location.protocol === 'http:' || location.protocol === 'https:';
+const appBase  = () => isServed() ? location.origin + location.pathname.replace(/[^/]*$/, '') : PUBLIC_BASE;
+const joinUrl  = c => `${appBase()}${APP_URL}?join=${c}`;
+const diapoUrl = c => `${appBase()}${APP_URL}?diapo=${c}`;
 const QR_MODES = {
   join : { title:'Rejoindre la chasse', url:joinUrl,
            hint:'À montrer aux capitaines d\'équipe : l\'appli s\'ouvre avec le code déjà rempli.' },
@@ -1672,7 +1851,10 @@ function showQR(mode){
     box.innerHTML = `<p class="hint">QR indisponible (réseau requis au premier chargement). Communiquez le lien : <strong>${esc(url)}</strong></p>`;
   }
   $('#qr-title').textContent = m.title;
-  $('#qr-hint').textContent = m.hint;
+  // Console ouverte en local : le QR pointe le site publié, pas cette copie. À dire, sinon
+  // on croit tester la version qu'on a sous les yeux.
+  $('#qr-hint').innerHTML = esc(m.hint) + (isServed() ? ''
+    : `<br><strong style="color:var(--oxblood)">⚠ Console ouverte depuis un fichier local : ce QR renvoie vers le site en ligne, pas vers cette copie.</strong>`);
   $('#qr-code-text').textContent = mode === 'diapo' ? '' : g.code;
   $('#qr-url-text').textContent = url;
   $('#qr-ov').classList.add('open');
@@ -2048,9 +2230,42 @@ async function purgeGame(){
 const MAP = { map:null, teamMarkers:{}, timer:null };
 const POS_STALE = 60000;   // au-delà : marqueur grisé (position ancienne)
 
-function pinIcon(kind, label){
-  return L.divIcon({ className:'', html:`<div class="pin ${kind}"><span>${label!=null?label:''}</span></div>`,
-    iconSize:[30,30], iconAnchor:[15,30], popupAnchor:[0,-28] });
+function pinIcon(kind, label, small){
+  const s = small ? 22 : 30;
+  return L.divIcon({ className:'', html:`<div class="pin ${kind}"${small?' style="width:22px;height:22px;font-size:11px"':''}><span>${label!=null?label:''}</span></div>`,
+    iconSize:[s,s], iconAnchor:[s/2,s], popupAnchor:[0,-(s-2)] });
+}
+
+// Positions connues, sous forme de liste [lat,lng] — sert à cadrer les deux cartes.
+function posBounds(){
+  const g = S.game; if(!g) return [];
+  const b = g.clues.filter(c => c.lat != null && c.lng != null).map(c => [c.lat, c.lng]);
+  Object.values(S.pos).forEach(p => b.push([p.lat, p.lng]));
+  return b;
+}
+function hasMapData(){ return posBounds().length > 0; }
+
+/* Synchronise les marqueurs d'équipe sur un contexte de carte donné (overlay OU minimap).
+   Mutualisé volontairement : deux copies divergeraient à la première retouche. */
+function syncTeamMarkers(ctx, small){
+  if(!ctx.map || !S.game) return;
+  const now = Date.now();
+  S.game.teams.forEach(t => {
+    const p = S.pos[t.id]; if(!p) return;
+    const stale = now - p.t > POS_STALE;
+    const icon = pinIcon('pin-team' + (stale ? ' stale' : ''), (t.name||'?').trim().charAt(0).toUpperCase(), small);
+    let m = ctx.teamMarkers[t.id];
+    if(!m){
+      m = L.marker([p.lat, p.lng], { icon, zIndexOffset:1000 }).addTo(ctx.map);
+      if(!small){
+        m.bindTooltip('', { permanent:true, direction:'bottom', offset:[0,4], className:'team-tip' });
+      } else {
+        m.bindTooltip('', { direction:'top', className:'team-tip' });
+      }
+      ctx.teamMarkers[t.id] = m;
+    } else { m.setLatLng([p.lat, p.lng]); m.setIcon(icon); }
+    m.setTooltipContent(`${esc(t.name)} · ${posAge(now - p.t)}`);
+  });
 }
 function openMap(){
   const g = S.game; if(!g) return;
@@ -2087,20 +2302,7 @@ function closeMap(){
   $('#map-ov').classList.remove('open');
 }
 function paintTeamMarkers(){
-  if(!MAP.map || !S.game) return;
-  const now = Date.now();
-  S.game.teams.forEach(t => {
-    const p = S.pos[t.id]; if(!p) return;
-    const stale = now - p.t > POS_STALE;
-    const icon = pinIcon('pin-team' + (stale ? ' stale' : ''), (t.name||'?').trim().charAt(0).toUpperCase());
-    let m = MAP.teamMarkers[t.id];
-    if(!m){
-      m = L.marker([p.lat, p.lng], { icon, zIndexOffset:1000 }).addTo(MAP.map);
-      m.bindTooltip('', { permanent:true, direction:'bottom', offset:[0,4], className:'team-tip' });
-      MAP.teamMarkers[t.id] = m;
-    } else { m.setLatLng([p.lat, p.lng]); m.setIcon(icon); }
-    m.setTooltipContent(`${esc(t.name)} · ${posAge(now - p.t)}`);
-  });
+  syncTeamMarkers(MAP, false);
   paintMapFoot();
 }
 function posAge(ms){
@@ -2129,6 +2331,88 @@ function paintMapFoot(){
     <span style="opacity:.55">Position émise seulement si l'app de l'équipe est ouverte au premier plan, GPS autorisé. Rien n'est enregistré.</span>`;
 }
 
+/* ─────────────── Minimap permanente (panneau Pilotage) ───────────────
+   ⚠️ `paintConsole()` réécrit tout `#app` à chaque événement realtime. Une instance Leaflet
+   créée dans ce HTML serait donc détruite et recréée en boucle : zoom perdu, clignotement,
+   fuite de handlers. On garde **un seul nœud, détaché du document**, qu'on ré-insère dans
+   l'emplacement fraîchement rendu après chaque peinture — Leaflet survit à un déplacement de
+   son conteneur, jamais à sa destruction. C'est tout le principe de `mountMini()`. */
+const MINI = { map:null, el:null, teamMarkers:{}, clueLayer:null, timer:null };
+
+function miniEl(){
+  if(!MINI.el){
+    MINI.el = document.createElement('div');
+    MINI.el.id = 'mini-canvas';
+  }
+  return MINI.el;
+}
+
+// Panneau rendu par paintConsole : ne contient qu'un emplacement vide, jamais la carte.
+function paneMini(){
+  if(!hasMapData()) return '';
+  const g = S.game;
+  const seen = g.teams.filter(t => S.pos[t.id]).length;
+  return `<section class="pane">
+    <header>
+      <h3>Carte</h3>
+      <span class="chip${seen?' gold':''}">${seen}/${g.teams.length}</span>
+      <button class="btn ghost xs" onclick="openMap()" title="Carte plein écran (M)">⤢ Agrandir</button>
+    </header>
+    <div class="body" style="padding:0">
+      <div id="mini-slot" class="minimap"></div>
+      ${seen ? '' : '<p class="hint" style="padding:8px 12px;margin:0">Aucune position reçue pour l\'instant. Une équipe n\'émet que si son application est ouverte au premier plan, GPS autorisé.</p>'}
+    </div>
+  </section>`;
+}
+
+// Appelé à la fin de chaque paintConsole : replace le nœud persistant dans l'emplacement.
+function mountMini(){
+  const slot = $('#mini-slot');
+  if(!slot){ return; }                      // panneau absent (rien à montrer, ou onglet masqué)
+  if(typeof L === 'undefined') return;
+  const el = miniEl();
+  if(el.parentNode !== slot) slot.appendChild(el);
+  if(!MINI.map){
+    MINI.map = L.map(el, { zoomControl:false, attributionControl:false, dragging:true, scrollWheelZoom:false })
+      .setView([46.6, 2.4], 5);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(MINI.map);
+    MINI.fitted = false;
+  }
+  drawMiniClues();
+  syncTeamMarkers(MINI, true);
+  // invalidateSize après réinsertion : Leaflet a mesuré un conteneur détaché (donc 0×0).
+  setTimeout(() => {
+    if(!MINI.map) return;
+    MINI.map.invalidateSize();
+    // Cadrage automatique une seule fois : ensuite l'utilisateur est maître de sa vue.
+    if(!MINI.fitted){
+      const b = posBounds();
+      if(b.length === 1) MINI.map.setView(b[0], 15);
+      else if(b.length > 1) MINI.map.fitBounds(b, { padding:[24,24] });
+      if(b.length) MINI.fitted = true;
+    }
+  }, 60);
+}
+
+function drawMiniClues(){
+  if(!MINI.map || MINI.clueLayer) return;   // les indices ne bougent pas : tracés une fois
+  const g = S.game; if(!g) return;
+  MINI.clueLayer = L.layerGroup().addTo(MINI.map);
+  g.clues.forEach((c,i) => {
+    if(c.lat == null || c.lng == null) return;
+    L.marker([c.lat,c.lng], { icon:pinIcon('pin-clue', i+1, true) })
+      .addTo(MINI.clueLayer).bindTooltip(esc(c.title || ('Indice '+(i+1))), { direction:'top' });
+  });
+}
+
+// Recadre sur tout le monde (bouton du panneau, et après un changement d'équipes).
+function miniFit(){
+  if(!MINI.map) return;
+  const b = posBounds();
+  if(b.length === 1) MINI.map.setView(b[0], 15);
+  else if(b.length > 1) MINI.map.fitBounds(b, { padding:[24,24] });
+}
+
 function openHelp(){ $('#help-ov').classList.add('open'); }
 function closeHelp(){ $('#help-ov').classList.remove('open'); }
 
@@ -2136,6 +2420,7 @@ const anyOpen = () => $$('.ov.open').length > 0;
 function closeTop(){
   if(S.burst) return closeBurst();
   if($('#print-ov').classList.contains('open')) return closePrint();
+  if($('#merge-ov').classList.contains('open')) return closeMerge();
   if($('#map-ov').classList.contains('open')) return closeMap();
   if($('#order-ov').classList.contains('open')) return closeOrder();
   if($('#zoom-ov').classList.contains('open')) return closeZoom();

@@ -15,10 +15,12 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 - **Jugement live** — validation conforme/refusée par l'admin, puis vote du jury 50/30/10.
 - **Chasses types** — rangez un scénario au tiroir : il se duplique à volonté, ne se consomme pas et **ne part pas au ménage automatique** des vieilles chasses.
 - **Préparer à l'avance** — créez vos chasses quand vous voulez, quittez le lobby par « ← Menu » sans rien perdre, retrouvez-les dans « Reprendre une session » le jour J.
+- **Doublon d'équipe** — une équipe qui se réinscrit au lieu de se reconnecter éparpille ses photos sur deux lignes. Un bouton `⇄` dans la console les **regroupe** sur l'équipe conservée puis supprime le doublon devenu vide, **à tout moment de la chasse**. Rien n'est perdu : jamais une suppression sèche, qui emporterait les preuves et laisserait leurs fichiers orphelins.
 - **Marche arrière** — chasse terminée trop tôt ou par erreur ? Le maître du jeu la **reprend** en un bouton, avec le temps restant restitué ; et une chasse finie sans aucune photo peut être clôturée (donc supprimée) au lieu de rester bloquée.
 - **Zoom sur les photos** — pincer / molette / double-clic / glisser pour juger les détails.
 - **Indices de départ** — dispersion des équipes (un indice de départ distinct par équipe).
 - **Carte d'orientation** — indices géolocalisables (optionnel) sur une carte Leaflet côté équipe (repères anonymes sauf départ + indices déjà réalisés).
+- **Carte live du maître du jeu** — une **minimap permanente** dans la colonne de pilotage donne le coup d'œil sans quitter l'arbitrage, et « ⤢ Agrandir » (touche `M`) ouvre la carte plein écran : indices **nommés** et **position de chaque équipe en direct**, pour repérer une équipe en difficulté et la guider. Les positions transitent par un canal temps réel **éphémère** : rien n'est écrit en base, rien n'est conservé. ⚠️ Une équipe n'émet que si son application est **ouverte au premier plan** avec le GPS autorisé — l'âge de chaque position est affiché, et un marqueur figé n'est pas une équipe immobile.
 - **Photo d'équipe** — selfie optionnel à l'inscription. C'est souvent la seule photo où l'équipe est au complet : elle s'affiche au lobby, au classement et **en en-tête d'équipe côté maître du jeu** (cliquable pour l'ouvrir en grand), elle est **proposée en premier au choix du tirage souvenir** et ouvre le dossier de l'équipe dans l'export ZIP.
 - **Diaporama public** — photos en direct via l'URL `?diapo=CODE`.
 - **Export ZIP** — toutes les photos d'une partie, archive organisée par équipe.
@@ -35,7 +37,7 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour organiser 
 | Frontend | HTML5 + Vanilla JS, zéro build : `expedition.html` (~3670 l.) + `regie.html` (~2055 l.) + `print-frame.js` (module partagé) |
 | Caméra | `<input type="file" capture>` (natif iOS/Android) |
 | Backend | Supabase (Postgres + Realtime + Storage + **Auth**) |
-| Carte | Leaflet 1.9.4 + tuiles OpenStreetMap (orientation des indices) |
+| Carte | Leaflet 1.9.4 + tuiles OpenStreetMap (orientation des indices, carte live de la console) |
 | PWA | `manifest.json` + `sw.js` (app-shell offline) + outbox IndexedDB + icônes any/maskable |
 | CDN | supabase-js@2, jszip@3.10.1, qrcode-generator@1.4.4, Leaflet 1.9.4 |
 | Hébergement | GitHub Pages (`.nojekyll`) — HTTPS requis pour la caméra |
@@ -94,4 +96,3 @@ L'application sert d'abord à **animer des événements** — commercialisés so
 > Les plafonds affichés dans les livrets suivent l'effectif réellement attendu ; la limite technique est ailleurs, autour de 10 équipes (validation photo par photo + vote du jury, manuels sur un seul écran). Le modèle repose sur la **répétition** : le parcours est écrit une fois puis rejoué.
 
 Le positionnement — sur-mesure, zéro friction joueur (ni app à installer ni compte), vote de jury artistique et tirage souvenir encadré — est analysé face au marché dans `ANALYSE_CONCURRENCE.md` (hors dépôt).
-

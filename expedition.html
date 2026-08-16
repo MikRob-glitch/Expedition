@@ -422,7 +422,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-08-06.1';
+const BUILD = '2026-08-06.2';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -3210,8 +3210,16 @@ function closeModal(){ $('#modal').classList.remove('open'); window.PZOOM=null; 
 //             Évite de collecter des adresses mail (aucune donnée perso de plus à traiter).
 // ⚠️ Le mode 'diapo' n'a de sens qu'une fois la chasse terminée : le diaporama public ne
 //    montre que les photos validées, il est vide tant que le jugement n'a pas eu lieu.
-function joinUrl(code){ return `${location.origin}${location.pathname}?join=${code}`; }
-function diapoUrl(code){ return `${location.origin}${location.pathname}?diapo=${code}`; }
+/* ⚠️ Ouverte depuis le disque (`file:///C:/…`), l'app encoderait ce chemin LOCAL dans le QR
+   d'accès et dans le lien du diaporama — inutilisables, et invisible tant que personne ne
+   scanne (constaté sur la régie le 2026-08-06, même défaut ici).
+   Servie normalement (http/https), le comportement est strictement inchangé.
+   ⚠️ `PUBLIC_BASE` est le seul endroit à corriger si le site déménage. */
+const PUBLIC_BASE = 'https://mikrob-glitch.github.io/Expedition/expedition.html';
+const selfUrl = () => (location.protocol === 'http:' || location.protocol === 'https:')
+  ? location.origin + location.pathname : PUBLIC_BASE;
+function joinUrl(code){ return `${selfUrl()}?join=${code}`; }
+function diapoUrl(code){ return `${selfUrl()}?diapo=${code}`; }
 
 const QR_MODES = {
   join : { title:'Rejoindre la chasse',

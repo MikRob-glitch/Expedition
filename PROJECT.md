@@ -45,6 +45,8 @@ migration-storage-purge.sql ← purge sans DELETE sur storage.objects (obligatoi
 migration-print-choice.sql ← teams.print_submission_id (tirage souvenir)
 migration-venue-logo.sql   ← games.logo_url (logo du lieu sur le tirage)
 migration-storage-delete-fix.sql ← policy DELETE du bucket : `name` mal résolu (obligatoire)
+tests/test-map.js          ← banc JSDOM : carte live + minimap + émetteur de position (50 tests)
+tests/test-merge.js        ← banc JSDOM : fusion d'équipes en doublon (29 tests, ordre des écritures)
 .github/workflows/keepalive.yml ← ping Supabase (anti-pause tier gratuit)
 .nojekyll                  ← désactive Jekyll sur GitHub Pages
 site/                      ← SITE VITRINE (hors dépôt Git) — en prod sur www.expedition-selfiesafari.fr
@@ -235,11 +237,81 @@ un **mode rafale** plein écran et un « tout marquer conforme » sur la sélect
 | Diffusion | QR d'accès joueurs, QR du diaporama, lien copiable, export ZIP |
 | Tirages | Choix de chaque équipe, choix de secours pour une équipe absente, **aperçu du tirage encadré, téléchargement à l'unité ou en ZIP**, complétion automatique des choix manquants |
 | Commande | **Tirages à la demande** : n'importe quelle photo, en n exemplaires, panier persistant + bon de commande (voir plus bas) |
+| Carte | **Minimap permanente** dans la colonne Pilotage + **carte live** plein écran (voir plus bas) |
+| Doublons | **Fusion** d'une équipe réinscrite vers l'équipe conservée (bouton `⇄`, voir plus bas) |
 | RGPD | Purge de la chasse et de ses photos |
 
 **Raccourcis clavier** : `V` rafale · `→`/`A`/`Espace` conforme · `←`/`R` refuser · `S` passer ·
-`Retour arrière` revenir · `Q` QR · `E` export · `T` tirages à la demande · `1`–`3` onglets ·
-`?` aide · `Échap` fermer.
+`Retour arrière` revenir · `Q` QR · `E` export · `T` tirages à la demande · `M` carte ·
+`1`–`3` onglets · `?` aide · `Échap` fermer.
+
+#### Fusion d'équipes en doublon
+
+Une équipe qui se réinscrit au lieu de se reconnecter crée une seconde ligne, et ses preuves se
+retrouvent éparpillées. Bouton `⇄` sur chaque ligne d'équipe (**toutes phases**, dès qu'il y a
+deux équipes) → sélecteur de l'équipe à **conserver** → confirmation détaillée.
+
+⚠️ **Fusionner, jamais supprimer.** `submissions` porte `on delete cascade` sur `teams` :
+supprimer une équipe déjà active détruirait ses preuves **et** laisserait leurs fichiers
+orphelins dans le bucket (les chemins ne se reconstruisent que depuis les lignes effacées).
+L'ordre est donc **preuves réaffectées, puis ligne supprimée** — jamais l'inverse, et un échec
+du transfert interrompt tout sans rien supprimer. La corbeille 🗑 reste réservée à `setup`.
+
+- **Réglages** : `start_clue_id` et `print_submission_id` repris **seulement si** l'équipe
+  conservée n'en a pas. Une sentinelle `team:<source>` en choix de tirage est ignorée (elle
+  pointe une photo qui disparaît).
+- **Photo d'équipe** : le fichier est nommé d'après l'id. Si la cible n'a pas de photo, celle du
+  doublon est recopiée sous son id (`upload(upsert:false)` — le bucket n'a pas de policy
+  UPDATE) ; sinon elle est retirée. **Le fichier source est supprimé dans les deux cas.**
+- ⚠️ **La fusion n'arbitre pas.** Si les deux équipes ont couvert le même indice, les deux
+  preuves survivent et le score **additionne les deux**. Ces collisions sont détectées,
+  affichées dans le sélecteur et listées dans la confirmation : à toi de refuser une des deux
+  photos dans le flux. Automatiser serait arbitraire — la seconde est parfois la meilleure.
+
+Banc : `tests/test-merge.js`, **29 tests JSDOM** dont un stub Supabase qui **enregistre l'ordre**
+des opérations — c'est ce qui garantit que le cascade ne peut pas être déclenché à l'envers.
+
+#### Minimap permanente (colonne Pilotage)
+
+Panneau « Carte » de 230 px sous le chrono, visible en continu, avec « ⤢ Agrandir » vers
+l'overlay. Il n'apparaît que s'il y a **quelque chose à montrer** (au moins un indice localisé
+ou une position reçue) : pas de carte morte, pas d'instance Leaflet créée pour rien.
+
+⚠️ **Le point délicat est le cycle de vie de Leaflet.** `paintConsole()` réécrit tout `#app` à
+chaque événement realtime — une carte rendue dans ce HTML serait détruite et recréée en boucle.
+Le nœud `#mini-canvas` est donc **créé une fois et conservé détaché du document** ; après chaque
+peinture, `mountMini()` le ré-insère dans l'emplacement `#mini-slot`. Leaflet survit à un
+**déplacement** de son conteneur, jamais à sa destruction. Corollaires :
+
+- `invalidateSize()` après réinsertion et au changement d'onglet — un conteneur détaché ou une
+  colonne masquée mesurent 0×0, et Leaflet garde cette mesure.
+- **Cadrage une seule fois** (`MINI.fitted`) : recadrer à chaque position arracherait la vue.
+  `miniFit()` recadre à la demande et à la première position d'une équipe.
+- Marqueurs mutualisés avec l'overlay via `syncTeamMarkers(ctx, small)` — icônes 22 px et
+  infobulle au survol côté minimap, 30 px et étiquette permanente côté plein écran.
+- `stopRealtime()` détruit l'instance : la chasse suivante est ailleurs.
+
+#### Carte live (indices + positions des équipes)
+
+Overlay plein écran de la console (bouton « 🗺️ Carte », touche `M`, `Échap` ferme). But :
+**localiser une équipe en difficulté pour la guider**. Le maître du jeu voit les indices
+**nommés et numérotés** — pas d'anonymisation ici, contrairement à la carte équipe.
+
+**Transport : Realtime Broadcast, rien en base.** Pendant la phase `active`, chaque appareil
+équipe émet sa position sur le canal `pos:{code}`, throttlée à **15 s** (batterie + quota
+Realtime). Aucune migration, **aucune donnée de localisation stockée ni conservée** : rien à
+purger, empreinte RGPD minimale. L'émission démarre en `active` et s'arrête partout ailleurs
+(validation, fin, déconnexion). La console écoute le canal **dès l'ouverture de la chasse**,
+pas à l'ouverture de la carte : les dernières positions sont déjà là quand on l'ouvre.
+
+Marqueurs équipe = initiale + étiquette permanente « nom · il y a Xs », **grisés au-delà de
+60 s**. Le pied de carte liste chaque équipe (localisée avec précision ±m, ou jamais reçue).
+
+⚠️ **Limite navigateur, assumée et affichée dans le pied de carte** : une position n'est émise
+que si l'application de l'équipe est **au premier plan** avec le GPS autorisé. Téléphone
+verrouillé ou appareil photo ouvert → le marqueur se fige, d'où l'âge affiché. **Un marqueur
+figé n'est pas une équipe immobile.** Un refus de géolocalisation est silencieux : l'équipe joue
+sans partager sa position. La politique de confidentialité documente ce traitement éphémère.
 
 #### Tirages à la demande (exemplaires vendus en plus)
 
@@ -318,6 +390,7 @@ Lib `qrcode-generator` (CDN, cachée par le SW) ; repli affichant l'URL en clair
 
 ### Géoloc des indices + carte d'orientation (Leaflet)
 Chaque indice porte des coords **optionnelles**. Admin : « 📍 Placer sur la carte » / « 🎯 Ma position » dans l'éditeur d'indices. Équipe : bouton « 🗺️ Carte » (si ≥1 indice localisé) → tous les indices localisés en repères **anonymes** sauf le **départ** (★) et les indices **réalisés** (✓), + position live. ⚠️ Anonymisation **cosmétique** (client) : le payload `clues` transite via la clé `anon` (voir Sécurité).
+Côté maître du jeu, la console dispose d'une **carte live** distincte (indices nommés + position de chaque équipe par broadcast éphémère) — voir « Console maître du jeu ».
 
 ### Vote du jury (50 / 30 / 10)
 En `judging`, photos groupées par indice ; le jury attribue **🥇50 / 🥈30 / 🥉10** (3 max/indice, refusées incluses). Un seul de chaque rang par indice. Stocké dans `submissions.bonus_points`.
@@ -453,6 +526,9 @@ Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Doub
 | `fillMissingPrints` | Complète les choix manquants par la photo la mieux notée de chaque équipe |
 | `openOrder` / `renderOrder` / `toggleOrder` / `setQty` | Commande de tirages supplémentaires (panier `localStorage`, quantités) |
 | `previewAny` / `downloadOne` / `downloadOrder` | Aperçu et sortie d'une photo quelconque · ZIP de commande + `bon-de-commande.txt` |
+| `openMap` / `closeMap` / `paintTeamMarkers` | Carte live : indices nommés + marqueurs équipes reçus par broadcast, vieillissement à 60 s |
+| `paneMini` / `mountMini` / `syncTeamMarkers` / `miniFit` | Minimap permanente : nœud Leaflet persistant réinséré après chaque repaint, marqueurs partagés avec l'overlay |
+| `openMerge` / `confirmMerge` / `mergeTeams` / `clueClash` | Fusion d'un doublon : preuves réaffectées **puis** ligne supprimée ; détection des indices couverts deux fois |
 | `purgeGamePhotos` / `purgeGame` | Effacement RGPD : fichiers **puis** lignes |
 
 ---
@@ -502,10 +578,11 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 8. **Tirage souvenir** : composé côté client (canvas), sortie fixe 10×15 à ~300 dpi — la qualité plafonne à ce que vaut la photo envoyée (1600 px).
 9. **Reprise d'une chasse terminée** : `resumeHunt` restitue le temps restant mais ne « rejoue » rien — une équipe déjà déconnectée doit se reconnecter par la liste des équipes.
 10. **Deux surfaces, un seul module partagé.** Le cadre de tirage est mutualisé (`print-frame.js`, #59) ; le socle — mapping DB, export ZIP, purge, zoom, QR — reste **dupliqué** entre `expedition.html` et `regie.html`. **Un changement de schéma se répercute à la main dans les deux.** Prochain candidat à l'extraction si la douleur vient : le mapping DB.
-11. **`regie.html` n'a jamais tourné en conditions réelles** (au 2026-08-05) : validée par 45 tests JSDOM — 71 en comptant le moteur du cadre et le branchement de l'app —, jamais ouverte dans un navigateur ni sur un événement. Le parcours admin de `expedition.html` reste le chemin éprouvé.
+11. **`regie.html` n'a jamais tourné en conditions réelles** (au 2026-08-06) : validée par 45 tests JSDOM — 105 en comptant le moteur du cadre, le branchement de l'app et la carte live —, jamais ouverte dans un navigateur ni sur un événement. Le parcours admin de `expedition.html` reste le chemin éprouvé.
 12. **Le site vitrine n'a ni versionnement ni retour arrière** (déployé par FTP), et son **devis n'est pas un envoi garanti** : le formulaire prépare le message et propose trois sorties (Gmail, `mailto:`, copie), mais rien ne prouve que le visiteur aille au bout, et aucune trace n'est conservée. Un envoi certain supposerait un service tiers (Formspree, Web3Forms, Netlify Forms).
 13. **Aucun banc ne voit les pixels — deux défauts du site l'ont prouvé le 2026-08-05.** Chromium ne s'installe pas dans l'environnement de développement : les 85 tests JSDOM vérifient le comportement et la géométrie, jamais le rendu. Sont passés au travers, et ont été vus à l'œil : un `mailto:` **muet** sur un Windows sans client mail (échec silencieux sur le seul appel à l'action), et du **gras noir sur fond noir** dans les sections sombres. Les deux sont désormais couverts par des tests — mais la leçon vaut pour la suite.
 14. **Les tests du cadre ne dessinent pas de pixels** : `node-canvas` ne s'installe pas dans l'environnement de développement, le banc utilise un contexte 2D *enregistreur* et vérifie la **géométrie** (dimensions, rectangle dessiné, rayon et centre du sceau, textes tracés). Il attraperait une régression de mise en page, pas un défaut de rendu. C'est un tirage réel, pas un test, qui a corrigé #55 — voir #58.
+15. **La carte live dépend du premier plan.** Une équipe n'émet sa position que si son application est ouverte et visible, GPS autorisé : téléphone verrouillé, appareil photo ouvert ou onglet en arrière-plan → le marqueur se fige. L'âge de chaque position est affiché pour cette raison ; **un marqueur immobile n'est pas une équipe immobile**. Contournement impossible en web : il faudrait une application native. Aucun historique non plus — le transport est éphémère, une position perdue l'est définitivement.
 
 ---
 
@@ -589,6 +666,6 @@ select public.purge_game('XXXX');
 
 ## Historique des évolutions
 
-Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu, **épreuve filigranée**, **sortie de secours de la phase validation**, tiroir de chasses types, QR du diaporama, **sceau et centrage du cadre**, la **console maître du jeu `regie.html`**, l'extraction du moteur de cadre dans **`print-frame.js`**, les **tirages à la demande** et le **site vitrine mis en ligne**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
+Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu, **épreuve filigranée**, **sortie de secours de la phase validation**, tiroir de chasses types, QR du diaporama, **sceau et centrage du cadre**, la **console maître du jeu `regie.html`**, l'extraction du moteur de cadre dans **`print-frame.js`**, les **tirages à la demande**, le **site vitrine mis en ligne** et la **carte live du maître du jeu**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
 
 > ⚠️ **Un bug de service worker trouvé en ajoutant la régie** (#57, `CACHE` v25→v26) : depuis #35, le handler de navigation écrivait **toute** réponse sous `'./expedition.html'`. Ouvrir `regie.html` une seule fois écrasait donc l'app-shell en cache — hors ligne, un **joueur** serait retombé sur la console du maître du jeu. Le chemin de cache est désormais celui du document réellement demandé.

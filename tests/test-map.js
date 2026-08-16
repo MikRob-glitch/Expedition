@@ -19,10 +19,12 @@ function makeLeafletStub(log){
     divIcon: o => ({ __divIcon:o }),
     marker: (ll, o) => { const m = marker(); m.latlng = ll; m.icon = o && o.icon; return m; },
     tileLayer: () => ({ addTo(){ log.tiles++; return this; } }),
-    map: () => {
+    layerGroup: () => { const lg = { addTo(){ return lg; } }; return lg; },
+    map: (target) => {
       log.maps++;
+      log.mapTargets.push(target);
       const mp = { setView(){ return mp; }, fitBounds(b){ log.bounds = b; return mp; },
-        invalidateSize(){}, remove(){ log.removed++; }, on(){ return mp; } };
+        invalidateSize(){ log.invalidated++; }, remove(){ log.removed++; }, on(){ return mp; } };
       return mp;
     }
   };
@@ -57,7 +59,7 @@ function loadPage(file, stubs){
 /* ───────── 1. RÉGIE : carte live ───────── */
 (function(){
   console.log('— régie : carte live —');
-  const llog = { markers:[], maps:0, tiles:0, removed:0, bounds:null };
+  const llog = { markers:[], maps:0, tiles:0, removed:0, bounds:null, mapTargets:[], invalidated:0 };
   const slog = { channels:[], removed:[] };
   const { w, inline } = loadPage('regie.html', {
     L: makeLeafletStub(llog),
@@ -66,7 +68,7 @@ function loadPage(file, stubs){
     JSZip: function(){}, confirm: () => true, alert: () => {},
     fetch: async () => ({ ok:true, json:async()=>({}), blob:async()=>({}) })
   });
-  w.eval(inline + ';window.__p={get S(){return S},get MAP(){return MAP},startRealtime,stopRealtime,openMap,closeMap,paintTeamMarkers,posAge,initClient};');
+  w.eval(inline + ';window.__p={get S(){return S},get MAP(){return MAP},get MINI(){return MINI},paneMini,mountMini,paintConsole,hasMapData,destroyMini,startRealtime,stopRealtime,openMap,closeMap,paintTeamMarkers,posAge,initClient};');
   const P = w.__p;
   P.initClient();
 
@@ -91,13 +93,16 @@ function loadPage(file, stubs){
   ok(!P.S.pos.zz, 'payload invalide ignore');
 
   P.openMap();
-  ok(llog.maps === 1, 'instance Leaflet creee');
-  ok(llog.tiles === 1, 'tuiles OSM ajoutees');
-  const cluePins = llog.markers.filter(m => m.icon && m.icon.__divIcon && m.icon.__divIcon.html.includes('pin-clue'));
+  // ⚠️ La minimap crée elle aussi une instance et des marqueurs : on cible l'overlay par la
+  // taille de ses icônes (30px) — un compte global mêlerait les deux cartes.
+  const big = m => m.icon && m.icon.__divIcon && !m.icon.__divIcon.html.includes('22px');
+  ok(P.MAP.map !== null, 'instance Leaflet creee');
+  ok(llog.tiles >= 1, 'tuiles OSM ajoutees');
+  const cluePins = llog.markers.filter(m => big(m) && m.icon.__divIcon.html.includes('pin-clue'));
   ok(cluePins.length === 1, 'un seul indice localise -> un seul marqueur indice (trouve ' + cluePins.length + ')');
   ok(cluePins[0].popup && cluePins[0].popup.includes('Le vieux chene'), 'popup indice nomme (maitre du jeu voit tout)');
-  const teamPins = llog.markers.filter(m => m.icon && m.icon.__divIcon && m.icon.__divIcon.html.includes('pin-team'));
-  ok(teamPins.length === 1, 'une equipe localisee -> un marqueur equipe');
+  const teamPins = llog.markers.filter(m => big(m) && m.icon.__divIcon.html.includes('pin-team'));
+  ok(teamPins.length === 1, 'une equipe localisee -> un marqueur equipe (overlay)');
   ok(teamPins[0].tip.includes('Les nanas'), 'tooltip porte le nom d equipe');
   ok(w.document.querySelector('#map-ov').classList.contains('open'), 'overlay ouvert');
   ok(w.document.querySelector('#map-foot').innerHTML.includes('jamais re'), 'pied : equipe jamais localisee signalee');
@@ -119,6 +124,65 @@ function loadPage(file, stubs){
 
   P.stopRealtime();
   ok(slog.removed.includes('pos:TEST'), 'stopRealtime retire le canal pos');
+})();
+
+/* ───────── 1bis. RÉGIE : minimap permanente ───────── */
+(function(){
+  console.log('— régie : minimap —');
+  const llog = { markers:[], maps:0, tiles:0, removed:0, bounds:null, mapTargets:[], invalidated:0 };
+  const slog = { channels:[], removed:[] };
+  const { w, inline } = loadPage('regie.html', {
+    L: makeLeafletStub(llog),
+    supabase: { createClient: () => makeSbStub(slog) },
+    qrcode: () => ({ addData(){}, make(){}, createImgTag(){ return '<img>'; } }),
+    JSZip: function(){}, confirm: () => true, alert: () => {},
+    fetch: async () => ({ ok:true, json:async()=>({}), blob:async()=>({}) })
+  });
+  w.eval(inline + ';window.__p={get S(){return S},get MINI(){return MINI},paneMini,mountMini,paintConsole,hasMapData,startRealtime,stopRealtime,initClient,miniFit};');
+  const P = w.__p;
+  P.initClient();
+  P.S.view = 'console';
+  P.S.game = { code:'TEST', name:'Chasse', status:'active', startedAt:Date.now(), durationMinutes:90,
+    location:'', clues:[{id:'c1',title:'Le chene',points:10}],           // AUCUN indice localisé
+    teams:[{id:'t1',name:'Les nanas',startClueId:null,printSubId:null,photoUrl:null}] };
+  P.S.subs = []; P.S.pos = {};
+
+  // Rien à montrer → pas de panneau du tout (pas de carte morte dans la colonne)
+  ok(P.hasMapData() === false, 'aucune donnée géo : hasMapData() faux');
+  ok(P.paneMini() === '', 'panneau absent quand il n\'y a rien à cartographier');
+  P.paintConsole();
+  ok(!w.document.querySelector('#mini-slot'), 'aucun emplacement rendu');
+  ok(P.MINI.map === null, 'aucune instance Leaflet créée pour rien');
+
+  // Une position arrive → le panneau apparaît et la carte se crée
+  P.S.pos.t1 = { lat:48.1, lng:-1.6, acc:9, t:Date.now() };
+  ok(P.hasMapData() === true, 'une position suffit à justifier la carte');
+  P.S.lastSig = ''; P.paintConsole();
+  ok(!!w.document.querySelector('#mini-slot'), 'emplacement rendu');
+  ok(P.MINI.map !== null, 'instance minimap créée');
+  ok(llog.mapTargets.includes(P.MINI.el), 'Leaflet monté sur le nœud persistant');
+  const created = llog.maps;
+  const node = P.MINI.el;
+
+  // LE test qui compte : un repaint ne doit PAS recréer la carte
+  P.S.lastSig = ''; P.paintConsole();
+  P.S.lastSig = ''; P.paintConsole();
+  ok(llog.maps === created, 'deux repaints : AUCUNE instance Leaflet recréée');
+  ok(P.MINI.el === node, 'le nœud de carte est le même objet');
+  ok(w.document.querySelector('#mini-slot').contains(node), 'nœud réinséré dans le nouvel emplacement');
+
+  // Marqueur d'équipe présent et vieillissant
+  const teamPins = llog.markers.filter(m => m.icon && m.icon.__divIcon && m.icon.__divIcon.html.includes('pin-team'));
+  ok(teamPins.length >= 1, 'marqueur équipe sur la minimap');
+  ok(teamPins[0].icon.__divIcon.html.includes('22px'), 'icône en version réduite');
+  P.S.pos.t1.t = Date.now() - 120000;
+  P.S.lastSig = ''; P.paintConsole();
+  ok(teamPins[0].icon.__divIcon.html.includes('stale'), 'position ancienne : marqueur grisé');
+
+  // Fermeture de la chasse : instance libérée
+  P.stopRealtime();
+  ok(P.MINI.map === null && P.MINI.el === null, 'stopRealtime libère la minimap');
+  ok(llog.removed >= 1, 'instance Leaflet détruite');
 })();
 
 /* ───────── 2. EXPEDITION : emetteur de position ───────── */
