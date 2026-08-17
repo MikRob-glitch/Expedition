@@ -3,11 +3,11 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-08-17, lot #69, `BUILD` `2026-08-17.1`,
-> `CACHE` `expedition-v35`, vérifié par re-clone frais + `diff`). Les écarts connus
-> (travail local non poussé) sont signalés ⚠️.
-> ⚠️ Le hash de ce commit n'est volontairement pas inscrit ici : l'écrire supposerait un
-> second commit, or le § Workflow attendu impose **un seul push, puis attendre**.
+> **réellement poussé sur GitHub** (HEAD = 2026-08-17, lot #69 = commit `ea0362a`, `BUILD`
+> `2026-08-17.1`, `CACHE` `expedition-v35`, vérifié par re-clone frais + `diff`). Les écarts
+> connus (travail local non poussé) sont signalés ⚠️.
+> ⚠️ `ea0362a` est resté **25 min sur `main` sans être publié** ; c'est le commit de doc
+> suivant qui a débloqué Pages — voir la règle « Deployment cancelled » du § Workflow attendu.
 > ✅ **Le lot #64 (carte live + positions par broadcast) est poussé ET EN LIGNE depuis le
 > 2026-08-16** (commit `5bf6636`, un seul commit atomique — les quatre fichiers de code + la
 > politique + le banc `tests/test-map.js`). Publication vérifiée sur le contenu réellement
@@ -51,7 +51,7 @@ Guide de référence pour travailler sur l'application. À lire avant toute modi
 > ⚠️ **Mais l'événement tournait sur la version du 2026-08-05** : les lots **#64 à #68**
 > (carte live, minimap, fusion d'équipes, photos plein cadre, QR) **n'y étaient pas**. Vérifiés
 > depuis en vrai navigateur (carte et minimap uniquement), jamais sur un événement.
-> ✅ **LOT #69 POUSSÉ le 2026-08-17** — zone de sécurité d'impression. Un vrai
+> ✅ **LOT #69 POUSSÉ le 2026-08-17** (commit `ea0362a`) — zone de sécurité d'impression. Un vrai
 > tirage paysage a montré que **le cadre n'arrivait pas sur le papier** : les deux filets
 > extérieurs étaient posés à 1,2 et 1,9 mm du bord, donc dans la bande de 2 à 3 mm que toute
 > impression sans marge rogne. Insets repassés en millimètres absolus (4,5 et 5,7 mm), marge
@@ -1623,7 +1623,7 @@ clignotement au fil des repaints — le nœud détaché tient. ⚠️ Pas essay�
     pas ce qui est servi — le service worker ne s'y enregistre pas non plus.
     `BUILD` `regie.html` → `2026-08-16.5`, `expedition.html` → `2026-08-16.2`, `CACHE` **v33→v34**.
 
-### Poussés sur GitHub (2026-08-17) — Le cadre était imprimé hors du papier
+### Poussés sur GitHub (2026-08-17, commit `ea0362a`) — Le cadre était imprimé hors du papier
 
 ⚠️ **Corrigé à partir d'un vrai tirage, jamais revérifié sur un vrai tirage.** Un nouveau
 tirage paysage est le seul contrôle qui vaille.
@@ -1794,6 +1794,18 @@ JS avant livraison.
   se met à jour à la **création** du déploiement, même annulé — il ne prouve rien. Seul le
   **contenu réellement servi** fait foi (sonder une page avec une chaîne datée, par ex. la date
   de mise à jour de `confidentialite.html`).
+  ⚠️ **Sonder avec une chaîne de requête UNIQUE** — `…/sw.js?probe=<horodatage>`, jamais l'URL
+  nue. Constaté le 2026-08-17 : `sw.js` nu renvoyait `expedition-v29` (état du 2026-08-05) alors
+  que le même fichier en `?probe=2` renvoyait `v34` — c'est-à-dire douze jours d'écart entre
+  deux lectures à trente secondes d'intervalle. Sans cette précaution on conclut à un
+  déploiement mort qui va très bien, et on repousse pour rien. La sonde idéale est **petite et
+  porteuse d'un numéro de version** : `sw.js` (constante `CACHE`) plutôt qu'un HTML de 4 000
+  lignes ou qu'un fichier inchangé par le lot (`manifest.json` ne prouve jamais rien).
+  ⚠️ Ordre de grandeur mesuré le 2026-08-17 (lot #69) : commit `ea0362a` sur `main`, **toujours
+  pas publié 25 min plus tard** (`CACHE` servi encore à `v34`) ; il a fallu le push suivant
+  pour que Pages publie les deux. Le schéma « un push reste en rade, le suivant débloque
+  l'historique » est donc **la règle sur ce dépôt, pas l'accident** — prévoir une seconde
+  livraison utile (mise à jour de doc, par exemple) plutôt qu'un commit vide.
   ⚠️ **Un run rouge ne signifie pas que la publication a échoué.** Constaté le 2026-08-16 :
   les runs #92 (10 min 26) et #95 (10 min 31) ont tous deux tourné **~10 minutes** — la durée
   d'attente maximale de `actions/deploy-pages` — puis échoué, **alors que le contenu était bien
