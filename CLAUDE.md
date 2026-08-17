@@ -65,12 +65,15 @@ Guide de référence pour travailler sur l'application. À lire avant toute modi
 > et cartouche recalculés en conséquence, **la photo paysage y perd ~8 % de côté**. Fichiers
 > touchés : `print-frame.js`, `expedition.html` + `regie.html` (BUILD), `sw.js` (CACHE v35),
 > `site/index.html` + `commercial/plaquette.css` (maquettes), `tests/test-print.js` (nouveau,
-> 38 tests). ⚠️ **Le correctif n'a pas encore été confirmé par un tirage réel.**
+> 38 tests). ✅ **CONFIRMÉ PAR UN TIRAGE RÉEL le 2026-08-17, dans les DEUX orientations** :
+> le cadre complet (double filet + losanges d'angle) arrive sur le papier en paysage comme en
+> portrait. La zone de 4,5 mm couvre donc bien le rognage du labo. C'est la **première fois
+> qu'un tirage portrait est produit** — le format existait depuis #41 sans avoir jamais été
+> imprimé, il était faux lui aussi (filets à 1,7 et 2,8 mm) et personne ne l'aurait su.
 > ⚠️ Restent non éprouvés : le **débit d'arbitrage** (17 photos, soit un dixième du cas de
-> charge du § #47), le **mode rafale**, la **fusion d'équipes**, aucun tirage **PORTRAIT**
-> produit avec le cadre de #55/#58, et #54 (QR du diaporama) jamais scanné en conditions
-> réelles. #58 vient bien, lui, d'un **vrai tirage paysage** — c'est lui qui a montré que
-> #55 (4) était faux.
+> charge du § #47), le **mode rafale**, la **fusion d'équipes**, et #54 (QR du diaporama)
+> jamais scanné en conditions réelles. **Le cadre, lui, ne fait plus partie de cette liste** :
+> il est validé sur tirage réel dans les deux orientations depuis #69.
 > ⚠️ **`site/` est EN PRODUCTION mais hors du dépôt GitHub** (#61) : le site vitrine
 > <https://www.expedition-selfiesafari.fr> est déployé **par FTP chez OVHcloud**, indépendamment
 > de l'application. Il ne contient aucun tarif (règle du § #47) et pourrait donc être publié,
@@ -1632,8 +1635,8 @@ clignotement au fil des repaints — le nœud détaché tient. ⚠️ Pas essay�
 
 ### Poussés sur GitHub (2026-08-17, commit `ea0362a`) — Le cadre était imprimé hors du papier
 
-⚠️ **Corrigé à partir d'un vrai tirage, jamais revérifié sur un vrai tirage.** Un nouveau
-tirage paysage est le seul contrôle qui vaille.
+✅ **Trouvé sur un vrai tirage, corrigé, puis REVÉRIFIÉ sur de vrais tirages** — paysage **et**
+portrait, le 2026-08-17. Le cycle complet, pour une fois, sans zone d'ombre.
 
 69. **Zone de sécurité d'impression : les deux filets extérieurs étaient dans la bande que
     le labo rogne.** Symptôme signalé avec photo à l'appui (tirage paysage 10×15, chasse
@@ -1686,6 +1689,13 @@ tirage paysage est le seul contrôle qui vaille.
     mentait donc — exactement le trou de diagnostic que #36 existe pour boucher. Les deux
     repartent alignés sur `2026-08-17.1`.
     **Aucune migration, aucun changement de schéma.** `BUILD` des deux surfaces →
+    (8) ✅ **VALIDÉ SUR TIRAGE RÉEL, LES DEUX ORIENTATIONS (2026-08-17)** — le cadre complet
+    (double filet noir + doré, losanges d'angle) arrive sur le papier en paysage et en
+    portrait. La perte de 8 % sur la photo paysage ne se voit pas ; le cadre retrouvé, si.
+    ⚠️ **Le portrait n'avait JAMAIS été imprimé avant ce jour** : il portait le même défaut
+    (filets à 1,7 et 2,8 mm) et serait sorti sans cadre à la première commande d'un client.
+    Leçon de méthode : **un format de sortie non imprimé n'est pas un format validé**, même
+    si son jumeau l'est — les deux orientations ont des cotes différentes.
     `2026-08-17.1`, `CACHE` **v34→v35** (`print-frame.js` est dans `CORE`).
 
 ## Dette technique / points de vigilance connus
