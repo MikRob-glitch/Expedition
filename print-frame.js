@@ -29,6 +29,18 @@ const Q = 0.92;                        // qualité JPEG du tirage
 const LONG = 1800, SHORT = 1200;       // 15×10 cm à ~300 dpi : format de sortie FIXE
 const PROOF_LONG = 700;                // épreuve joueur (basse définition + filigrane)
 
+// ⚠️ ZONE DE SÉCURITÉ D'IMPRESSION (#69) — la règle la plus importante de ce fichier.
+// Un labo (et toute imprimante en mode « sans marge ») AGRANDIT le fichier de 2 à 5 %
+// pour garantir l'absence de liseré blanc, puis rogne le débord : environ 2 à 3 mm
+// disparaissent sur CHAQUE bord. Ce qui est dessiné dans cette bande n'existe pas.
+// Mesuré sur un vrai tirage paysage du 2026-08-17 : les deux filets extérieurs, posés
+// à 1,2 et 1,9 mm du bord, avaient été mangés en entier — le tirage n'avait plus de cadre.
+// Toute décoration se pose donc à SAFE au moins ; la bande extérieure est du parchemin
+// nu, sacrifiable, dont la perte ne se voit pas.
+const PX_MM = LONG / 152.4;               // 11,81 px/mm (le tirage fait 152,4 × 101,6 mm)
+const SAFE  = Math.round(4.5 * PX_MM);    // 53 px — rien de décoratif en deçà
+const PAD   = Math.round(6.5 * PX_MM);    // 77 px — bord de la fenêtre photo
+
 function dateStr(g){
   const d = g?.huntDate ? new Date(g.huntDate+'T12:00:00')
           : g?.endedAt ? new Date(g.endedAt)
@@ -107,7 +119,11 @@ async function ensureFonts(){
 // imprime donc plein format, sans recadrage ni bande blanche de son côté.
 // La photo est posée ENTIÈRE (« contain », jamais rognée) dans la fenêtre ; le parchemin
 // absorbe la différence de ratio. Cas remarquable : une photo portrait 3:4 (sortie
-// standard de compressImage) remplit la fenêtre portrait exactement, sans marge.
+// standard de compressImage) remplit la fenêtre portrait exactement, sans marge —
+// propriété maintenue en recalculant `foot` portrait à 328 px lors de #69.
+// ⚠️ « Plein format » ne veut PAS dire que tout le fichier arrive sur le papier : le
+// labo rogne 2 à 3 mm par bord (voir SAFE en tête de fichier). Seule la bande de
+// parchemin nu est sacrifiable.
 async function build(sub, team, g){
   if(!g) throw new Error('chasse manquante');
   await ensureFonts();
@@ -121,16 +137,20 @@ async function build(sub, team, g){
   const landscape = iw >= ih;
   const W = landscape ? LONG : SHORT;
   const H = landscape ? SHORT : LONG;
-  // Marge : 60 px (≈5 mm) en portrait, 40 en paysage. En paysage la photo est limitée
-  // par la HAUTEUR (elle n'atteint jamais les bords latéraux), donc chaque pixel rendu
-  // par la marge et par le cartouche agrandit la fenêtre — c'est le seul levier.
-  const pad  = landscape ? 40 : Math.round(SHORT*0.05);
-  // Cartouche : 300 px en portrait → fenêtre 1080×1440 = 3:4 exact (zéro marge pour une
-  // photo standard) ; 150 px en paysage, où le texte tient sur DEUX lignes (un bandeau
-  // de 1800 px de large n'a aucune raison d'empiler quatre lignes : à 230 px le bloc
-  // était déjà mis à l'échelle à 0,82 faute de place verticale). Photo 4:3 en paysage :
-  // 1347×1010 au lieu de 1213×910, soit +23 % de surface.
-  const foot = landscape ? 150 : 300;
+  // Marge de la fenêtre photo : 77 px (6,5 mm) dans LES DEUX orientations depuis #69.
+  // Elle n'est plus un réglage esthétique mais une conséquence : il faut loger les deux
+  // filets (4,5 et 5,7 mm) hors de la zone rognée, plus un filet d'air avant la photo.
+  // ⚠️ Le paysage y perd : #55 avait descendu cette marge à 40 px précisément pour
+  // agrandir la fenêtre (la photo y est limitée par la HAUTEUR, donc chaque pixel de
+  // marge compte). Un cadre invisible à l'impression coûtait plus cher que 8 % de photo.
+  const pad  = PAD;
+  // Cartouche : 328 px en portrait → fenêtre 1046×1395 = 3:4 exact (zéro marge pour une
+  // photo standard, sortie de compressImage) ; 190 px en paysage, où le texte tient sur
+  // DEUX lignes (un bandeau de 1800 px de large n'a aucune raison d'empiler quatre
+  // lignes). ⚠️ Les deux valeurs ont grandi avec #69 : le bas du bloc de texte est borné
+  // par le filet doré, qui est descendu de 22 à 67 px du bord — à cartouche constant,
+  // le texte aurait été mis à l'échelle 0,4 et serait devenu illisible.
+  const foot = landscape ? 190 : 328;
   const aw = W - pad*2, ah = H - pad - foot;   // fenêtre disponible pour la photo
 
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
@@ -157,10 +177,13 @@ async function build(sub, team, g){
   ctx.strokeRect(dx - lwP/2, dy - lwP/2, dw + lwP, dh + lwP);
 
   // Double filet extérieur + losanges d'angle
-  const i1 = Math.round(pad*0.34), lw1 = 4;
+  // ⚠️ Les insets sont ABSOLUS (en mm de papier), jamais une fraction de `pad` : c'est
+  // ce couplage qui avait posé le cadre à 1,2 mm du bord en paysage quand #55 a réduit
+  // la marge. Voir la zone de sécurité en tête de fichier.
+  const i1 = SAFE, lw1 = 4;                              // 4,5 mm
   ctx.lineWidth = lw1; ctx.strokeStyle = '#1a1815';
   ctx.strokeRect(i1, i1, W-i1*2, H-i1*2);
-  const i2 = Math.round(pad*0.55), lw2 = 2;
+  const i2 = SAFE + Math.round(1.2*PX_MM), lw2 = 2;      // 5,7 mm
   ctx.lineWidth = lw2; ctx.strokeStyle = '#a0832f';
   ctx.strokeRect(i2, i2, W-i2*2, H-i2*2);
   const dR = 13;
@@ -194,8 +217,8 @@ async function build(sub, team, g){
   const obst = [[sealY - sealR, sealY + sealR, sealX + sealR]];
   // « EXPÉDITION » sous la rose dans LES DEUX orientations. ⚠️ Corrige #55 (4), qui le
   // plaçait à droite en paysage : mesuré sur un tirage réel, l'empilement tient (le mot
-  // finit à ~1157 px pour un filet doré à 1178) ET il libère 171 px à gauche, ce qui
-  // permet enfin de centrer le cartouche paysage au milieu du cadre.
+  // finit vers 1112 px pour un filet doré à 1133 depuis #69) ET il libère 171 px à
+  // gauche, ce qui permet enfin de centrer le cartouche paysage au milieu du cadre.
   ctx.fillStyle = '#a0832f';
   drawSpaced(ctx, 'EXPÉDITION', sealX, sealY + sealR + gap + brandSize*0.8, brandSp, 'center');
   obst.push([sealY + sealR + gap, sealY + sealR + gap + brandSize, sealX + brandW/2]);
@@ -265,7 +288,7 @@ async function build(sub, team, g){
   // bloc rétrécit pour rien les lignes basses et tronquait le lieu.
   // Paysage : axe du CADRE, donc vraiment centré, et robuste à l'absence de logo du lieu
   // (l'axe de la place libre dérivait de 100 px selon qu'un logo était joint ou non) ;
-  // 1192 px restent disponibles, largement de quoi loger les deux lignes.
+  // il reste plus de 1100 px, largement de quoi loger les deux lignes.
   // Portrait : axe de la place LIBRE — mesuré, l'axe du cadre y ramène le nom d'équipe de
   // 51 à 48 px et tronque la ligne du lieu, le cartouche n'y est pas assez large.
   const axis = landscape ? W/2 : (Math.max(...spans) + xR)/2;
@@ -350,7 +373,7 @@ function save(blob, filename){
 }
 
 root.PrintFrame = {
-  Q, LONG, SHORT, PROOF_LONG,
+  Q, LONG, SHORT, PROOF_LONG, PX_MM, SAFE, PAD,
   build, proof,
   dateStr, safeFile, fileName,
   loadImage, ensureFonts,

@@ -3,10 +3,34 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-08-05, commit `e0fa1b3`, `BUILD`
-> `2026-08-05.1`, `CACHE` `expedition-v29`, vérifié par re-clone frais + `diff` le
-> 2026-08-05 : publié = local sur les quatre fichiers de code). Les écarts connus
+> **réellement poussé sur GitHub** (HEAD = 2026-08-17, lot #69, `BUILD` `2026-08-17.1`,
+> `CACHE` `expedition-v35`, vérifié par re-clone frais + `diff`). Les écarts connus
 > (travail local non poussé) sont signalés ⚠️.
+> ⚠️ Le hash de ce commit n'est volontairement pas inscrit ici : l'écrire supposerait un
+> second commit, or le § Workflow attendu impose **un seul push, puis attendre**.
+> ✅ **Le lot #64 (carte live + positions par broadcast) est poussé ET EN LIGNE depuis le
+> 2026-08-16** (commit `5bf6636`, un seul commit atomique — les quatre fichiers de code + la
+> politique + le banc `tests/test-map.js`). Publication vérifiée sur le contenu réellement
+> servi (`regie.html` porte la carte, `confidentialite.html` la mention GPS) **malgré des runs
+> Pages en rouge** — voir la règle « Deployment cancelled » du § Workflow attendu.
+> ⚠️ **CORRECTION DE DATE (2026-08-16)** : les lots #64 à #68 ont été datés par erreur du
+> **6 août** (déduction depuis le dernier commit, sans vérification). Corrigé et **publié**
+> (commit `c5a91a8`, vérifié sur le contenu servi) — journal, `BUILD` des deux surfaces ramenés
+> à `2026-08-16.1`, politique de confidentialité de la racine redatée.
+> ✅ **Copie OVH redéployée et vérifiée le 2026-08-16** : le site vitrine sert « 16 août 2026 ».
+> Les deux politiques sont donc à jour, datées juste, et cohérentes avec le code.
+> ✅ **Les lots #65 à #68 sont poussés ET EN LIGNE depuis le 2026-08-16** (commit `1568631`,
+> un seul commit atomique — `expedition.html`, `regie.html`, `sw.js`, les deux docs et les
+> deux bancs). Publication vérifiée sur le contenu réellement servi (`regie.html` porte
+> l'overlay de fusion).
+> ✅ **Observation utile sur le déploiement** : ce push **unique, laissé tranquille**, s'est
+> déployé sans incident — alors que la double poussée du lot #64 avait bloqué Pages pendant
+> 45 min. Cela conforte la règle du § Workflow attendu : **un seul push, puis attendre**.
+> L'auteur du push n'a rien à y voir (celui-ci venait du PAT, comme les précédents).
+> ✅ **`site/confidentialite.html` redéployé par FTP chez OVH le 2026-08-16** et vérifié sur le
+> contenu servi : la mention de la position GPS éphémère est en ligne, la phrase « aucune donnée
+> de géolocalisation n'est collectée » a disparu des **deux** copies (racine + OVH). Plus
+> d'écart RGPD entre ce que fait le code et ce que disent les politiques.
 > ✅ **Les lots #56 à #60 et #62 sont poussés depuis le 2026-08-05** (commit `e0fa1b3`,
 > un seul commit atomique — `expedition.html`, `regie.html`, `print-frame.js`, `sw.js` —
 > conformément à la règle : l'app ne démarre pas sans `print-frame.js` et un `cache.addAll`
@@ -21,13 +45,25 @@ Guide de référence pour travailler sur l'application. À lire avant toute modi
 > porte la grille et le raisonnement de marge. Toute future poussée de `CLAUDE.md` doit être
 > **ré-expurgée** (§ #47 + identifiants FTP) — ne jamais pousser ce fichier tel quel, et
 > vérifier par grep (`€` collé à un chiffre, montants de la grille, login FTP) avant push.
-> ⚠️ **État des tests réels** : #58 vient d'un **vrai tirage paysage** (chasse « Chasse test »,
-> équipe « Les nanas », logo Capfun) — c'est lui qui a montré que #55 (4) était faux. En
-> revanche **aucun tirage PORTRAIT n'a encore été produit** avec le cadre de #55/#58, #54 (QR
-> du diaporama) n'a jamais été scanné en conditions réelles, et la régie (#56/#59/#60) n'a que
-> ses **71 tests JSDOM** (19 géométrie du cadre + 45 régie + 7 branchement de l'app) : jamais
-> ouverte dans un vrai navigateur ni sur un événement, et aucun tirage n'a été produit depuis
-> qu'elle sait le faire.
+> ✅ **État des tests réels — la régie a servi sur un vrai événement** (chasse `LBM7`, Capfun
+> Camping de l'Eve, 2026-08-06) : validation des photos **et** vote menés depuis la console,
+> 3 équipes / 9 indices / 17 preuves, arbitrage au fil de l'eau. Détail chiffré au § #56.
+> ⚠️ **Mais l'événement tournait sur la version du 2026-08-05** : les lots **#64 à #68**
+> (carte live, minimap, fusion d'équipes, photos plein cadre, QR) **n'y étaient pas**. Vérifiés
+> depuis en vrai navigateur (carte et minimap uniquement), jamais sur un événement.
+> ✅ **LOT #69 POUSSÉ le 2026-08-17** — zone de sécurité d'impression. Un vrai
+> tirage paysage a montré que **le cadre n'arrivait pas sur le papier** : les deux filets
+> extérieurs étaient posés à 1,2 et 1,9 mm du bord, donc dans la bande de 2 à 3 mm que toute
+> impression sans marge rogne. Insets repassés en millimètres absolus (4,5 et 5,7 mm), marge
+> et cartouche recalculés en conséquence, **la photo paysage y perd ~8 % de côté**. Fichiers
+> touchés : `print-frame.js`, `expedition.html` + `regie.html` (BUILD), `sw.js` (CACHE v35),
+> `site/index.html` + `commercial/plaquette.css` (maquettes), `tests/test-print.js` (nouveau,
+> 38 tests). ⚠️ **Le correctif n'a pas encore été confirmé par un tirage réel.**
+> ⚠️ Restent non éprouvés : le **débit d'arbitrage** (17 photos, soit un dixième du cas de
+> charge du § #47), le **mode rafale**, la **fusion d'équipes**, aucun tirage **PORTRAIT**
+> produit avec le cadre de #55/#58, et #54 (QR du diaporama) jamais scanné en conditions
+> réelles. #58 vient bien, lui, d'un **vrai tirage paysage** — c'est lui qui a montré que
+> #55 (4) était faux.
 > ⚠️ **`site/` est EN PRODUCTION mais hors du dépôt GitHub** (#61) : le site vitrine
 > <https://www.expedition-selfiesafari.fr> est déployé **par FTP chez OVHcloud**, indépendamment
 > de l'application. Il ne contient aucun tarif (règle du § #47) et pourrait donc être publié,
@@ -129,8 +165,11 @@ dissocier les deux.
   50/30/10 groupé par indice, classement temps réel, QR d'accès et QR diaporama, export ZIP,
   **tirages souvenir** (aperçu, unité, ZIP, complétion des choix manquants — via
   `print-frame.js`, #59), **tirages à la demande** pour les exemplaires vendus en plus
-  (panier, quantités, bon de commande — #60), purge RGPD. Même session d'auth que l'app (même origine).
-  Hors périmètre volontaire : édition d'indices, chasses types, carte Leaflet.
+  (panier, quantités, bon de commande — #60), **carte live** (indices nommés + position de
+  chaque équipe reçue par broadcast, raccourci `M` — #64) doublée d'une **minimap permanente**
+  dans la colonne Pilotage (#66), **fusion d'équipes en doublon** (bouton `⇄`, toutes phases —
+  #65), purge RGPD. Même session d'auth que l'app (même origine).
+  Hors périmètre volontaire : édition d'indices, chasses types.
 - **Indices de départ (dispersion)** : dans le lobby, l'admin assigne un indice de départ
   distinct par équipe (`teams.start_clue_id`, bouton « Répartir auto »). Chaque équipe ne voit
   que son indice de départ ; il se débloque tous les autres dès la première photo envoyée.
@@ -250,10 +289,13 @@ dissocier les deux.
   `localStorage.setItem('me', JSON.stringify({role:'admin', id:'<admin_id>', gameCode:'<CODE>'})); location.reload()`.
   (Si collage bloqué dans Chrome : taper `allow pasting` puis Entrée.)
   Alternative sans console : champ « Reprendre par code » dans l'écran admin.
-- **Doublons d'équipe** (même nom recréé) : fusion SQL = réaffecter les `submissions` vers
-  l'équipe canonique (la plus ancienne `joined_at`), puis supprimer les doublons vides
-  (l'ordre compte à cause du `cascade`). `addTeam` réutilise désormais l'équipe existante du
-  même nom, ce qui limite l'apparition de doublons.
+- **Doublons d'équipe** (même nom recréé) : **se règle désormais dans la régie**, bouton `⇄`
+  sur la ligne à supprimer (#65) — réaffecte les preuves vers l'équipe conservée puis supprime
+  le doublon vide. Le SQL manuel ci-dessous ne sert plus que si la console est inaccessible :
+  réaffecter les `submissions` vers l'équipe canonique (la plus ancienne `joined_at`), puis
+  supprimer les doublons vides — **l'ordre compte à cause du `cascade`**. `addTeam` réutilise
+  l'équipe existante du même nom et `joinGame` bloque un nom déjà pris, ce qui limite leur
+  apparition.
 - **Photos « disparues »** : chercher les fichiers Storage `D4CK/%` sans `submission`
   correspondante (`storage.objects` vs `submissions.id`) = uploads dont l'insert a échoué.
   Réinsérer les lignes pointant sur les fichiers existants.
@@ -787,7 +829,7 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
     ils n'empêchent pas de le copier. Une vraie protection supposerait des URLs signées et un
     rendu du cadre côté serveur (Edge Function) — non fait.
 
-### Local, hors dépôt (2026-07-27 → 2026-07-29) — Livrets commerciaux
+### Local, non poussé (2026-07-27 → 2026-07-29) — Livrets commerciaux
 
 47. **Dossier `commercial/`** (hors dépôt, `.gitignore`) — supports de vente de la
     **prestation** : Mika anime les événements avec son outil, l'appli est le différenciateur,
@@ -805,8 +847,9 @@ Création/gestion de chasse testée OK sous les nouvelles RLS.
       deuxième date sur un même site — d'où un **forfait saison** au cœur de l'offre.
     - Accroche de couverture « **Selfie Safari en équipe** » ; « chasse au trésor photo » en
       explication dans le corps. Aucun tiret cadratin dans le corps des livrets.
-    - Maquette du tirage aux **proportions réelles de `buildPrintCanvas`** (portrait et
-      paysage), avec l'encart « VOTRE LOGO ».
+    - Maquette du tirage en portrait et paysage, avec l'encart « VOTRE LOGO ». ⚠️ Depuis #69
+      elle est **volontairement infidèle** sur la marge et le cartouche (à l'échelle du livret
+      le texte serait clippé) ; seul le **ratio de la fenêtre photo** y est juste.
     - `commercial/verif-pages.py` est **obligatoire** après chaque rendu : `overflow:hidden`
       **masque** un débordement au lieu de le paginer — un bloc trop long glisse sous le pied
       de page sans erreur, le PDF reste « valide ». Le script mesure le bas du dernier élément
@@ -1090,8 +1133,16 @@ réutilisation d'un modèle et création de la chasse à partir de lui — parco
 
 ### Poussés sur GitHub (2026-08-05, commit `e0fa1b3`) — Console maître du jeu `regie.html`
 
-⚠️ **Écrit et testé hors ligne (JSDOM), jamais ouvert dans un vrai navigateur ni sur un
-événement.**
+✅ **ÉPROUVÉE SUR UN ÉVÉNEMENT RÉEL** — chasse `LBM7` « Sur les traces de la fée Carabosse »,
+Capfun Camping de l'Eve, le **2026-08-06** : la console a servi à valider les photos **et** à
+mener le vote. Mesures relevées en base (voir § #47 pour l'usage commercial) : 3 équipes,
+9 indices, 110 min prévues mais **69 min réelles**, 17 preuves (5,7 par équipe, 8 indices sur 9
+couverts), 13 conformes / 4 refusées / **0 laissée en attente**, arbitrage étalé de 15h35 à
+16h30 — donc **au fil de l'eau pendant la chasse**, ce qui valide la raison d'être de la régie.
+⚠️ **Ce que l'événement ne prouve PAS** : (a) il tournait sur la version du 2026-08-05, donc
+**les lots #64 à #68 n'y étaient pas** (carte, minimap, fusion, correctif d'affichage, QR) ;
+(b) 17 photos, c'est un dixième du cas de charge estimé au § #47 — **le débit d'arbitrage
+n'a donc toujours pas été éprouvé**.
 
 56. **`regie.html` — tableau de bord du maître du jeu**, fichier **autonome** servi à côté de
     `expedition.html`. Même projet Supabase, même schéma, **même session d'auth** (le client
@@ -1378,7 +1429,7 @@ essai réel. Les deux défauts sont désormais couverts par des tests.
     qui passent toutes par `duplicateFromCode`. Aucune migration, aucun changement de schéma.
     `BUILD` → `2026-08-05.1`, `CACHE` **v28→v29**.
 
-### Poussés sur GitHub (2026-08-05) — Docs publiées en versions expurgées
+### Poussés sur GitHub (2026-08-05, commit `ec10128`) — Docs publiées en versions expurgées
 
 63. **`README.md`, `PROJECT.md` et `CLAUDE.md` poussés, sans tarifs.** Les docs du dépôt
     étaient en retard sur le code (aucune mention de la régie, du module ni du mode commande)
@@ -1397,6 +1448,239 @@ essai réel. Les deux défauts sont désormais couverts par des tests.
     FTP) qui doit rendre zéro sur l'arbre à pousser.
     Aucun fichier applicatif touché : ni `BUILD` ni `CACHE`.
 
+### Poussés sur GitHub (2026-08-16, commit `5bf6636`) — Carte live du maître du jeu (positions des équipes)
+
+✅ **Vérifié en vrai navigateur le 2026-08-16** : minimap affichée, **marqueurs d'équipe qui
+bougent** — donc la chaîne complète fonctionne (émission GPS depuis `expedition.html` →
+broadcast → réception et rendu dans la régie). ⚠️ Toujours **pas essayé sur un événement**.
+
+64. **Carte live dans la régie : indices + position de chaque équipe en direct.** Besoin :
+    localiser une équipe en difficulté pour la guider. Jusqu'ici la position (`watchPosition`)
+    ne quittait jamais le téléphone de l'équipe (point bleu local de `openTeamMap`).
+    (1) **Transport = Realtime Broadcast, RIEN EN BASE** (décision explicite) : pendant la
+    phase `active`, `expedition.html` émet la position sur le canal `pos:{code}`
+    (section « POSITION LIVE », `POSCTX`, `syncPosShare` appelé à chaque `render()`),
+    throttlée à **15 s** (`POS_PERIOD` — batterie + quota Realtime). Aucune migration,
+    aucune donnée de localisation stockée ni conservée : rien à purger, RGPD minimal.
+    L'émission démarre en `active` et s'arrête partout ailleurs (validation, fin, logout).
+    (2) **Régie** : Leaflet 1.9.4 ajouté au `<head>` (mêmes URLs unpkg que l'app, déjà
+    précachées par le SW). Overlay `#map-ov` (bouton « 🗺️ Carte » topbar, raccourci `M`,
+    Échap le ferme) : indices **nommés et numérotés** (le maître du jeu voit tout,
+    contrairement à la carte équipe anonymisée), marqueurs équipe (initiale + tooltip
+    permanent « nom · il y a Xs »), **grisés au-delà de 60 s** (`POS_STALE`), pied de carte
+    listant chaque équipe (localisée / jamais reçue, précision ±m). `S.pos` est rempli par
+    le canal broadcast **dès l'ouverture de la chasse** (`startRealtime`), pas à l'ouverture
+    de la carte — on a déjà les dernières positions quand on l'ouvre. Un timer 5 s fait
+    vieillir les marqueurs ; l'overlay vit hors de `#app`, un repaint realtime ne l'efface pas.
+    (3) ⚠️ **Limite navigateur, assumée et affichée dans le pied de carte** : la position
+    n'est émise que si l'app de l'équipe est **au premier plan** avec le GPS autorisé.
+    Téléphone verrouillé ou appareil photo ouvert → le marqueur se fige (d'où l'âge affiché).
+    Un marqueur figé n'est PAS une équipe immobile. Refus GPS = silencieux, l'équipe joue
+    sans partage.
+    (4) **RGPD** : `confidentialite.html` (racine) **et** `site/confidentialite.html`
+    (copie OVH, à redéployer par FTP) documentent la position GPS éphémère (transmise en
+    direct, jamais enregistrée, refusable). La ligne « Aucune donnée de géolocalisation
+    n'est collectée » — devenue fausse — est retirée des deux.
+    (5) **Vérification** : 34 tests JSDOM (`tests/test-map.js` — premier banc **conservé
+    dans le dossier** au lieu de /tmp, rejouable par `npm i jsdom && node tests/test-map.js`
+    depuis la racine ; recette du banc régie +
+    stub Leaflet enregistreur) — ouverture du canal, payload invalide ignoré, marqueurs
+    indices/équipes, vieillissement, mise à jour sur broadcast carte ouverte, fermeture
+    propre, throttle 15 s, idempotence, arrêt en `validation`, refus GPS. Les 85 tests du
+    site passent toujours.
+    `BUILD` `expedition.html` → `2026-08-16.1`, `regie.html` → `2026-08-16.1`,
+    `CACHE` **v29→v30**.
+
+### Local, non poussé (2026-08-16) — Fusion d'équipes en doublon
+
+⚠️ **Écrit et testé sous JSDOM (29 tests dédiés), jamais essayé en vrai navigateur.**
+
+65. **`regie.html` : fusionner un doublon au lieu de le supprimer.** Besoin terrain : une équipe
+    qui se réinscrit au lieu de se reconnecter crée une seconde ligne, et ses preuves se
+    retrouvent éparpillées. Jusqu'ici la corbeille n'existait **qu'en phase `setup`** — donc
+    précisément pas quand le doublon apparaît — et la seule issue était la fusion SQL manuelle
+    décrite au § « Procédures de récupération ».
+    (1) **Pourquoi fusionner et non supprimer** : `submissions` porte `on delete cascade` sur
+    `teams`. Un bouton « supprimer » après le départ de la chasse détruirait les preuves du
+    doublon **et** laisserait leurs fichiers orphelins dans le bucket — les chemins ne se
+    reconstruisent que depuis les lignes qu'on vient d'effacer (#38/#50). La fusion vide d'abord
+    la ligne, sa suppression devient alors inoffensive.
+    (2) **Ordre impératif** : `submissions.update({team_id})` **puis** `teams.delete`. Jamais
+    l'inverse. Un test du banc échoue si l'ordre s'inverse, et un échec du transfert
+    **interrompt la fusion sans supprimer** le doublon.
+    (3) **`.select()` sur chaque écriture** : sous RLS, un UPDATE qui ne touche aucune ligne
+    renvoie 0 ligne **sans erreur** (même famille de pannes muettes que #26/#43/#50/#56).
+    (4) **Réglages** : `start_clue_id` et `print_submission_id` ne sont repris **que si l'équipe
+    conservée n'en a pas** — on n'écrase jamais ce qu'elle porte. Une sentinelle `team:<src>`
+    en choix de tirage est ignorée : elle pointe une photo qui va disparaître.
+    (5) **Photo d'équipe** : le fichier est nommé d'après l'id (`{code}/team_{id}.jpg`). Si
+    l'équipe conservée n'a pas de photo, celle du doublon est **recopiée** sous son id (fetch →
+    blob → `upload(upsert:false)`, bucket sans policy UPDATE) puis `photo_url` est écrite ;
+    sinon elle est simplement retirée. **Dans les deux cas le fichier source est supprimé** —
+    l'abandonner en ferait un orphelin introuvable. Un échec de recopie n'interrompt pas la
+    fusion (elle a déjà réussi) : il est signalé dans le toast et passé à `reportError`.
+    (6) ⚠️ **La fusion n'arbitre rien.** Si les deux équipes ont couvert le même indice, les
+    deux preuves survivent et `scoreOf` **additionne les deux** — les points de cet indice
+    comptent donc double. `clueClash()` détecte ces collisions, les affiche dans le sélecteur
+    et les liste dans la confirmation, en invitant à refuser une des deux photos dans le flux.
+    Automatiser ce choix serait arbitraire : la seconde photo est parfois la meilleure.
+    (7) **UI** : bouton `⇄` sur chaque ligne d'équipe (toutes phases, dès qu'il y a 2 équipes),
+    overlay `#merge-ov` listant les cibles avec leur nombre de preuves et l'avertissement de
+    collision, puis `confirm()` détaillant exactement ce qui va se passer. La corbeille 🗑
+    reste réservée à `setup` : après le départ, la fusion est le seul chemin.
+    (8) **Vérification** : 29 tests JSDOM (`tests/test-merge.js`) — ordre des opérations,
+    non-écrasement des réglages, recopie et nettoyage de la photo, refus de fusionner une
+    équipe avec elle-même ou vers une cible inexistante, annulation au `confirm`, échec RLS
+    laissant le doublon intact, présence du bouton hors `setup`. Le stub Supabase **enregistre
+    l'ordre** des opérations, c'est tout l'intérêt du banc ici.
+    **Aucune migration, aucun changement de schéma.** `BUILD` `regie.html` → `2026-08-16.2`,
+    `CACHE` **v30→v31**.
+
+### Local, non poussé (2026-08-16) — Minimap permanente dans la régie
+
+✅ **Vérifié en vrai navigateur le 2026-08-16** : panneau affiché, marqueurs à jour, aucun
+clignotement au fil des repaints — le nœud détaché tient. ⚠️ Pas essayé sur un événement.
+
+66. **Panneau « Carte » toujours visible, colonne Pilotage.** L'overlay plein écran (#64) oblige
+    à interrompre l'arbitrage pour jeter un œil. La minimap (230 px de haut, sous le chrono)
+    donne le coup d'œil permanent ; le bouton « ⤢ Agrandir » ouvre l'overlay pour le détail.
+    (1) ⚠️ **Le problème central est le cycle de vie de l'instance Leaflet.** `paintConsole()`
+    réécrit **tout** `#app` à chaque événement realtime : une carte créée dans ce HTML serait
+    détruite et recréée en boucle (zoom perdu, clignotement, handlers fuités). Solution : **un
+    seul nœud `#mini-canvas`, conservé détaché du document** dans `MINI.el`, que `mountMini()`
+    ré-insère dans l'emplacement `#mini-slot` fraîchement rendu après chaque peinture. Leaflet
+    survit à un **déplacement** de son conteneur, jamais à sa destruction. Un test du banc
+    échoue si un repaint recrée l'instance.
+    (2) **`invalidateSize()` après réinsertion** : le nœud détaché mesure 0×0, Leaflet garde
+    cette mesure tant qu'on ne le détrompe pas. Idem au changement d'onglet mobile
+    (`setTab`) — la colonne masquée mesure 0×0 elle aussi.
+    (3) **Cadrage une seule fois** (`MINI.fitted`) : recadrer à chaque position reçue
+    arracherait la vue sous les yeux du maître du jeu. Après le premier cadrage, il est maître
+    de sa vue ; `miniFit()` recadre à la demande et à la **première** position d'une équipe.
+    (4) **Pas de panneau s'il n'y a rien à montrer** (`hasMapData()` : aucun indice localisé
+    **et** aucune position reçue) — pas de carte morte dans la colonne, et aucune instance
+    Leaflet créée pour rien.
+    (5) **Marqueurs mutualisés** : `syncTeamMarkers(ctx, small)` sert l'overlay **et** la
+    minimap (icônes 22 px, infobulle au survol au lieu d'une étiquette permanente qui
+    saturerait 230 px). Deux copies auraient divergé à la première retouche — même
+    raisonnement que `print-frame.js` (#59).
+    (6) **Vieillissement** : l'overlay a son timer quand il est ouvert ; la minimap vivant en
+    permanence, son propre timer 5 s est posé par `startRealtime` et libéré par
+    `stopRealtime`, qui **détruit aussi l'instance** (les coordonnées de la chasse suivante
+    n'ont rien à voir).
+    (7) **Vérification** : 16 tests ajoutés à `tests/test-map.js` (**50 au total**) — absence
+    de panneau quand rien à montrer, création à la première position, **aucune recréation
+    d'instance sur deux repaints**, nœud identique et réinséré, icônes réduites, grisage,
+    libération par `stopRealtime`. ⚠️ Les tests de l'overlay ont dû être **reciblés** : ils
+    comptaient les instances et marqueurs *globalement*, or la minimap en crée aussi. Ils
+    filtrent désormais par taille d'icône (30 px = overlay, 22 px = minimap).
+    **Aucune migration.** `BUILD` `regie.html` → `2026-08-16.3`, `CACHE` **v31→v32**.
+
+### Local, non poussé (2026-08-16) — Photos tronquées dans la régie (signalé à l'œil)
+
+67. **`max-height:100%` sautait : la photo s'affichait à sa taille réelle, rognée.** Symptôme
+    signalé par l'organisateur : en ouvrant une photo pour la valider, **elle n'apparaissait pas
+    entièrement**. Cause : `#zoomwrap img` était borné par `max-width/max-height:100%`, un
+    **pourcentage** dont la base est le conteneur en `flex:1`. Quand cette hauteur n'est pas
+    résoluble, la contrainte est **ignorée** et l'image s'affiche à ses 1600 px, coupée par
+    `overflow:hidden`. `object-fit:contain` n'y change rien : il ne redimensionne pas la boîte,
+    il place le contenu **dans** la boîte — or la boîte faisait déjà la taille de la photo.
+    ⚠️ **Le même défaut existait à trois endroits** : le zoom photo, le **mode rafale** (donc
+    l'outil de validation le plus rapide) et l'**aperçu du tirage**. Cherché et corrigé partout,
+    pas seulement là où c'était signalé.
+    Correctif : image en `position:absolute; inset:0; margin:auto; width/height:auto` avec les
+    mêmes `max-*`. Un bloc conteneur positionné a une hauteur **définie** : le pourcentage se
+    résout toujours, `margin:auto` centre, et `width/height:auto` conserve les dimensions
+    réelles de l'image — dont dépend le recadrage du zoom (`clamp` lit `img.clientWidth`).
+    ⚠️ **Pourquoi l'app ne l'avait pas** : `expedition.html` borne ses photos en `max-height:80vh`
+    (#27), une unité viewport toujours calculable. La régie a réécrit ce zoom en pourcentages —
+    la duplication documentée en dette technique a coûté ce bug. **Règle : borner une image en
+    unités viewport, ou dans un bloc positionné ; jamais en pourcentage sous un parent flexible.**
+    ⚠️ **Aucun banc ne pouvait le voir** — c'est de la mise en page pure, et Chromium ne
+    s'installe pas dans l'environnement de développement (même leçon que #55/#58 et que les deux
+    défauts du site vitrine, § #61). Signalé à l'œil, corrigé à l'aveugle : **à confirmer
+    visuellement**. `BUILD` `regie.html` → `2026-08-16.4`, `CACHE` **v32→v33**.
+
+### Local, non poussé (2026-08-16) — QR pointant un chemin local (signalé à l'œil)
+
+68. **Ouverte depuis le disque, la console encodait `file:///C:/Users/…` dans le QR d'accès.**
+    Symptôme : QR affiché par la régie ouverte en double-clic → l'URL sous le QR était un chemin
+    Windows. Un capitaine qui le scanne n'arrive nulle part. Cause : `joinUrl`/`diapoUrl`
+    construisaient l'adresse depuis `location.origin + location.pathname`, ce qui est juste
+    quand le fichier est **servi**, et absurde en `file://`.
+    ⚠️ **Défaut identique dans `expedition.html`** (QR d'accès **et** lien du diaporama),
+    corrigé au passage — pas seulement là où c'était signalé.
+    Correctif : constante `PUBLIC_BASE` (adresse publiée) + repli automatique hors http/https.
+    Servie normalement, la construction est **strictement inchangée** : l'app suit son origine,
+    donc un déploiement ailleurs continue de fonctionner sans retouche. Le repli n'entre en jeu
+    que sur `file://`. L'overlay QR de la régie affiche alors un avertissement rouge — sinon on
+    croit tester la copie locale alors que le QR renvoie vers le site en ligne.
+    ⚠️ **`PUBLIC_BASE` est un chemin en dur, dans les deux fichiers** : si le site déménage
+    (autre dépôt, domaine propre), c'est le seul endroit à corriger, et rien ne le signalera —
+    aucun test ne peut vérifier qu'une URL en dur est encore la bonne.
+    ⚠️ **Piège de méthode, à retenir** : c'est ma suggestion d'ouvrir `regie.html` en local pour
+    contourner le blocage de déploiement qui a exposé ce défaut. Tester en `file://` ne teste
+    pas ce qui est servi — le service worker ne s'y enregistre pas non plus.
+    `BUILD` `regie.html` → `2026-08-16.5`, `expedition.html` → `2026-08-16.2`, `CACHE` **v33→v34**.
+
+### Poussés sur GitHub (2026-08-17) — Le cadre était imprimé hors du papier
+
+⚠️ **Corrigé à partir d'un vrai tirage, jamais revérifié sur un vrai tirage.** Un nouveau
+tirage paysage est le seul contrôle qui vaille.
+
+69. **Zone de sécurité d'impression : les deux filets extérieurs étaient dans la bande que
+    le labo rogne.** Symptôme signalé avec photo à l'appui (tirage paysage 10×15, chasse
+    `LBM7`, équipe « Titi et gros minet ») : **le cadre n'était plus là**. Ni le filet noir,
+    ni le filet doré, ni les losanges d'angle — seule restait une bande de parchemin nu
+    entre le bord du papier et le filet de la photo.
+    (1) **Cause, et elle n'est pas côté labo** : une impression sans marge **agrandit** le
+    fichier de 2 à 5 % pour garantir l'absence de liseré blanc, puis rogne le débord — soit
+    **2 à 3 mm perdus sur chaque bord**. Or le cadre posait ses filets à `pad*0.34` et
+    `pad*0.55`, c'est-à-dire, avec le `pad` paysage de 40 px hérité de #55, à **1,2 mm et
+    1,9 mm** du bord. Les deux tombaient dans la bande sacrifiée. Le portrait n'allait
+    guère mieux (1,7 et 2,8 mm) — il n'avait simplement jamais été imprimé (§ en-tête).
+    ⚠️ **Le fichier était pourtant parfaitement au format** : 1800×1200 = 3:2 = 15×10 cm
+    exact, ce qui est précisément ce qui a masqué le défaut pendant six mois. « Le fichier
+    fait le bon format » et « tout le fichier arrive sur le papier » sont deux choses
+    différentes. Aucun recadrage n'a eu lieu : c'est le **bleed** qui a mangé le cadre.
+    (2) **Correctif** : les insets deviennent **absolus, exprimés en millimètres de papier**
+    (`PX_MM = LONG/152.4`), et non plus une fraction de `pad`. `SAFE = 4,5 mm` (53 px) pour
+    le filet noir, `5,7 mm` (67 px) pour le doré. C'est ce **couplage à `pad`** qui est la
+    vraie faute : #55 a réduit la marge pour agrandir la photo et a déplacé le cadre sans
+    que personne ne le décide.
+    (3) **Conséquences en cascade, toutes subies** : les filets ayant reculé, la marge de la
+    fenêtre photo doit les contenir → `pad` passe à **77 px (6,5 mm) dans les deux
+    orientations** ; et le bas du bloc de texte étant borné par le filet doré (`usableBot =
+    H - i2 - 10`), le cartouche doit grandir sinon le texte est mis à l'échelle 0,4 et
+    devient illisible → `foot` **150 → 190** en paysage, **300 → 328** en portrait.
+    Le 328 n'est pas arbitraire : c'est la valeur qui **conserve la fenêtre portrait en 3:4
+    exact** (1046×1395), propriété de #41 qu'une valeur ronde aurait cassée en silence.
+    (4) ⚠️ **Le prix à payer, dit franchement : la photo paysage perd ~8 % de côté**
+    (1347×1010 → 1244×933, soit −15 % de surface). C'est presque tout le gain de #55. Le
+    calcul reste favorable : à 300 dpi la perte est invisible à l'œil sur un 10×15, alors
+    qu'un cadre absent se voit du premier coup d'œil — et c'est le cadre qu'on vend.
+    Le ratio de la fenêtre, lui, **ne change pas** (4:3 en paysage, 3:4 en portrait).
+    (5) **Vérification** : `tests/test-print.js`, **38 tests** (`npm i jsdom && node
+    tests/test-print.js`). Le banc du moteur annoncé en #59 avait été écrit dans `/tmp` et
+    **perdu** — il est cette fois **dans le dépôt**. Il porte le test qui manquait :
+    « rien de décoratif à moins de 4 mm du bord », dans les deux orientations, filets et
+    textes compris. Rejoué contre l'ancienne géométrie, il tombe sur **9 échecs** — il
+    aurait donc attrapé le défaut avant l'impression.
+    ⚠️ **Ne jamais assouplir ce seuil.** 4 mm n'est pas une marge de confort : c'est
+    2,5 mm de rognage mesuré plus 1,5 mm de tolérance de massicot.
+    (6) **Maquettes** : `site/index.html` reproduit les cotes (dette connue) — recalculée.
+    `commercial/plaquette.css` ne l'est **pas** et ne doit pas l'être : à l'échelle du
+    livret le cartouche paysage ferait 3,4 mm, moins que la seule rose des vents du lockup,
+    et `overflow:hidden` clipperait le texte sans rien signaler. Le commentaire du fichier
+    dit désormais ce qui est fidèle (le ratio de la fenêtre) et ce qui ne l'est pas.
+    (7) ⚠️ **Écart constaté au passage** : les `BUILD` des deux surfaces étaient restés à
+    `2026-08-16.1` alors que les lots #65 à #68 sont dans les fichiers et que `CACHE` était
+    bien à `v34`. Le journal annonçait `.5` et `.2`. Le seul témoin de version de l'app
+    mentait donc — exactement le trou de diagnostic que #36 existe pour boucher. Les deux
+    repartent alignés sur `2026-08-17.1`.
+    **Aucune migration, aucun changement de schéma.** `BUILD` des deux surfaces →
+    `2026-08-17.1`, `CACHE` **v34→v35** (`print-frame.js` est dans `CORE`).
+
 ## Dette technique / points de vigilance connus
 
 - **[ARCHI — depuis 2026-07-30] Deux surfaces, un seul module partagé** (`expedition.html` /
@@ -1408,11 +1692,22 @@ essai réel. Les deux défauts sont désormais couverts par des tests.
   ⚠️ **`expedition.html` ne démarre plus sans `print-frame.js`** (il lit `PrintFrame.Q` à
   l'évaluation du script inline). Le module est dans `CORE` du service worker, donc disponible
   hors ligne, mais ne jamais retirer le `<script src>` ni le passer en `defer`.
+- **[CARTE LIVE — depuis 2026-08-16] Une position ne circule que si l'app de l'équipe est au
+  premier plan** (#64). Téléphone verrouillé, appareil photo ouvert ou onglet en arrière-plan →
+  le marqueur se fige ; l'âge affiché est le seul garde-fou. **Un marqueur immobile n'est pas
+  une équipe immobile.** Aucun contournement en web (il faudrait une app native). Et comme le
+  transport est éphémère par choix, il n'y a **aucun historique** : une position perdue l'est
+  définitivement, on ne peut pas rejouer le trajet d'une équipe après coup. À rediscuter
+  seulement si un vrai besoin apparaît en événement — le stockage rouvrirait un sujet RGPD
+  (consentement, conservation, purge) aujourd'hui inexistant.
 - **[VITRINE — depuis 2026-08-03] La maquette du tirage de `site/index.html` duplique les cotes
-  de `print-frame.js`** (portrait 1080×1440, paysage 1347×1010, sceau à cheval sur le filet).
-  Aucun test ne relie les deux : une retouche du cadre laisserait la vitrine **mentir en
-  silence**, sur la page qui sert justement à vendre le tirage. À revérifier à chaque évolution
-  de #55/#58/#59.
+  de `print-frame.js`** (depuis #69 : portrait 1046×1395, paysage 1244×933, marge 77, sceau à
+  cheval sur le filet). Aucun test ne relie les deux : une retouche du cadre laisserait la
+  vitrine **mentir en silence**, sur la page qui sert justement à vendre le tirage. Recalculée
+  le 2026-08-17 ; à revérifier à chaque évolution de #55/#58/#59/#69.
+  ⚠️ `commercial/plaquette.css` duplique aussi ces cotes mais **volontairement infidèle** sur
+  la marge et le cartouche (à l'échelle du livret, le texte serait clippé) — voir #69 (6).
+  Ne pas « corriger » sans rapetisser le lockup puis rejouer `verif-pages.py`.
 - **[VITRINE — depuis 2026-08-05] Le site est en production mais hors du dépôt** : `site/` se
   déploie par FTP chez OVH, sans versionnement ni historique. Une modification écrase la
   précédente et **rien ne permet de revenir en arrière** — seule la copie locale fait foi.
@@ -1474,6 +1769,56 @@ JS avant livraison.
   chaînes **exacts** (échec bruyant si une ancre ne matche pas), vérifier, pousser — puis
   répercuter les mêmes éditions dans le dossier local. Ne jamais pousser une copie du mount sans
   contrôle d'intégrité.
+- ⚠️ **`Deployment cancelled` sur Pages : pousser un commit neuf, ne JAMAIS relancer le run**
+  (constaté le 2026-08-16, lot #64 — 45 min perdues). Symptôme : le commit arrive bien sur
+  `main` (re-clone + `diff` OK), le job `build` réussit et produit son artefact, mais
+  `actions/deploy-pages@v5` échoue sur `Error: Deployment cancelled.` et le site continue de
+  servir la version précédente.
+  Enchaînement observé : (1) **deux pushes à 2 min d'intervalle** → Pages annule le déploiement
+  en vol dès qu'un plus récent démarre (comportement documenté, seule certitude du lot) ;
+  (2) le second run reste 10 min puis échoue ; (3) **chaque « Re-run all jobs » échoue en
+  8-29 s** — relancer un run ne crée pas un déploiement neuf, il se fait rejeter aussitôt ;
+  (4) **un push neuf débloque tout** et publie l'historique en attente.
+  ⚠️ **Ne pas conclure sur la cause racine : elle n'est pas établie.** Une première explication
+  (« un push par PAT ne déploie pas, il faut un compte admin à l'e-mail vérifié », ligne tirée
+  de la réponse du support) a été **écartée** : le même PAT avait poussé `e0fa1b3` et `ec10128`
+  la veille avec des déploiements réussis. La corrélation « tous les échecs sont sur mes
+  pushes » ignorait que les succès de la veille en étaient aussi. Rien ne permet d'incriminer
+  l'auteur du push.
+  ⚠️ Pistes explorées **pour rien**, ne pas les refaire : environnement `github-pages` (règle de
+  branche `main` = configuration par défaut, saine), incident GitHub (statut vert),
+  réinitialisation de la source de publication (bascule « GitHub Actions » puis retour branche —
+  **sans effet, et ne déclenche aucun build par elle-même**). Le support GitHub n'a répondu
+  qu'une liste générique et a reconnu ne pas savoir expliquer ce message.
+  ⚠️ Trompeur : Settings → Pages affiche « Last deployed il y a X minutes », or cet horodatage
+  se met à jour à la **création** du déploiement, même annulé — il ne prouve rien. Seul le
+  **contenu réellement servi** fait foi (sonder une page avec une chaîne datée, par ex. la date
+  de mise à jour de `confidentialite.html`).
+  ⚠️ **Un run rouge ne signifie pas que la publication a échoué.** Constaté le 2026-08-16 :
+  les runs #92 (10 min 26) et #95 (10 min 31) ont tous deux tourné **~10 minutes** — la durée
+  d'attente maximale de `actions/deploy-pages` — puis échoué, **alors que le contenu était bien
+  publié** (vérifié sur `confidentialite.html` et `regie.html`). Le déploiement aboutit, mais
+  son statut ne remonte pas à l'action, qui abandonne. **Sur ce dépôt, juger un déploiement au
+  contenu servi, jamais à la pastille d'Actions.**
+- ⚠️ **Vérifier la date réelle (`date` en bash) avant de dater quoi que ce soit** — constaté le
+  2026-08-16 : tout un lot a été daté du **6** août au lieu du **16**, par déduction depuis la
+  date du dernier commit du dépôt au lieu d'une vérification. Contaminés : les entrées de
+  journal, les constantes `BUILD` (dont la date **est** la convention, cf. #36) et les **deux
+  politiques de confidentialité**, dont une déjà publiée chez OVH — donc un document juridique
+  antidaté, à redéployer. La date d'un environnement de travail n'est jamais déductible du
+  contenu du dépôt.
+- ⚠️ **Rien de décoratif à moins de 4 mm du bord d'un tirage** (#69). Une impression sans
+  marge agrandit le fichier de 2 à 5 % puis rogne le débord : **2 à 3 mm disparaissent sur
+  chaque bord**, quel que soit le labo. Un fichier au format exact (1800×1200 = 15×10 cm)
+  n'y change rien — « bon format » ne veut pas dire « tout arrive sur le papier ». Corollaire
+  de méthode : **une cote de sécurité s'exprime en millimètres de papier, jamais en fraction
+  d'une autre cote** — c'est en réduisant `pad` (#55) qu'on a déplacé le cadre hors du papier
+  sans le décider. Le banc `tests/test-print.js` porte l'invariant, ne pas le desserrer.
+- ⚠️ **Borner une image en unités viewport ou dans un bloc positionné, jamais en pourcentage
+  sous un parent flexible** (#67). `max-height:100%` sur un enfant de conteneur `flex:1` est un
+  pourcentage dont la base peut ne pas être résoluble : la contrainte saute **en silence** et
+  l'image s'affiche à sa taille réelle, rognée par `overflow:hidden`. `object-fit:contain` ne
+  sauve pas — il place le contenu dans la boîte, il ne redimensionne pas la boîte.
 - ⚠️ **Avant de conclure qu'un correctif ne marche pas, vérifier la version qui tourne** (`BUILD`
   en bas de l'écran de préparation). Un cache HTTP ou un service worker périmé a déjà fait
   conclure à tort à un bug applicatif (#35/#36).
@@ -1512,6 +1857,8 @@ JS avant livraison.
   par un objet dont le contexte 2D note les appels (`drawImage`, `arc`, `fillText`, `strokeRect`)
   et dont `measureText` renvoie `longueur × taille × 0,5`. On assert ensuite la **géométrie**
   (dimensions du canvas, rectangle réellement dessiné, rayon et centre du sceau, textes tracés).
+  Le banc vit désormais **dans le dépôt** : `tests/test-print.js` (38 tests). Celui de #59
+  avait été écrit dans `/tmp` et perdu — c'est pour ça que #69 n'a été vu qu'à l'impression.
   ⚠️ **Le sceau n'est pas le dernier `arc` tracé** : `drawRose` en dessine d'autres derrière lui
   (disque à `31·s`, cercle à `30·s`, moyeu à `3,4·s`). Prendre l'arc de **plus grand rayon**,
   jamais `.pop()` — l'erreur coûte deux faux échecs.
