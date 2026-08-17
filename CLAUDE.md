@@ -6,8 +6,11 @@ Guide de référence pour travailler sur l'application. À lire avant toute modi
 > **réellement poussé sur GitHub** (HEAD = 2026-08-17, lot #69 = commit `ea0362a`, `BUILD`
 > `2026-08-17.1`, `CACHE` `expedition-v35`, vérifié par re-clone frais + `diff`). Les écarts
 > connus (travail local non poussé) sont signalés ⚠️.
-> ⚠️ `ea0362a` est resté **25 min sur `main` sans être publié** ; c'est le commit de doc
-> suivant qui a débloqué Pages — voir la règle « Deployment cancelled » du § Workflow attendu.
+> ⚠️ `ea0362a` est resté **25 min sur `main` sans être publié** (`CACHE` servi encore à `v34`) :
+> c'est le commit de doc suivant, `1dd0d36`, qui a débloqué Pages — les deux sont sortis
+> ensemble, publication vérifiée sur le contenu servi (`sw.js` → `expedition-v35`) à 17h34 UTC.
+> Voir la règle « Deployment cancelled » du § Workflow attendu, complétée du **piège de sonde**
+> qui a failli faire conclure à un site mort depuis douze jours.
 > ✅ **Le lot #64 (carte live + positions par broadcast) est poussé ET EN LIGNE depuis le
 > 2026-08-16** (commit `5bf6636`, un seul commit atomique — les quatre fichiers de code + la
 > politique + le banc `tests/test-map.js`). Publication vérifiée sur le contenu réellement
