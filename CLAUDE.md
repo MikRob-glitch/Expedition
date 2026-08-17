@@ -3,9 +3,13 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** (HEAD = 2026-08-17, lot #69 = commit `ea0362a`, `BUILD`
-> `2026-08-17.1`, `CACHE` `expedition-v35`, vérifié par re-clone frais + `diff`). Les écarts
+> **réellement poussé sur GitHub** : code du lot #69 = commit `ea0362a`, `BUILD` `2026-08-17.1`,
+> `CACHE` `expedition-v35` ; docs suivies par `1dd0d36` puis `007e2af`. Publié = local **à
+> l'octet près** sur `print-frame.js`, `expedition.html`, `regie.html`, `sw.js`, les trois bancs
+> de `tests/`, `README.md` et `PROJECT.md` (re-clone frais + `diff`, 2026-08-17). Les écarts
 > connus (travail local non poussé) sont signalés ⚠️.
+> ⚠️ **Le hash du dernier commit de doc n'est jamais inscrit ici** : il serait périmé par le
+> commit même qui l'écrit. On date le lot par le commit de **code**, seul repère stable.
 > ⚠️ `ea0362a` est resté **25 min sur `main` sans être publié** (`CACHE` servi encore à `v34`) :
 > c'est le commit de doc suivant, `1dd0d36`, qui a débloqué Pages — les deux sont sortis
 > ensemble, publication vérifiée sur le contenu servi (`sw.js` → `expedition-v35`) à 17h34 UTC.
