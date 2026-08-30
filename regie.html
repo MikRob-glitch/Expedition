@@ -197,6 +197,9 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
 .tplrow .bd b{display:block;font-size:15px}
 .tplrow .bd small{color:var(--ink-mute);font-size:12px}
 .tplmeta{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:14px}
+.dropzone{border:2px dashed var(--line-strong);border-radius:14px;padding:26px 18px;text-align:center;background:rgba(255,255,255,.3);transition:border-color .15s,background .15s}
+.dropzone.over{border-color:var(--gold-dark);background:rgba(201,165,90,.12)}
+.dropzone p{margin:0 0 12px;color:var(--ink-soft);font-size:13.5px}
 .pin-clue.sel{background:var(--oxblood);box-shadow:0 0 0 3px rgba(139,46,46,.35),0 2px 6px rgba(0,0,0,.4)}
 .glist{display:flex;flex-direction:column;gap:9px}
 .gitem{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 13px;border:1.5px solid var(--line-strong);border-radius:12px;background:rgba(255,255,255,.45);cursor:pointer;font:inherit;color:inherit}
@@ -360,8 +363,17 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
       <h3 style="flex:1">Importer un scénario JSON</h3>
       <button class="close-x" onclick="closeTplImport()" aria-label="Fermer">✕</button>
     </div>
-    <p class="hint" style="margin:0 0 8px">Collez soit un tableau d'indices <code>[{"title":…,"text":…,"points":…,"lat":…,"lng":…}]</code>, soit un objet <code>{"name":…,"location":…,"durationMinutes":…,"perClueMinutes":…,"clues":[…]}</code>.</p>
-    <textarea id="tplimp-text" class="input mono" rows="10" spellcheck="false" style="font-size:12px" placeholder="[ { &quot;title&quot;: &quot;…&quot;, &quot;text&quot;: &quot;…&quot; } ]" oninput="checkTplImport()"></textarea>
+    <p class="hint" style="margin:0 0 12px">Un fichier <code>.json</code> : soit un tableau d'indices <code>[{"title":…,"text":…,"points":…,"lat":…,"lng":…}]</code>, soit un objet <code>{"name":…,"location":…,"durationMinutes":…,"perClueMinutes":…,"clues":[…]}</code>. C'est le format que produit le bouton ⇲ JSON.</p>
+    <div id="tplimp-drop" class="dropzone"
+         ondragover="event.preventDefault();this.classList.add('over')"
+         ondragleave="this.classList.remove('over')"
+         ondrop="event.preventDefault();this.classList.remove('over');handleTplFile(event.dataTransfer.files[0])">
+      <input type="file" id="tplimp-file" accept=".json,application/json" style="display:none"
+             onchange="handleTplFile(this.files[0]);this.value=''">
+      <p>Déposez le fichier ici, ou&nbsp;:</p>
+      <button class="btn ghost" onclick="document.getElementById('tplimp-file').click()">Choisir un fichier…</button>
+      <div class="mono" id="tplimp-name" style="font-size:12px;margin-top:12px;color:var(--ink-mute)"></div>
+    </div>
     <div id="tplimp-report" style="margin-top:10px"></div>
     <div class="row" id="tplimp-acts" style="margin-top:12px"></div>
   </div>
@@ -509,7 +521,7 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
      n'utilise que des UPDATE ciblés, jamais d'upsert sur `games`.
    ===================================================================== */
 
-const BUILD = '2026-08-30.1';
+const BUILD = '2026-08-30.2';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -549,6 +561,7 @@ const S = {
   tplDirty: false,                 // modifications non enregistrées
   tplLoading: false,
   launchTpl: null,                 // modèle en cours de duplication vers une vraie chasse
+  tplImport: null,                 // scénario lu depuis un fichier, en attente de validation
   lastSig: ''
 };
 
@@ -992,6 +1005,7 @@ function backToPicker(){
    ici est lisible par quiconque détient la clé anon. Voir la dette « Lot Edge Functions ».   */
 
 const TPL_MAX_TITLE = 120, TPL_MAX_TEXT = 4000, TPL_MAX_CLUES = 60;
+const TPL_MAX_FILE = 512 * 1024;   // un scénario de 60 indices pèse ~30 Ko : au-delà, ce n'en est pas un
 
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function genCode(){
@@ -1474,18 +1488,46 @@ function tplParse(raw){
   return out;
 }
 function openTplImport(){
-  $('#tplimp-text').value = '';
+  S.tplImport = null;
+  const f = $('#tplimp-file'); if(f) f.value = '';
+  $('#tplimp-name').textContent = '';
   $('#tplimp-report').innerHTML = '';
   $('#tplimp-acts').innerHTML = '';
+  $('#tplimp-drop')?.classList.remove('over');
   $('#tplimp-ov').classList.add('open');
-  setTimeout(() => $('#tplimp-text')?.focus(), 60);
 }
-function closeTplImport(){ $('#tplimp-ov').classList.remove('open'); }
-function checkTplImport(){
-  const r = tplParse($('#tplimp-text').value);
-  const rep = $('#tplimp-report'), acts = $('#tplimp-acts');
-  if(r.error){
-    rep.innerHTML = `<div class="hint warn">${esc(r.error)}</div>`;
+function closeTplImport(){ $('#tplimp-ov').classList.remove('open'); S.tplImport = null; }
+
+// Point d'entrée unique du fichier : le sélecteur et le glisser-déposer arrivent tous deux ici.
+// La lecture est asynchrone ; rien n'est appliqué au modèle tant que l'utilisateur n'a pas
+// confirmé — `S.tplImport` porte le scénario lu entre les deux.
+function handleTplFile(file){
+  if(!file){ tplImportReport({ error:'Aucun fichier reçu' }); return; }
+  if(file.size > TPL_MAX_FILE){
+    tplImportReport({ error:`Fichier trop volumineux (${Math.round(file.size/1024)} Ko, maximum ${Math.round(TPL_MAX_FILE/1024)} Ko)`, filename:file.name });
+    return;
+  }
+  const looksJson = /\.json$/i.test(file.name || '') || /json/i.test(file.type || '');
+  if(!looksJson){ tplImportReport({ error:'Attendu : un fichier .json', filename:file.name }); return; }
+  const r = new FileReader();
+  r.onerror = () => tplImportReport({ error:'Lecture du fichier impossible', filename:file.name });
+  r.onload = () => tplAccept(String(r.result || ''), file.name);
+  r.readAsText(file);
+}
+// Séparé de la lecture pour rester testable sans FileReader.
+function tplAccept(text, filename){
+  const res = tplParse(text);
+  res.filename = filename || '';
+  tplImportReport(res);
+  return res;
+}
+function tplImportReport(r){
+  S.tplImport = (r && !r.error) ? r : null;
+  const nm = $('#tplimp-name'), rep = $('#tplimp-report'), acts = $('#tplimp-acts');
+  if(nm) nm.textContent = (r && r.filename) ? r.filename : '';
+  if(!rep || !acts) return;
+  if(!r || r.error){
+    rep.innerHTML = `<div class="hint warn">${esc((r && r.error) || 'Fichier illisible')}</div>`;
     acts.innerHTML = ''; return;
   }
   rep.innerHTML = `<div class="hint">✓ ${r.clues.length} indice${r.clues.length>1?'s':''} · ${tplPoints(r.clues)} pts · ${tplPlaced(r.clues)} géolocalisé${tplPlaced(r.clues)>1?'s':''}${r.meta.name?` · « ${esc(r.meta.name)} »`:''}</div>`
@@ -1496,8 +1538,8 @@ function checkTplImport(){
     : `<button class="btn gold" onclick="doTplImport('new')">Créer le modèle</button>`;
 }
 function doTplImport(mode){
-  const r = tplParse($('#tplimp-text').value);
-  if(r.error){ toast(r.error,'error',5000); return; }
+  const r = S.tplImport;
+  if(!r || r.error){ toast('Choisissez d\'abord un fichier .json','error',4500); return; }
   if(mode === 'new'){
     S.tpl = {
       code:null, name:r.meta.name || '', location:r.meta.location || '', logoUrl:null,

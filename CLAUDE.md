@@ -3,7 +3,12 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** : code du lot #69 = commit `ea0362a`, `BUILD` `2026-08-17.1`,
+> **réellement poussé sur GitHub** : lot #70 = commit `97101c2` (2026-08-30, publication
+> vérifiée sur le contenu servi), lot #71 = **le commit qui porte ces lignes** — son hash sera
+> inscrit au lot suivant, pour la raison rappelée juste en dessous. `BUILD` régie
+> `2026-08-30.2`, `BUILD` app `2026-08-17.1` (fichier non touché), `CACHE` `expedition-v37`.
+> ⚠️ `scenarios/` (bibliothèque de parcours) est **hors dépôt**, comme `commercial/`.
+> État précédent : code du lot #69 = commit `ea0362a`, `BUILD` `2026-08-17.1`,
 > `CACHE` `expedition-v35` ; docs suivies par `1dd0d36` puis `007e2af`. Publié = local **à
 > l'octet près** sur `print-frame.js`, `expedition.html`, `regie.html`, `sw.js`, les trois bancs
 > de `tests/`, `README.md` et `PROJECT.md` (re-clone frais + `diff`, 2026-08-17). Les écarts
@@ -1698,7 +1703,7 @@ portrait, le 2026-08-17. Le cycle complet, pour une fois, sans zone d'ombre.
     si son jumeau l'est — les deux orientations ont des cotes différentes.
     `2026-08-17.1`, `CACHE` **v34→v35** (`print-frame.js` est dans `CORE`).
 
-### Poussés sur GitHub (2026-08-30) — Chasses types dans la régie (#70)
+### Poussés sur GitHub (2026-08-30, commit `97101c2`) — Chasses types dans la régie (#70)
 
 **Demande.** Gérer les chasses types depuis la console, et pouvoir en **créer** — jusqu'ici le
 tiroir ne savait qu'archiver une chasse déjà écrite au téléphone (☆ dans `expedition.html`) et
@@ -1779,6 +1784,37 @@ s'en servir pour un client.
 d'un scénario stocké en chasse type est lisible par quiconque détient la clé anon. Un scénario
 qui a une valeur commerciale n'est pas protégé par la base — seul le dossier `scenarios/`,
 hors dépôt public, l'est.
+
+### Poussés sur GitHub (2026-08-30) — L'import d'un scénario se fait par fichier (#71)
+
+**Signalé à l'usage, tout de suite après #70.** L'import passait par une zone de collage. Coller
+7 Ko de JSON dans un `<textarea>` depuis un éditeur de texte est une manipulation qui rate :
+sélection partielle, retour à la ligne perdu, et surtout aucune trace de **quel** fichier a été
+chargé — donc aucun moyen de savoir, trois semaines plus tard, si le modèle en base vient bien
+de `scenarios/saint-nazaire-velo.json`.
+
+**Ce qui change.** Zone de dépôt + sélecteur de fichier `.json` (glisser-déposer *et* clic), le
+nom du fichier reste affiché sous la zone, et le compte rendu (indices, points, géolocalisés,
+avertissements) ne change pas. La zone de collage est **retirée** : une seule voie d'entrée.
+
+**Découpage retenu.** `handleTplFile(file)` valide et lit (asynchrone), `tplAccept(text, nom)`
+analyse, `tplImportReport(res)` affiche et **retient le résultat dans `S.tplImport`**. Rien
+n'est appliqué au modèle tant que l'utilisateur n'a pas cliqué : la lecture et l'application
+sont deux temps distincts. ⚠️ C'est aussi ce qui rend la chose **testable sans FileReader** —
+`tplAccept` s'appelle directement ; seul un test exerce le vrai chemin `File` → `FileReader`.
+
+**Refus avant lecture** (rien n'est lu tant que le fichier n'a pas passé les trois filtres) :
+aucun fichier, extension autre que `.json` (ou type MIME sans « json »), taille au-delà de
+**512 Ko** — un scénario de 60 indices pèse ~30 Ko, au-delà ce n'en est pas un. Le JSON reste
+traité comme une donnée hostile : `tplParse` → `normClues` inchangés.
+
+**Banc** : `tests/test-templates.js` passe de 95 à **123 tests** — champ fichier présent et zone
+de collage absente, refus (aucun fichier / `.txt` / 600 Ko / JSON cassé, avec vérification qu'aucun
+bouton de validation n'apparaît), lecture réelle d'un `File` par `FileReader`, nom de fichier
+affiché, création du modèle, ajout à la suite depuis l'éditeur, et validation sans fichier qui ne
+fait rien. Total des bancs : **240**.
+
+**Aucune migration.** `BUILD` régie → `2026-08-30.2`, `CACHE` **v36→v37**.
 
 ## Dette technique / points de vigilance connus
 

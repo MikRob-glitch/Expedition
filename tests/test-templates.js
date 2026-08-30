@@ -262,8 +262,77 @@ S.user = { id:UID, email:'mj@exemple.test' };
   ok(llog.layerRemoved.length === 1, 'coordonnées effacées : marqueur retiré de la carte');
 })();
 
-/* ───────── 7. Garde-fous d'enregistrement ───────── */
+/* ───────── 7. Import par FICHIER ───────── */
 (async function(){
+  console.log('— import fichier —');
+  const wait = async (test, ms=1500) => {
+    const t0 = Date.now();
+    while(!test() && Date.now() - t0 < ms) await new Promise(r => setTimeout(r, 10));
+    return test();
+  };
+  const file = (name, content, type) => new w.File([content], name, { type: type || 'application/json' });
+
+  S.view = 'tpl-list';
+  w.openTplImport();
+  ok(w.document.getElementById('tplimp-ov').classList.contains('open'), 'overlay ouvert');
+  ok(S.tplImport === null, 'ouverture : aucun scénario en attente');
+  ok(w.document.getElementById('tplimp-file') !== null, 'un champ fichier, pas une zone de collage');
+  ok(w.document.getElementById('tplimp-text') === null, 'la zone de collage a bien disparu');
+
+  w.handleTplFile(null);
+  ok(S.tplImport === null, 'aucun fichier : rien en attente');
+  ok(/warn/.test(w.document.getElementById('tplimp-report').innerHTML), 'aucun fichier : message d\'erreur');
+
+  w.handleTplFile(file('scenario.txt', '[]', 'text/plain'));
+  ok(S.tplImport === null, 'extension .txt refusée');
+  ok(/\.json/.test(w.document.getElementById('tplimp-report').textContent), 'refus explicite sur l\'extension');
+
+  w.handleTplFile(file('gros.json', 'x'.repeat(600 * 1024)));
+  ok(S.tplImport === null, 'fichier trop volumineux refusé');
+  ok(/volumineux/.test(w.document.getElementById('tplimp-report').textContent), 'refus explicite sur la taille');
+
+  w.handleTplFile(file('casse.json', '{ pas du json'));
+  ok(await wait(() => /warn/.test(w.document.getElementById('tplimp-report').innerHTML)), 'JSON invalide : signalé');
+  ok(S.tplImport === null, 'JSON invalide : rien en attente');
+  ok(w.document.getElementById('tplimp-acts').innerHTML === '', 'JSON invalide : aucun bouton de validation');
+
+  const scenario = JSON.stringify({
+    name:'Saint-Nazaire à vélo', location:'Saint-Nazaire (44)',
+    durationMinutes:180, perClueMinutes:15,
+    clues:[{ title:'La base', text:'…', points:120, lat:47.2755, lng:-2.205 },
+           { title:'Le môle', text:'…', points:90 }]
+  });
+  w.handleTplFile(file('saint-nazaire-velo.json', scenario));
+  ok(await wait(() => S.tplImport !== null), 'fichier .json lu et accepté');
+  ok(S.tplImport.clues.length === 2, 'deux indices lus');
+  ok(S.tplImport.filename === 'saint-nazaire-velo.json', 'nom du fichier retenu');
+  ok(w.document.getElementById('tplimp-name').textContent === 'saint-nazaire-velo.json', 'nom du fichier affiché');
+  ok(/Créer le modèle/.test(w.document.getElementById('tplimp-acts').textContent), 'bouton de création proposé hors éditeur');
+
+  w.doTplImport('new');
+  ok(S.view === 'tpl-edit' && S.tpl && S.tpl.isNew, 'création du modèle depuis le fichier');
+  ok(S.tpl.name === 'Saint-Nazaire à vélo' && S.tpl.duration === 180, 'métadonnées du fichier reprises');
+  ok(S.tpl.clues.length === 2 && S.tpl.clues[0].lat === 47.2755, 'indices repris avec coordonnées');
+  ok(w.document.getElementById('tplimp-ov').classList.contains('open') === false, 'overlay refermé');
+  ok(S.tplImport === null, 'scénario consommé, plus rien en attente');
+
+  // Dans l'éditeur, l'import propose remplacement ou ajout.
+  w.openTplImport();
+  w.handleTplFile(file('autre.json', '[{"title":"Ajouté"}]'));
+  ok(await wait(() => S.tplImport !== null), 'second fichier lu depuis l\'éditeur');
+  ok(/Remplacer les indices/.test(w.document.getElementById('tplimp-acts').textContent), 'éditeur : remplacement proposé');
+  w.doTplImport('append');
+  ok(S.tpl.clues.length === 3, 'ajout à la suite');
+  ok(S.tpl.clues[2].title === 'Ajouté', 'indice ajouté en fin de liste');
+
+  // Sans fichier choisi, valider ne fait rien.
+  w.openTplImport();
+  const before = S.tpl.clues.length;
+  w.doTplImport('replace');
+  ok(S.tpl.clues.length === before, 'validation sans fichier : aucun effet');
+  w.closeTplImport();
+
+/* ───────── 8. Garde-fous d'enregistrement ───────── */
   console.log('— enregistrement —');
   slog.inserts.length = 0; slog.updates.length = 0;
 
@@ -311,7 +380,7 @@ S.user = { id:UID, email:'mj@exemple.test' };
   await w.saveTemplate(null);
   ok(S.tplDirty === true, 'UPDATE sans ligne touchée : le modèle reste marqué non enregistré');
 
-  /* ───────── 8. Lancement d'une chasse depuis un modèle ───────── */
+  /* ───────── 9. Lancement d'une chasse depuis un modèle ───────── */
   console.log('— lancement —');
   slog.inserts.length = 0;
   slog.reply = () => ({ data:null, error:null });

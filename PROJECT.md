@@ -385,9 +385,15 @@ après un clic carte sans reconstruire le formulaire.
 
 **Import / export JSON** — `{name, location, durationMinutes, perClueMinutes, clues:[{title,
 text, points, lat, lng}]}`, ou un simple tableau d'indices. C'est la voie de chargement d'un
-scénario écrit hors ligne. ⚠️ Le JSON collé est traité comme une **donnée hostile** :
-`normClues()` borne les nombres, tronque les chaînes et réduit l'`id` d'un indice à
-`[A-Za-z0-9_-]` — cet id finit dans un littéral JS d'attribut `onclick`.
+scénario écrit hors ligne. L'import se fait **par fichier `.json`** (glisser-déposer ou
+sélecteur), jamais par collage (#71) : le nom du fichier reste affiché, ce qui laisse une trace
+de l'origine du modèle. Refus **avant lecture** : extension autre que `.json`, ou taille au-delà
+de 512 Ko. La lecture et l'application sont deux temps distincts — `handleTplFile` lit,
+`tplAccept` analyse, `tplImportReport` retient le résultat dans `S.tplImport`, et rien ne touche
+au modèle avant le clic de validation.
+⚠️ Le contenu du fichier est traité comme une **donnée hostile** : `normClues()` borne les
+nombres, tronque les chaînes et réduit l'`id` d'un indice à `[A-Za-z0-9_-]` — cet id finit dans
+un littéral JS d'attribut `onclick`.
 
 ⚠️ **Les id d'indices sont réattribués** à chaque duplication (`freshClues`) : deux chasses qui
 partageraient un `clues[].id` désapparieraient leurs preuves, `submissions.clue_id` n'étant
@@ -400,7 +406,7 @@ vérifie `.select()` — sous RLS, un UPDATE qui ne touche aucune ligne ne remon
 
 La régie **n'édite pas** les chasses ordinaires : l'éditeur d'indices de `expedition.html`
 reste la voie de création à la volée. Arbitrage assumé — deux surfaces d'écriture sur
-`games.clues`, pas trois. Banc : `tests/test-templates.js` (95 tests).
+`games.clues`, pas trois. Banc : `tests/test-templates.js` (123 tests).
 
 ### Préparer plusieurs chasses à l'avance
 Une chasse créée est **enregistrée immédiatement** (statut `setup`). Depuis le lobby, « ← Menu » ramène à l'écran de préparation pour en créer une autre ; le picker « Reprendre une session » (`loadSessionsForPicker` : `status='setup'` + `admin_id`) liste les chasses en attente et reprend directement au lobby. Aucune donnée n'est écrite ni effacée au passage.
