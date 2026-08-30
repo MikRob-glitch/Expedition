@@ -3,10 +3,19 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** : lot #70 = commit `97101c2` (2026-08-30, publication
-> vérifiée sur le contenu servi), lot #71 = **le commit qui porte ces lignes** — son hash sera
-> inscrit au lot suivant, pour la raison rappelée juste en dessous. `BUILD` régie
-> `2026-08-30.2`, `BUILD` app `2026-08-17.1` (fichier non touché), `CACHE` `expedition-v37`.
+> **réellement poussé sur GitHub** : code du lot #71 = commit `b7d6370` (2026-08-30), précédé
+> du lot #70 = commit `97101c2` (même jour). `BUILD` régie `2026-08-30.2`, `BUILD` app
+> `2026-08-17.1` (fichier non touché), `CACHE` `expedition-v37`.
+> ✅ **Publication VÉRIFIÉE sur le contenu réellement servi le 2026-08-30**, deux fois :
+> `…/sw.js?probe=20260830-0930a` → `expedition-v36` (#70), puis
+> `…/sw.js?probe=20260830-lot71b` → `expedition-v37` (#71).
+> ⚠️ **Observation utile sur le délai** : à la première sonde après le push de #71, le contenu
+> servi était **encore `v36`** ; il est passé à `v37` moins de trois minutes plus tard. Une
+> sonde unique juste après un push ne prouve donc rien — re-sonder, avec une chaîne de requête
+> **différente**, avant de conclure quoi que ce soit.
+> ✅ Les deux pushes, **uniques et laissés tranquilles**, se sont déployés sans incident :
+> troisième et quatrième confirmations de la règle « un seul push, puis attendre » du
+> § Workflow attendu (après #65-#68, et contre le double push de #64).
 > ⚠️ `scenarios/` (bibliothèque de parcours) est **hors dépôt**, comme `commercial/`.
 > État précédent : code du lot #69 = commit `ea0362a`, `BUILD` `2026-08-17.1`,
 > `CACHE` `expedition-v35` ; docs suivies par `1dd0d36` puis `007e2af`. Publié = local **à
@@ -1785,7 +1794,7 @@ d'un scénario stocké en chasse type est lisible par quiconque détient la clé
 qui a une valeur commerciale n'est pas protégé par la base — seul le dossier `scenarios/`,
 hors dépôt public, l'est.
 
-### Poussés sur GitHub (2026-08-30) — L'import d'un scénario se fait par fichier (#71)
+### Poussés sur GitHub (2026-08-30, commit `b7d6370`) — L'import d'un scénario se fait par fichier (#71)
 
 **Signalé à l'usage, tout de suite après #70.** L'import passait par une zone de collage. Coller
 7 Ko de JSON dans un `<textarea>` depuis un éditeur de texte est une manipulation qui rate :
@@ -1824,6 +1833,12 @@ fait rien. Total des bancs : **240**.
   `purgeGamePhotos`, le zoom photo, la génération de QR. ⚠️ **Un changement de schéma doit être
   répercuté dans les deux fichiers** — c'est aujourd'hui le vrai risque, plus le cadre.
   Prochain candidat à l'extraction si la douleur vient : le socle de mapping DB.
+  ⚠️ **Depuis #70, un second éditeur d'indices existe** (modèles, dans `regie.html`). Il ne
+  partage avec celui de `expedition.html` **que la forme de l'objet indice**, recopiée en
+  commentaire d'en-tête du bloc `#70` : `{id, title, text, points, lat, lng}`, id neufs à
+  chaque duplication, alphabet du code de chasse. Ces invariants se tiennent **à la main** —
+  c'est le prix assumé pour ne pas avoir extrait un module d'un éditeur qu'aucun événement
+  n'a encore exercé. Si un troisième point d'écriture sur `games.clues` apparaît, extraire.
   ⚠️ **`expedition.html` ne démarre plus sans `print-frame.js`** (il lit `PrintFrame.Q` à
   l'évaluation du script inline). Le module est dans `CORE` du service worker, donc disponible
   hors ligne, mais ne jamais retirer le `<script src>` ni le passer en `defer`.

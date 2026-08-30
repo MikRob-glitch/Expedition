@@ -30,8 +30,8 @@ Application web mobile (**PWA installable, capable hors-ligne**) pour une chasse
 ## Fichiers du projet
 
 ```
-expedition.html            ← app joueurs + parcours admin mobile, SPA (~3670 lignes)
-regie.html                 ← console maître du jeu, grand écran (~2055 lignes)
+expedition.html            ← app joueurs + parcours admin mobile, SPA (~3740 lignes)
+regie.html                 ← console maître du jeu + éditeur de chasses types (~3190 lignes)
 print-frame.js             ← moteur du cadre de tirage, PARTAGÉ par les deux (ne jamais dupliquer)
 sw.js                      ← service worker (app-shell offline, cache, tuiles OSM)
 confidentialite.html       ← politique de confidentialité RGPD (servie par Pages)
@@ -45,11 +45,18 @@ migration-storage-purge.sql ← purge sans DELETE sur storage.objects (obligatoi
 migration-print-choice.sql ← teams.print_submission_id (tirage souvenir)
 migration-venue-logo.sql   ← games.logo_url (logo du lieu sur le tirage)
 migration-storage-delete-fix.sql ← policy DELETE du bucket : `name` mal résolu (obligatoire)
+migration-templates.sql    ← games.is_template (tiroir de chasses types, hors purge 90 j)
 tests/test-print.js        ← banc JSDOM : géométrie du cadre de tirage (38 tests, zone de sécurité)
 tests/test-map.js          ← banc JSDOM : carte live + minimap + émetteur de position (50 tests)
 tests/test-merge.js        ← banc JSDOM : fusion d'équipes en doublon (29 tests, ordre des écritures)
+tests/test-templates.js    ← banc JSDOM : chasses types dans la régie (123 tests, import par fichier)
 .github/workflows/keepalive.yml ← ping Supabase (anti-pause tier gratuit)
 .nojekyll                  ← désactive Jekyll sur GitHub Pages
+scenarios/                 ← BIBLIOTHÈQUE DE PARCOURS (hors dépôt Git) — un scénario = 3 fichiers
+  <nom>.md                 ←   fiche de travail : lieux, indices rédigés, défis photo, logistique
+  <nom>.json               ←   scénario importable (régie → ☆ Chasses types → ⇱ Importer)
+  <nom>.sql                ←   voie de secours : insère la chasse type directement en base
+  saint-nazaire-velo.*     ←   premier scénario : 16 étapes à vélo, 1450 pts, 3 formats (6→28 km)
 site/                      ← SITE VITRINE (hors dépôt Git) — en prod sur www.expedition-selfiesafari.fr
   index.html               ←   fichier unique (~88 Ko) : accueil + campings + entreprises + devis
   confidentialite.html     ←   copie enrichie de la politique RGPD (§1 et §2 renseignés)
@@ -580,6 +587,15 @@ Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Doub
 | `paneMini` / `mountMini` / `syncTeamMarkers` / `miniFit` | Minimap permanente : nœud Leaflet persistant réinséré après chaque repaint, marqueurs partagés avec l'overlay |
 | `openMerge` / `confirmMerge` / `mergeTeams` / `clueClash` | Fusion d'un doublon : preuves réaffectées **puis** ligne supprimée ; détection des indices couverts deux fois |
 | `purgeGamePhotos` / `purgeGame` | Effacement RGPD : fichiers **puis** lignes |
+| `openTemplates` / `viewTemplates` / `removeTemplate` | Tiroir des chasses types : liste, suppression (RPC `admin_purge_game`) |
+| `newTemplate` / `editTemplate` / `viewTplEditor` / `saveTemplate` | Éditeur de modèle — INSERT ou UPDATE **ciblé** (ni `is_template`, ni `logo_url`, ni `admin_id`) |
+| `paintClues` / `clueCard` / `setClue` / `addClue` / `delClue` / `moveClue` | Liste d'indices : la vue n'est jamais repeinte à la frappe (règle #49) |
+| `initTplMap` / `syncTplMarkers` / `paintClueGeo` | Carte de l'éditeur : clic pour poser, marqueurs déplaçables, champs mis à jour **sans** repeindre |
+| `handleTplFile` / `tplAccept` / `tplImportReport` / `doTplImport` | Import d'un scénario `.json` : lire → analyser → retenir dans `S.tplImport` → appliquer au clic |
+| `tplParse` / `normClue` / `normClues` / `freshClues` | Normalisation : bornes, coordonnées, id assaini `[A-Za-z0-9_-]`, unicité, id neufs à la duplication |
+| `exportTemplate` / `exportDraft` / `tplDownload` | Export du scénario en `.json` (même format que l'import) |
+| `openLaunch` / `doLaunch` / `tplCopyLogo` | Chasse créée depuis un modèle : indices à id neufs, logo **recopié** sous le nouveau code |
+| `genCode` / `freeCode` | Code à 4 caractères (alphabet réduit), sondé jusqu'à six tirages pour éviter une collision |
 
 ---
 
@@ -628,11 +644,13 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 8. **Tirage souvenir** : composé côté client (canvas), sortie fixe 10×15 à ~300 dpi — la qualité plafonne à ce que vaut la photo envoyée (1600 px). Depuis le 2026-08-17 le cadre tient dans une **zone de sécurité de 4,5 mm** (`tests/test-print.js` refuse tout élément décoratif à moins de 4 mm du bord), ✅ **validée sur tirage réel en paysage ET en portrait** — le cadre complet arrive sur le papier. ⚠️ Le portrait n'avait jamais été imprimé jusque-là et portait le même défaut : **un format de sortie non imprimé n'est pas un format validé**, même si son jumeau l'est.
 9. **Reprise d'une chasse terminée** : `resumeHunt` restitue le temps restant mais ne « rejoue » rien — une équipe déjà déconnectée doit se reconnecter par la liste des équipes.
 10. **Deux surfaces, un seul module partagé.** Le cadre de tirage est mutualisé (`print-frame.js`, #59) ; le socle — mapping DB, export ZIP, purge, zoom, QR — reste **dupliqué** entre `expedition.html` et `regie.html`. **Un changement de schéma se répercute à la main dans les deux.** Prochain candidat à l'extraction si la douleur vient : le mapping DB.
-11. **La régie a servi sur un événement réel** (2026-08-06 : 3 équipes, 9 indices, 17 preuves, validation **et** vote menés depuis la console, arbitrage étalé sur toute la chasse). ⚠️ Deux réserves : cet événement tournait sur la version d'avant la carte live, la minimap et la fusion d'équipes — **ces trois-là n'ont jamais servi sur le terrain** (carte et minimap vérifiées en navigateur depuis) ; et **17 photos ne mettent aucune pression sur le débit d'arbitrage**, qui reste le vrai inconnu à effectif élevé. Restent aussi non éprouvés à l'œil : le **mode rafale** et l'affichage plein cadre des photos. Bancs **rejouables** conservés dans `tests/` : 38 (géométrie du cadre) + 50 (carte live, minimap, émetteur de position) + 29 (fusion d'équipes) = **117**. Le banc du cadre a dû être **réécrit** : celui de #59 vivait dans `/tmp` et a été perdu — c'est précisément pour cela qu'un cadre imprimé hors du papier n'a été découvert qu'au tirage. Le parcours admin de `expedition.html` reste le chemin éprouvé.
+11. **La régie a servi sur un événement réel** (2026-08-06 : 3 équipes, 9 indices, 17 preuves, validation **et** vote menés depuis la console, arbitrage étalé sur toute la chasse). ⚠️ Deux réserves : cet événement tournait sur la version d'avant la carte live, la minimap et la fusion d'équipes — **ces trois-là n'ont jamais servi sur le terrain** (carte et minimap vérifiées en navigateur depuis) ; et **17 photos ne mettent aucune pression sur le débit d'arbitrage**, qui reste le vrai inconnu à effectif élevé. Restent aussi non éprouvés à l'œil : le **mode rafale** et l'affichage plein cadre des photos. Bancs **rejouables** conservés dans `tests/` : 38 (géométrie du cadre) + 50 (carte live, minimap, émetteur de position) + 29 (fusion d'équipes) + 123 (chasses types) = **240**. Le banc du cadre a dû être **réécrit** : celui de #59 vivait dans `/tmp` et a été perdu — c'est précisément pour cela qu'un cadre imprimé hors du papier n'a été découvert qu'au tirage. Le parcours admin de `expedition.html` reste le chemin éprouvé.
 12. **Le site vitrine n'a ni versionnement ni retour arrière** (déployé par FTP), et son **devis n'est pas un envoi garanti** : le formulaire prépare le message et propose trois sorties (Gmail, `mailto:`, copie), mais rien ne prouve que le visiteur aille au bout, et aucune trace n'est conservée. Un envoi certain supposerait un service tiers (Formspree, Web3Forms, Netlify Forms).
 13. **Aucun banc ne voit les pixels — quatre défauts l'ont prouvé.** Chromium ne s'installe pas dans l'environnement de développement : les bancs JSDOM vérifient le comportement et la géométrie, jamais le rendu. Sont passés au travers, et ont tous été **vus à l'œil par l'organisateur** : sur le site (2026-08-05) un `mailto:` **muet** sur un Windows sans client mail et du **gras noir sur fond noir** ; dans la régie (2026-08-16) des **photos tronquées à la validation** (`max-height:100%` sous un parent flexible : la contrainte saute, l'image s'affiche à sa taille réelle) et un **QR encodant un chemin `file://`**. Les deux premiers sont couverts par des tests ; les deux derniers ne peuvent pas l'être. **Règle qui en découle : borner une image en unités viewport ou dans un bloc positionné, jamais en pourcentage sous un parent flexible.**
 14. **Les tests du cadre ne dessinent pas de pixels** : `node-canvas` ne s'installe pas dans l'environnement de développement, `tests/test-print.js` utilise un contexte 2D *enregistreur* et vérifie la **géométrie** (dimensions, rectangle dessiné, rayon et centre du sceau, textes tracés, distance au bord). Il attraperait une régression de mise en page, pas un défaut de rendu — ni ce que fait le labo du fichier. C'est un tirage réel, pas un test, qui a corrigé #55 (voir #58) puis #69 — et c'est un tirage réel, non le banc, qui a fermé #69 en confirmant les deux orientations.
-15. **La carte live dépend du premier plan.** Une équipe n'émet sa position que si son application est ouverte et visible, GPS autorisé : téléphone verrouillé, appareil photo ouvert ou onglet en arrière-plan → le marqueur se fige. L'âge de chaque position est affiché pour cette raison ; **un marqueur immobile n'est pas une équipe immobile**. Contournement impossible en web : il faudrait une application native. Aucun historique non plus — le transport est éphémère, une position perdue l'est définitivement.
+15. **L'éditeur de chasses types n'a jamais tourné dans un vrai navigateur** (#70/#71), ni sur un événement. Ses 123 tests sont du JSDOM : ils ne voient ni le rendu Leaflet réel, ni les RLS, ni le Storage, et le **glisser-déposer** d'un fichier n'est exercé que par le chemin `File` — l'événement `drop` lui-même ne l'est pas. À exercer une fois sur un modèle jetable avant de s'en servir pour un client.
+16. **Un scénario écrit au bureau n'est pas un scénario vendable.** Les coordonnées lues sur une carte valent ±50 à 150 m ; l'application juge sur photo **et** position. Un relevé sur le terrain, point par point, reste obligatoire avant de facturer — c'est vrai du parcours Saint-Nazaire livré dans `scenarios/`.
+17. **La carte live dépend du premier plan.** Une équipe n'émet sa position que si son application est ouverte et visible, GPS autorisé : téléphone verrouillé, appareil photo ouvert ou onglet en arrière-plan → le marqueur se fige. L'âge de chaque position est affiché pour cette raison ; **un marqueur immobile n'est pas une équipe immobile**. Contournement impossible en web : il faudrait une application native. Aucun historique non plus — le transport est éphémère, une position perdue l'est définitivement.
 
 ---
 
@@ -706,6 +724,7 @@ npm i jsdom
 node tests/test-print.js    # 38 — géométrie du cadre, zone de sécurité 4 mm
 node tests/test-map.js      # 50 — carte live, minimap, émetteur de position
 node tests/test-merge.js    # 29 — fusion d'équipes (ordre des écritures)
+node tests/test-templates.js # 123 — chasses types : normalisation, import fichier, carte, garde-fous
 node site/test-site.js      # 85 — site vitrine (dossier hors dépôt)
 ```
 
@@ -729,6 +748,6 @@ select public.purge_game('XXXX');
 
 ## Historique des évolutions
 
-Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu, **épreuve filigranée**, **sortie de secours de la phase validation**, tiroir de chasses types, QR du diaporama, **sceau et centrage du cadre**, la **console maître du jeu `regie.html`**, l'extraction du moteur de cadre dans **`print-frame.js`**, les **tirages à la demande**, le **site vitrine mis en ligne**, la **carte live du maître du jeu**, la **minimap**, la **fusion d'équipes en doublon**, les **photos entières à la validation**, le **QR robuste hors http** et la **zone de sécurité d'impression du cadre**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
+Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu, **épreuve filigranée**, **sortie de secours de la phase validation**, tiroir de chasses types, QR du diaporama, **sceau et centrage du cadre**, la **console maître du jeu `regie.html`**, l'extraction du moteur de cadre dans **`print-frame.js`**, les **tirages à la demande**, le **site vitrine mis en ligne**, la **carte live du maître du jeu**, la **minimap**, la **fusion d'équipes en doublon**, les **photos entières à la validation**, le **QR robuste hors http**, la **zone de sécurité d'impression du cadre**, l'**éditeur de chasses types dans la console** et l'**import d'un scénario par fichier**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
 
 > ⚠️ **Un bug de service worker trouvé en ajoutant la régie** (#57, `CACHE` v25→v26) : depuis #35, le handler de navigation écrivait **toute** réponse sous `'./expedition.html'`. Ouvrir `regie.html` une seule fois écrasait donc l'app-shell en cache — hors ligne, un **joueur** serait retombé sur la console du maître du jeu. Le chemin de cache est désormais celui du document réellement demandé.
