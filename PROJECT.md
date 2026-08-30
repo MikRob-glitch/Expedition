@@ -371,7 +371,36 @@ Une chasse type est une ligne `games` avec `is_template=true` : **copie vierge**
 
 ⚠️ **Pourquoi une copie et non un drapeau sur une chasse jouée** : les modèles échappent à la rétention 90 j. Marquer une chasse déjà jouée immobiliserait hors purge les photos et les noms de ses participants. `saveAsTemplate` crée donc toujours une copie neuve ; la source reste soumise à la rétention. Migration : `migration-templates.sql`.
 
-⚠️ **Un modèle ne s'édite pas en place** : utilisez-le, ajustez le formulaire, créez la chasse, rangez la nouvelle version et retirez l'ancienne.
+#### Écrire et gérer les modèles depuis la console (#70)
+
+Depuis la régie, bouton **☆ Chasses types** du sélecteur de chasse : créer, **modifier**,
+importer, exporter, dupliquer et supprimer un modèle, et **lancer une vraie chasse** depuis
+un modèle (nom, date, lieu, durées) sans passer par le téléphone.
+
+L'éditeur donne titre, texte, points, ordre et **coordonnées posées à la carte** (Leaflet :
+indice sélectionné + clic, marqueurs déplaçables au glisser). ⚠️ La vue n'est **jamais**
+repeinte à la frappe : chaque champ écrit dans `S.tpl`, seules les opérations de structure
+repeignent la liste — d'où `paintClueGeo()`, qui met à jour les deux champs de coordonnées
+après un clic carte sans reconstruire le formulaire.
+
+**Import / export JSON** — `{name, location, durationMinutes, perClueMinutes, clues:[{title,
+text, points, lat, lng}]}`, ou un simple tableau d'indices. C'est la voie de chargement d'un
+scénario écrit hors ligne. ⚠️ Le JSON collé est traité comme une **donnée hostile** :
+`normClues()` borne les nombres, tronque les chaînes et réduit l'`id` d'un indice à
+`[A-Za-z0-9_-]` — cet id finit dans un littéral JS d'attribut `onclick`.
+
+⚠️ **Les id d'indices sont réattribués** à chaque duplication (`freshClues`) : deux chasses qui
+partageraient un `clues[].id` désapparieraient leurs preuves, `submissions.clue_id` n'étant
+qualifié que par `game_code`. Le **logo** est recopié sous le code de la nouvelle chasse, jamais
+partagé avec le modèle — supprimer un modèle emporte son dossier Storage.
+
+⚠️ **L'UPDATE d'un modèle ne porte ni `is_template`, ni `logo_url`, ni `admin_id`** : une
+sauvegarde de contenu ne doit pas pouvoir sortir la ligne du tiroir ni perdre le logo. Et il
+vérifie `.select()` — sous RLS, un UPDATE qui ne touche aucune ligne ne remonte pas d'erreur.
+
+La régie **n'édite pas** les chasses ordinaires : l'éditeur d'indices de `expedition.html`
+reste la voie de création à la volée. Arbitrage assumé — deux surfaces d'écriture sur
+`games.clues`, pas trois. Banc : `tests/test-templates.js` (95 tests).
 
 ### Préparer plusieurs chasses à l'avance
 Une chasse créée est **enregistrée immédiatement** (statut `setup`). Depuis le lobby, « ← Menu » ramène à l'écran de préparation pour en créer une autre ; le picker « Reprendre une session » (`loadSessionsForPicker` : `status='setup'` + `admin_id`) liste les chasses en attente et reprend directement au lobby. Aucune donnée n'est écrite ni effacée au passage.

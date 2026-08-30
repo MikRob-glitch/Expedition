@@ -30,3 +30,4 @@ build/
 # Commercial / stratégie — dépôt public, ne jamais publier
 commercial/
 ANALYSE_CONCURRENCE.md
+scenarios/

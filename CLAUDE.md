@@ -1698,6 +1698,88 @@ portrait, le 2026-08-17. Le cycle complet, pour une fois, sans zone d'ombre.
     si son jumeau l'est — les deux orientations ont des cotes différentes.
     `2026-08-17.1`, `CACHE` **v34→v35** (`print-frame.js` est dans `CORE`).
 
+### Poussés sur GitHub (2026-08-30) — Chasses types dans la régie (#70)
+
+**Demande.** Gérer les chasses types depuis la console, et pouvoir en **créer** — jusqu'ici le
+tiroir ne savait qu'archiver une chasse déjà écrite au téléphone (☆ dans `expedition.html`) et
+la rejouer. Écrire un scénario de seize indices sur un écran de 6 pouces n'est pas tenable dès
+qu'on vend la prestation à une ville.
+
+**Périmètre retenu — les modèles, rien d'autre.** La régie sait désormais créer, modifier,
+importer, exporter, dupliquer et supprimer une **chasse type**, et lancer une vraie chasse
+depuis un modèle. Elle **n'édite pas** les chasses ordinaires : l'éditeur d'indices de
+`expedition.html` reste la voie de création à la volée. C'est un arbitrage de dette assumé —
+deux éditeurs d'indices, c'est déjà un de trop ; trois surfaces d'écriture sur `games.clues`
+auraient été ingérables. Les invariants partagés sont recopiés **en commentaire d'en-tête** du
+bloc `#70` de `regie.html`, à tenir synchronisés à la main.
+
+**Ce qui a été fait.**
+(1) `regie.html` : bloc « Chasses types » (~470 lignes) — tiroir, éditeur, carte, import/export,
+    lancement. Deux vues (`S.view` = `tpl-list` / `tpl-edit`), deux overlays (`#tplimp-ov`,
+    `#tpllaunch-ov`), six champs d'état (`templates`, `tpl`, `tplSel`, `tplDirty`, `tplLoading`,
+    `launchTpl`). Entrée depuis le sélecteur de chasse (bouton ☆ et lien dans le chapô).
+(2) **Éditeur d'indices** : titre, texte, points, coordonnées, ordre (↑ ↓), suppression.
+    ⚠️ **La vue n'est jamais repeinte à la frappe** (règle #49) : chaque champ écrit dans
+    `S.tpl`, seules les opérations de structure repeignent la liste. C'est la raison pour
+    laquelle `paintClueGeo()` existe — un clic sur la carte doit mettre à jour deux champs
+    **sans** reconstruire le formulaire, sinon la saisie en cours part avec le DOM remplacé.
+(3) **Carte Leaflet** dans l'éditeur : indice sélectionné + clic = point posé, marqueurs
+    déplaçables au glisser, retrait du marqueur quand on efface les coordonnées. Coordonnées
+    arrondies à 1e-6 (~11 cm) — au-delà c'est du bruit de relevé.
+(4) **Import / export JSON.** Un tableau d'indices ou un objet `{name, location,
+    durationMinutes, perClueMinutes, clues}`. C'est ce qui rend un scénario écrit hors ligne
+    chargeable sans passer par le SQL Editor. ⚠️ **Le JSON collé est une donnée hostile par
+    principe** : `normClues()` borne les nombres, tronque les chaînes et **réduit l'id d'un
+    indice à `[A-Za-z0-9_-]`** — cet id finit dans un littéral JS d'attribut `onclick`, un
+    apostrophe non filtré y ouvrirait une injection. Le banc porte le cas.
+(5) **Unicité des id.** `normClues()` réattribue tout id dupliqué, et `freshClues()` donne des
+    id **neufs** à la chasse créée depuis un modèle. Deux chasses qui partageraient un
+    `clues[].id` désapparieraient leurs preuves — `submissions.clue_id` n'est qualifié que par
+    `game_code`.
+(6) **Lancement** : INSERT d'une chasse ordinaire (`is_template = false`, statut `setup`), puis
+    **recopie du logo** sous le nouveau code (`tplCopyLogo`, calqué sur `copyLogoTo`). ⚠️ On ne
+    réutilise **jamais** l'URL du logo du modèle : supprimer le modèle emporte son dossier
+    Storage et casserait le tirage des chasses déjà créées. Le logo part **après** l'INSERT,
+    la policy du bucket vérifiant que le code du chemin appartient à `auth.uid()`.
+(7) **Garde-fous de sauvegarde.** UPDATE ciblé : ni `is_template`, ni `logo_url`, ni `admin_id`
+    dans le payload — une sauvegarde de contenu ne doit pas pouvoir sortir la ligne du tiroir
+    ni perdre le logo. `.select()` obligatoire : sous RLS, un UPDATE qui ne touche aucune ligne
+    ne remonte **pas** d'erreur (même famille de pannes muettes que #26/#43/#50). Un modèle
+    `legacy` (admin_id de 7 caractères, avant le Lot 1) est affiché mais signalé non
+    modifiable, avec la sortie de secours : exporter en JSON, réimporter comme neuf.
+(8) **Codes de chasse** : `freeCode()` sonde jusqu'à six tirages pour éviter une collision de
+    clé primaire, et retombe sur l'INSERT comme arbitre si la lecture échoue.
+(9) `tests/test-templates.js` — **95 tests JSDOM**, aucun réseau. Normalisation, unicité des
+    id, duplication, parsing d'import, échappement au rendu, structure de l'éditeur, carte
+    (clic, glisser, retrait), garde-fous d'enregistrement, lancement.
+    ⚠️ **Deux pièges de banc rencontrés, notés pour ne pas les repayer** :
+    · JSDOM n'implémente pas `scrollIntoView` — stub sur `Element.prototype` dans le banc,
+      le code applicatif reste propre ;
+    · **ne jamais juger l'échappement sur la chaîne `innerHTML`** : un `<` dans une *valeur
+      d'attribut* y ressort tel quel après re-sérialisation (légal et inerte). Le test naïf
+      `innerHTML.indexOf('<img') === -1` échoue sur du code parfaitement sûr. On juge sur le
+      **DOM construit** (`querySelectorAll('img').length`, `textContent`, `.value`).
+(10) `scenarios/` — nouveau dossier hors application : un scénario = un `.md` (lieux, indices,
+    défis photo, logistique, autorisations), un `.json` importable dans la régie, un `.sql` de
+    secours qui insère directement la chasse type. Premier scénario : **Saint-Nazaire à vélo**,
+    16 étapes, 1450 points, trois formats de 6 à 28 km.
+    ⚠️ **Ses coordonnées sont estimées à la lecture de carte (±50-150 m) et ne sont pas
+    vendables telles quelles** — l'app juge sur photo **et** position. Repérage terrain
+    obligatoire avant facturation.
+
+**Aucune migration, aucun changement de schéma** : `is_template` existe depuis #53.
+`BUILD` de `regie.html` → `2026-08-30.1` (celui de `expedition.html` reste `2026-08-17.1`,
+le fichier n'est pas touché), `CACHE` **v35→v36**.
+
+⚠️ **Non testé en vrai navigateur ni sur un événement.** Le banc JSDOM ne couvre ni le rendu
+Leaflet réel, ni les RLS, ni le Storage : à exercer une fois sur un modèle jetable avant de
+s'en servir pour un client.
+
+⚠️ **Rappel de dette, inchangé** : `games` est en lecture publique (`using (true)`). Le texte
+d'un scénario stocké en chasse type est lisible par quiconque détient la clé anon. Un scénario
+qui a une valeur commerciale n'est pas protégé par la base — seul le dossier `scenarios/`,
+hors dépôt public, l'est.
+
 ## Dette technique / points de vigilance connus
 
 - **[ARCHI — depuis 2026-07-30] Deux surfaces, un seul module partagé** (`expedition.html` /

@@ -174,6 +174,30 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
 
 /* ───────── Sélecteur de chasse / login ───────── */
 .center{max-width:560px;margin:0 auto;padding:36px 18px}
+/* ───────── Chasses types : liste + éditeur (#70) ───────── */
+.tplwrap{max-width:1180px;margin:0 auto;padding:20px 18px 90px}
+.tplgrid{display:grid;gap:16px;grid-template-columns:1fr;align-items:start}
+@media(min-width:1080px){.tplgrid{grid-template-columns:minmax(0,1fr) 400px}}
+.tplside{position:sticky;top:62px}
+#tpl-map{height:min(58vh,520px);border-radius:12px;border:1.5px solid var(--line-strong);overflow:hidden;background:var(--parchment-3)}
+.tplclue{border:1.5px solid var(--line);border-radius:12px;background:rgba(255,255,255,.45);padding:11px;margin-bottom:10px;cursor:pointer}
+.tplclue.sel{border-color:var(--gold-dark);background:rgba(255,255,255,.68);box-shadow:0 0 0 2px rgba(201,165,90,.22)}
+.tc-head{display:flex;gap:7px;align-items:center;margin-bottom:8px}
+.tc-num{width:28px;height:28px;flex:0 0 28px;border-radius:50%;background:var(--ink);color:var(--gold);display:grid;place-items:center;font-family:'Fraunces',serif;font-weight:700;font-size:14px}
+.tc-head .input{flex:1;min-width:0}
+.tc-pts{width:78px;flex:0 0 78px;text-align:right}
+.tc-geo{display:flex;gap:7px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.tc-geo .input{width:132px;flex:0 0 132px;font-size:12.5px}
+.tc-geo .tag{font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink-mute)}
+.tplbar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(244,237,224,.94);border-top:1.5px solid var(--line-strong);padding:10px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap;backdrop-filter:blur(6px)}
+.tplbar .sp{flex:1;min-width:0}
+.tplrow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 13px;border:1.5px solid var(--line-strong);border-radius:12px;background:rgba(255,255,255,.45);flex-wrap:wrap}
+.tplrow:hover{border-color:var(--ink);background:rgba(255,255,255,.7)}
+.tplrow .bd{flex:1;min-width:180px}
+.tplrow .bd b{display:block;font-size:15px}
+.tplrow .bd small{color:var(--ink-mute);font-size:12px}
+.tplmeta{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:14px}
+.pin-clue.sel{background:var(--oxblood);box-shadow:0 0 0 3px rgba(139,46,46,.35),0 2px 6px rgba(0,0,0,.4)}
 .glist{display:flex;flex-direction:column;gap:9px}
 .gitem{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 13px;border:1.5px solid var(--line-strong);border-radius:12px;background:rgba(255,255,255,.45);cursor:pointer;font:inherit;color:inherit}
 .gitem:hover{border-color:var(--ink);background:rgba(255,255,255,.7)}
@@ -329,6 +353,30 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
   <div id="map-foot"></div>
 </div>
 
+<!-- Import JSON d'un scénario (#70) -->
+<div id="tplimp-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="box" style="max-width:640px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <h3 style="flex:1">Importer un scénario JSON</h3>
+      <button class="close-x" onclick="closeTplImport()" aria-label="Fermer">✕</button>
+    </div>
+    <p class="hint" style="margin:0 0 8px">Collez soit un tableau d'indices <code>[{"title":…,"text":…,"points":…,"lat":…,"lng":…}]</code>, soit un objet <code>{"name":…,"location":…,"durationMinutes":…,"perClueMinutes":…,"clues":[…]}</code>.</p>
+    <textarea id="tplimp-text" class="input mono" rows="10" spellcheck="false" style="font-size:12px" placeholder="[ { &quot;title&quot;: &quot;…&quot;, &quot;text&quot;: &quot;…&quot; } ]" oninput="checkTplImport()"></textarea>
+    <div id="tplimp-report" style="margin-top:10px"></div>
+    <div class="row" id="tplimp-acts" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<!-- Lancer une chasse depuis un modèle (#70) -->
+<div id="tpllaunch-ov" class="ov" role="dialog" aria-modal="true">
+  <div class="box" style="max-width:520px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <h3 style="flex:1">Lancer une chasse</h3>
+      <button class="close-x" onclick="closeLaunch()" aria-label="Fermer">✕</button>
+    </div>
+    <div id="tpllaunch-body"></div>
+  </div>
+</div>
 <!-- QR -->
 <div id="qr-ov" class="ov" role="dialog" aria-modal="true">
   <div class="box" style="text-align:center">
@@ -461,7 +509,7 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
      n'utilise que des UPDATE ciblés, jamais d'upsert sur `games`.
    ===================================================================== */
 
-const BUILD = '2026-08-17.1';
+const BUILD = '2026-08-30.1';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -495,6 +543,12 @@ const S = {
   fTeam: '',
   fClue: '',
   startDraft: {},                  // brouillon optimiste des indices de départ
+  templates: [],                   // tiroir des chasses types (#70)
+  tpl: null,                       // modèle en cours d'édition (jamais une chasse jouée)
+  tplSel: null,                    // indice sélectionné : cible du prochain clic carte
+  tplDirty: false,                 // modifications non enregistrées
+  tplLoading: false,
+  launchTpl: null,                 // modèle en cours de duplication vers une vraie chasse
   lastSig: ''
 };
 
@@ -799,6 +853,8 @@ async function render(){
   if(!sb && !initClient()){ app().innerHTML = '<div class="center"><h1>Supabase indisponible</h1><p class="hint">Le script client n\'a pas pu être chargé. Vérifiez la connexion réseau puis rechargez.</p></div>'; return; }
   S.user = await currentUser();
   if(!S.user) return viewLogin();
+  if(S.view === 'tpl-list') return viewTemplates();
+  if(S.view === 'tpl-edit') return viewTplEditor();
   if(!S.game){ S.games = await loadMyGames(); return viewPicker(); }
   paintConsole();
 }
@@ -873,6 +929,7 @@ function viewPicker(){
       <div class="brand"><i>✦</i>Expédition · Régie</div>
       <div class="ident"><em>${esc(S.user?.email || '')}</em></div>
       <div class="acts">
+        <button class="btn ghost sm" onclick="openTemplates()">☆ Chasses types</button>
         <a class="btn ghost sm" href="${APP_URL}">Application ↗</a>
         <button class="btn ghost sm" onclick="reloadGames()">↻ Actualiser</button>
         <button class="btn ghost sm" onclick="logout()">Déconnexion</button>
@@ -880,8 +937,8 @@ function viewPicker(){
     </div>
     <div class="center" style="max-width:680px">
       <h1 class="display" style="font-size:32px;margin-bottom:6px">Vos chasses</h1>
-      <p class="hint" style="margin-bottom:4px">Choisissez la chasse à piloter. La création, la modification des indices et le tiroir des chasses types restent dans <a href="${APP_URL}">l'application</a>.</p>
-      ${list.length === 0 ? '<div class="empty" style="margin-top:24px">Aucune chasse. Créez-en une depuis l\'application.</div>' : ''}
+      <p class="hint" style="margin-bottom:4px">Choisissez la chasse à piloter, ou ouvrez le <a href="#" onclick="event.preventDefault();openTemplates()">tiroir des chasses types</a> pour écrire un scénario et lancer une chasse depuis un modèle. La création à la volée reste possible dans <a href="${APP_URL}">l'application</a>.</p>
+      ${list.length === 0 ? '<div class="empty" style="margin-top:24px">Aucune chasse. Lancez-en une depuis le tiroir des chasses types, ou créez-la dans l\'application.</div>' : ''}
       ${block('En jeu', live, 'Chasses actuellement en cours, en validation ou au jury.')}
       ${block('En préparation', prep)}
       ${block('Terminées', done)}
@@ -917,6 +974,620 @@ function backToPicker(){
   stopRealtime();
   S.game = null; S.subs = []; S.lastSig = '';
   render();
+}
+
+/* ═══════════════════ Chasses types — tiroir, éditeur, lancement (#70) ═══════════════════
+   Une chasse type est une ligne `games` avec `is_template = true` : jamais jouée, jamais
+   purgée par la rétention 90 j, elle ne sert qu'à être dupliquée (migration-templates.sql).
+
+   ⚠️ Invariants PARTAGÉS avec expedition.html — ne jamais diverger :
+     · forme d'un indice : { id, title, text, points, lat, lng } ;
+     · `clues[].id` est la clé de `submissions.clue_id` : une chasse créée depuis un modèle
+       reçoit des id NEUFS, sinon deux chasses distinctes partageraient les mêmes ;
+     · code de chasse : 4 caractères, alphabet sans O/0, I/1/L, Z/2 ;
+     · bucket sans policy UPDATE : `remove()` PUIS `upload()`, jamais d'upsert (#26/#43/#50) ;
+     · `is_template` ne figure JAMAIS dans un UPDATE ordinaire — le drapeau du tiroir ne doit
+       pas pouvoir être effacé par une sauvegarde de contenu.
+   ⚠️ `games` est en lecture publique (policy `using (true)`) : le texte d'un scénario stocké
+   ici est lisible par quiconque détient la clé anon. Voir la dette « Lot Edge Functions ».   */
+
+const TPL_MAX_TITLE = 120, TPL_MAX_TEXT = 4000, TPL_MAX_CLUES = 60;
+
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function genCode(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length:4 }, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+// Un code déjà pris ferait échouer l'INSERT sur la clé primaire : on tire jusqu'à trouver libre.
+async function freeCode(){
+  for(let i = 0; i < 6; i++){
+    const c = genCode();
+    const { data, error } = await sb.from('games').select('code').eq('code', c).maybeSingle();
+    if(error) return c;                 // lecture impossible : l'INSERT tranchera
+    if(!data) return c;
+  }
+  return null;
+}
+
+function tplCoord(v, max){
+  if(v === '' || v === null || v === undefined) return null;
+  const n = Number(v);
+  if(!Number.isFinite(n) || Math.abs(n) > max) return null;
+  return Math.round(n * 1e6) / 1e6;     // ~11 cm : au-delà c'est du bruit de relevé
+}
+// ⚠️ L'id d'un indice finit dans un littéral JS d'attribut `onclick` : on le restreint à
+// [A-Za-z0-9_-]. Un id venu d'un JSON collé ne peut donc pas s'échapper du littéral.
+function normClue(c){
+  const o = c || {};
+  const p = Math.round(Number(o.points));
+  const rawId = String(o.id ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+  return {
+    id: rawId || uid(),
+    title: String(o.title ?? '').trim().slice(0, TPL_MAX_TITLE),
+    text: String(o.text ?? '').trim().slice(0, TPL_MAX_TEXT),
+    points: Number.isFinite(p) ? Math.max(0, Math.min(9999, p)) : 100,
+    lat: tplCoord(o.lat, 90),
+    lng: tplCoord(o.lng, 180)
+  };
+}
+// Deux indices de même id désapparieraient les preuves : on réattribue en silence.
+function normClues(arr){
+  const seen = new Set();
+  return (Array.isArray(arr) ? arr : []).slice(0, TPL_MAX_CLUES).map(c => {
+    const n = normClue(c);
+    while(seen.has(n.id)) n.id = uid();
+    seen.add(n.id);
+    return n;
+  });
+}
+// Duplication : le contenu est repris, les identités sont neuves.
+function freshClues(clues){ return normClues((clues || []).map(c => ({ ...c, id:'' }))); }
+function tplPoints(clues){ return (clues || []).reduce((s,c) => s + (c.points || 0), 0); }
+function tplPlaced(clues){ return (clues || []).filter(c => c.lat != null && c.lng != null).length; }
+
+/* ── Accès base ── */
+// Même tolérance que loadMyGames : un admin_id legacy (7 caractères, avant le Lot 1) reste
+// visible, mais RLS refusera son UPDATE — la ligne est marquée « ancienne » dans la liste.
+async function loadTemplates(){
+  if(!sb || !S.user) return [];
+  const { data, error } = await sb.from('games')
+    .select('code,name,location,logo_url,clues,duration_minutes,per_clue_minutes,created_at,admin_id')
+    .eq('is_template', true).order('name').limit(200);
+  if(error){ toast('Lecture des modèles : '+error.message,'error',5000); return []; }
+  return (data || []).filter(r => r.admin_id === S.user.id || !isUuid(r.admin_id))
+                     .map(r => ({ ...r, legacy: !isUuid(r.admin_id) }));
+}
+
+/* ── Logo : recopié sous le code de la chasse créée (jamais partagé avec le modèle) ──
+   Un modèle supprimé emporte son dossier Storage : réutiliser son URL casserait le tirage
+   des chasses déjà créées. On duplique donc le fichier, comme expedition.html le fait. */
+async function tplUploadLogo(blob, code){
+  const path = `${code}/logo.png`;
+  try{ await sb.storage.from('photos').remove([path]); }catch(_){}
+  const { error } = await sb.storage.from('photos').upload(path, blob, { contentType:'image/png', upsert:false });
+  if(error){ toast('Logo du lieu : '+error.message,'error',5000); return null; }
+  const { data } = sb.storage.from('photos').getPublicUrl(path);
+  return data.publicUrl + '?v=' + Date.now();
+}
+async function tplCopyLogo(srcUrl, code){
+  if(!srcUrl) return null;
+  if(srcUrl.includes(`/${code}/logo.png`)) return srcUrl;
+  try{
+    const r = await fetch(srcUrl);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return await tplUploadLogo(await r.blob(), code);
+  }catch(e){ toast('Logo du lieu non recopié : '+e.message,'error',4500); return null; }
+}
+
+/* ───────────────────────── Vue : tiroir des chasses types ───────────────────────── */
+async function openTemplates(){
+  S.view = 'tpl-list'; S.tpl = null; S.tplLoading = true;
+  viewTemplates();
+  S.templates = await loadTemplates();
+  S.tplLoading = false;
+  if(S.view === 'tpl-list') viewTemplates();
+}
+function leaveTemplates(){
+  if(!tplConfirmLeave()) return;
+  S.view = 'picker'; S.tpl = null;
+  render();
+}
+// Sortie de l'éditeur avec des modifications non enregistrées.
+function tplConfirmLeave(){
+  if(!S.tplDirty) return true;
+  return confirm('Des modifications ne sont pas enregistrées.\n\nQuitter quand même ?');
+}
+
+function tplTopbar(){
+  return `<div class="topbar">
+      <div class="brand"><i>✦</i>Expédition · Régie</div>
+      <div class="ident"><em>${esc(S.user?.email || '')}</em></div>
+      <div class="acts">
+        <button class="btn ghost sm" onclick="leaveTemplates()">← Vos chasses</button>
+        <a class="btn ghost sm" href="${APP_URL}">Application ↗</a>
+      </div>
+    </div>`;
+}
+
+function viewTemplates(){
+  S.view = 'tpl-list';
+  const rows = S.templates || [];
+  const body = S.tplLoading
+    ? '<div class="empty">Chargement du tiroir…</div>'
+    : (rows.length === 0
+        ? '<div class="empty">Tiroir vide. Créez un modèle, ou importez un scénario JSON.</div>'
+        : '<div class="glist">' + rows.map(tplRow).join('') + '</div>');
+  app().innerHTML = `
+    ${tplTopbar()}
+    <div class="tplwrap">
+      <h1 class="display" style="font-size:30px;margin-bottom:6px">Chasses types</h1>
+      <p class="hint" style="margin:0 0 14px">Un modèle n'est jamais joué : il se duplique. Il échappe à la purge automatique des 90 jours, et lancer une chasse depuis un modèle ne le consomme pas.</p>
+      <div class="row" style="margin-bottom:16px">
+        <button class="btn gold" onclick="newTemplate()">＋ Nouveau modèle</button>
+        <button class="btn ghost" onclick="openTplImport()">⇱ Importer un JSON</button>
+        <button class="btn ghost" onclick="openTemplates()">↻ Actualiser</button>
+      </div>
+      ${body}
+    </div>`;
+}
+function tplRow(t){
+  const clues = t.clues || [];
+  const meta = [
+    clues.length + ' indice' + (clues.length > 1 ? 's' : ''),
+    tplPoints(clues) + ' pts',
+    (t.duration_minutes || 0) + ' min',
+    tplPlaced(clues) + '/' + clues.length + ' géolocalisé' + (tplPlaced(clues) > 1 ? 's' : ''),
+    t.location || null,
+    t.legacy ? 'ancienne — non modifiable' : null
+  ].filter(Boolean).map(esc).join(' · ');
+  return `<div class="tplrow">
+    <span class="bd"><b>${esc(t.name || 'Sans nom')}</b><small>${meta}</small></span>
+    <span class="row tight">
+      <button class="btn sm gold" onclick="openLaunch('${esc(t.code)}')">Lancer une chasse</button>
+      <button class="btn sm ghost" onclick="editTemplate('${esc(t.code)}')">Modifier</button>
+      <button class="btn sm ghost" onclick="exportTemplate('${esc(t.code)}')">⇲ JSON</button>
+      <button class="btn sm ghost ox" onclick="removeTemplate('${esc(t.code)}','${jsq(t.name)}')">Supprimer</button>
+    </span>
+  </div>`;
+}
+
+async function removeTemplate(code, name){
+  if(!confirm(`Retirer « ${name} » du tiroir ?\n\nLes chasses déjà créées à partir de ce modèle ne sont pas touchées.`)) return;
+  try{ await sb.storage.from('photos').remove([`${code}/logo.png`]); }catch(_){}
+  const { error } = await sb.rpc('admin_purge_game', { p_code: code });
+  if(error){ toast('Suppression impossible : '+error.message,'error',6000); return; }
+  toast('Modèle retiré du tiroir','success');
+  openTemplates();
+}
+
+function exportTemplate(code){
+  const t = (S.templates || []).find(x => x.code === code);
+  if(!t) return;
+  tplDownload({
+    name: t.name || '', location: t.location || '',
+    durationMinutes: t.duration_minutes || 90, perClueMinutes: t.per_clue_minutes || 15,
+    clues: normClues(t.clues).map(c => ({ title:c.title, text:c.text, points:c.points, lat:c.lat, lng:c.lng }))
+  }, t.name);
+}
+function tplDownload(obj, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type:'application/json' }));
+  a.download = 'modele-' + safeFile(name || 'chasse') + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  toast('Scénario exporté','success');
+}
+
+/* ───────────────────────── Vue : éditeur de modèle ───────────────────────── */
+// ⚠️ Règle #49 : la vue n'est JAMAIS repeinte à la frappe. Chaque champ écrit directement
+// dans S.tpl (source de vérité) ; seules les opérations de structure (ajout, suppression,
+// déplacement) repeignent la liste des indices, et rien d'autre.
+function newTemplate(){
+  const first = normClue({ title:'', text:'', points:100 });
+  S.tpl = { code:null, name:'', location:'', logoUrl:null, duration:90, perClue:15,
+            clues:[first], isNew:true, legacy:false };
+  S.tplSel = first.id; S.tplDirty = false;
+  viewTplEditor();
+}
+function editTemplate(code){
+  const t = (S.templates || []).find(x => x.code === code);
+  if(!t){ toast('Modèle introuvable','error'); return; }
+  S.tpl = { code:t.code, name:t.name || '', location:t.location || '', logoUrl:t.logo_url || null,
+            duration:t.duration_minutes || 90, perClue:t.per_clue_minutes || 15,
+            clues: normClues(t.clues), isNew:false, legacy:!!t.legacy };
+  if(S.tpl.clues.length === 0) S.tpl.clues.push(normClue({ points:100 }));
+  S.tplSel = S.tpl.clues[0].id; S.tplDirty = false;
+  viewTplEditor();
+}
+
+function viewTplEditor(){
+  S.view = 'tpl-edit';
+  const t = S.tpl; if(!t) return openTemplates();
+  app().innerHTML = `
+    ${tplTopbar()}
+    <div class="tplwrap">
+      <div class="row" style="align-items:baseline;margin-bottom:10px">
+        <h1 class="display" style="font-size:26px;flex:1;min-width:0">${t.isNew ? 'Nouveau modèle' : esc(t.name || 'Modèle')}</h1>
+        ${t.code ? `<span class="chip">${esc(t.code)}</span>` : ''}
+      </div>
+      ${t.legacy ? '<p class="hint warn" style="margin:0 0 12px">Ce modèle porte un identifiant d\'administrateur antérieur au Lot 1 : le serveur refusera toute sauvegarde. Exportez-le en JSON puis réimportez-le comme nouveau modèle.</p>' : ''}
+      <div class="tplgrid">
+        <div>
+          <div class="tplmeta">
+            <div><label class="lbl">Nom du scénario</label>
+              <input id="tpl-name" class="input" value="${esc(t.name)}" placeholder="Saint-Nazaire à vélo" oninput="setTplMeta('name',this.value)"></div>
+            <div><label class="lbl">Lieu</label>
+              <input id="tpl-loc" class="input" value="${esc(t.location)}" placeholder="Saint-Nazaire (44)" oninput="setTplMeta('location',this.value)"></div>
+            <div><label class="lbl">Durée (min)</label>
+              <input id="tpl-dur" class="input mono" type="number" min="5" max="600" value="${t.duration}" oninput="setTplMeta('duration',this.value)"></div>
+            <div><label class="lbl">Minutes par indice</label>
+              <input id="tpl-pc" class="input mono" type="number" min="1" max="120" value="${t.perClue}" oninput="setTplMeta('perClue',this.value)"></div>
+          </div>
+          <div id="tpl-clues"></div>
+          <button class="btn ghost wide" style="margin-top:4px" onclick="addClue()">＋ Ajouter un indice</button>
+        </div>
+        <div class="tplside">
+          <div id="tpl-map"></div>
+          <p class="hint" style="margin-top:8px">Sélectionnez un indice puis cliquez sur la carte pour le poser. Un marqueur se déplace au glisser.</p>
+          <p class="hint warn" style="margin-top:4px">Les coordonnées écrites au bureau valent ±100 m : l'application juge sur photo <em>et</em> position. Un relevé sur le terrain reste obligatoire avant de facturer.</p>
+        </div>
+      </div>
+    </div>
+    <div class="tplbar">
+      <span class="sp mono" id="tpl-summary"></span>
+      <button class="btn ghost sm" onclick="openTplImport()">⇱ Importer</button>
+      <button class="btn ghost sm" onclick="exportDraft()">⇲ Exporter</button>
+      <button class="btn ghost sm" onclick="leaveTemplates()">Annuler</button>
+      <button class="btn gold" onclick="saveTemplate(this)">Enregistrer</button>
+    </div>`;
+  paintClues();
+  setTimeout(initTplMap, 60);
+}
+
+function paintClues(){
+  const host = $('#tpl-clues'); if(!host || !S.tpl) return;
+  const n = S.tpl.clues.length;
+  host.innerHTML = S.tpl.clues.map((c,i) => clueCard(c,i,n)).join('');
+  paintTplSummary();
+}
+function paintTplSummary(){
+  const el = $('#tpl-summary'); if(!el || !S.tpl) return;
+  const c = S.tpl.clues;
+  el.textContent = `${c.length} indice${c.length>1?'s':''} · ${tplPoints(c)} pts · ${tplPlaced(c)}/${c.length} géolocalisé${tplPlaced(c)>1?'s':''}${S.tplDirty?' · non enregistré':''}`;
+}
+function clueCard(c, i, n){
+  const sel = c.id === S.tplSel;
+  return `<div class="tplclue${sel?' sel':''}" id="tc-${esc(c.id)}" onclick="selectClue('${esc(c.id)}')">
+    <div class="tc-head">
+      <span class="tc-num">${i+1}</span>
+      <input class="input" placeholder="Titre de l'indice" maxlength="${TPL_MAX_TITLE}" value="${esc(c.title)}" oninput="setClue('${esc(c.id)}','title',this.value)">
+      <input class="input mono tc-pts" type="number" min="0" max="9999" step="10" value="${c.points}" title="Points" oninput="setClue('${esc(c.id)}','points',this.value)">
+      <button class="btn ghost xs" title="Monter" ${i===0?'disabled':''} onclick="event.stopPropagation();moveClue('${esc(c.id)}',-1)">↑</button>
+      <button class="btn ghost xs" title="Descendre" ${i===n-1?'disabled':''} onclick="event.stopPropagation();moveClue('${esc(c.id)}',1)">↓</button>
+      <button class="btn ghost xs ox" title="Supprimer" onclick="event.stopPropagation();delClue('${esc(c.id)}')">✕</button>
+    </div>
+    <textarea class="input" rows="4" placeholder="Texte de l'énigme, tel que l'équipe le lira…" maxlength="${TPL_MAX_TEXT}" oninput="setClue('${esc(c.id)}','text',this.value)">${esc(c.text)}</textarea>
+    <div class="tc-geo">
+      <input class="input mono" id="lat-${esc(c.id)}" placeholder="latitude" value="${c.lat ?? ''}" oninput="setClue('${esc(c.id)}','lat',this.value)">
+      <input class="input mono" id="lng-${esc(c.id)}" placeholder="longitude" value="${c.lng ?? ''}" oninput="setClue('${esc(c.id)}','lng',this.value)">
+      <button class="btn ghost xs" onclick="event.stopPropagation();selectClue('${esc(c.id)}')">📍 poser sur la carte</button>
+      <button class="btn ghost xs" onclick="event.stopPropagation();clearCoord('${esc(c.id)}')">effacer</button>
+    </div>
+  </div>`;
+}
+
+function setTplMeta(field, value){
+  if(!S.tpl) return;
+  if(field === 'duration' || field === 'perClue'){
+    const n = Math.round(Number(value));
+    S.tpl[field] = Number.isFinite(n) && n > 0 ? n : (field === 'duration' ? 90 : 15);
+  } else S.tpl[field] = String(value);
+  S.tplDirty = true; paintTplSummary();
+}
+function setClue(id, field, value){
+  const c = S.tpl?.clues.find(x => x.id === id); if(!c) return;
+  if(field === 'points'){
+    const n = Math.round(Number(value));
+    c.points = Number.isFinite(n) ? Math.max(0, Math.min(9999, n)) : 0;
+  } else if(field === 'lat' || field === 'lng'){
+    c[field] = tplCoord(value, field === 'lat' ? 90 : 180);
+    syncTplMarkers();
+  } else {
+    c[field] = String(value).slice(0, field === 'title' ? TPL_MAX_TITLE : TPL_MAX_TEXT);
+  }
+  S.tplDirty = true; paintTplSummary();
+}
+function selectClue(id){
+  if(!S.tpl || S.tplSel === id) return;
+  S.tplSel = id;
+  $$('.tplclue').forEach(el => el.classList.toggle('sel', el.id === 'tc-'+id));
+  syncTplMarkers();
+}
+function addClue(){
+  if(!S.tpl) return;
+  if(S.tpl.clues.length >= TPL_MAX_CLUES){ toast(`Maximum ${TPL_MAX_CLUES} indices`,'error'); return; }
+  const c = normClue({ title:'', text:'', points:100 });
+  S.tpl.clues.push(c); S.tplSel = c.id; S.tplDirty = true;
+  paintClues();
+  $('#tc-'+c.id)?.querySelector('input')?.focus();
+}
+function delClue(id){
+  if(!S.tpl) return;
+  const i = S.tpl.clues.findIndex(c => c.id === id); if(i < 0) return;
+  if(S.tpl.clues.length === 1){ toast('Un modèle garde au moins un indice','error'); return; }
+  if((S.tpl.clues[i].title || S.tpl.clues[i].text) && !confirm('Supprimer cet indice ?')) return;
+  S.tpl.clues.splice(i, 1); S.tplDirty = true;
+  if(S.tplSel === id) S.tplSel = S.tpl.clues[Math.min(i, S.tpl.clues.length-1)].id;
+  paintClues(); syncTplMarkers();
+}
+function moveClue(id, d){
+  if(!S.tpl) return;
+  const i = S.tpl.clues.findIndex(c => c.id === id);
+  const j = i + d;
+  if(i < 0 || j < 0 || j >= S.tpl.clues.length) return;
+  const [c] = S.tpl.clues.splice(i, 1);
+  S.tpl.clues.splice(j, 0, c);
+  S.tplDirty = true; paintClues(); syncTplMarkers();
+}
+function clearCoord(id){
+  const c = S.tpl?.clues.find(x => x.id === id); if(!c) return;
+  c.lat = null; c.lng = null; S.tplDirty = true;
+  paintClueGeo(id); syncTplMarkers(); paintTplSummary();
+}
+// Écrit les deux champs de coordonnées SANS repeindre la carte ni la liste (règle #49).
+function paintClueGeo(id){
+  const c = S.tpl?.clues.find(x => x.id === id); if(!c) return;
+  const la = $('#lat-'+id), ln = $('#lng-'+id);
+  if(la) la.value = c.lat ?? '';
+  if(ln) ln.value = c.lng ?? '';
+}
+
+/* ── Carte de l'éditeur : pose et déplacement des points ── */
+const TMAP = { map:null, markers:{} };
+function initTplMap(){
+  const el = $('#tpl-map'); if(!el || !S.tpl) return;
+  if(typeof L === 'undefined'){ el.innerHTML = '<div class="empty" style="border:0">Carte indisponible (Leaflet non chargé)</div>'; return; }
+  if(TMAP.map){ try{ TMAP.map.remove(); }catch(_){} }
+  TMAP.map = null; TMAP.markers = {};
+  const placed = S.tpl.clues.filter(c => c.lat != null && c.lng != null);
+  TMAP.map = L.map(el, { zoomControl:true })
+    .setView(placed[0] ? [placed[0].lat, placed[0].lng] : [46.6, 2.4], placed.length ? 14 : 5);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' })
+    .addTo(TMAP.map);
+  TMAP.map.on('click', e => {
+    const c = S.tpl?.clues.find(x => x.id === S.tplSel);
+    if(!c){ toast('Sélectionnez d\'abord un indice','error'); return; }
+    c.lat = Math.round(e.latlng.lat * 1e6) / 1e6;
+    c.lng = Math.round(e.latlng.lng * 1e6) / 1e6;
+    S.tplDirty = true; paintClueGeo(c.id); syncTplMarkers(); paintTplSummary();
+  });
+  syncTplMarkers();
+  if(placed.length > 1) TMAP.map.fitBounds(placed.map(c => [c.lat, c.lng]), { padding:[36,36] });
+  setTimeout(() => { try{ TMAP.map?.invalidateSize(); }catch(_){} }, 80);
+}
+function syncTplMarkers(){
+  if(!TMAP.map || !S.tpl) return;
+  const live = new Set();
+  S.tpl.clues.forEach((c,i) => {
+    if(c.lat == null || c.lng == null) return;
+    live.add(c.id);
+    const icon = pinIcon('pin-clue' + (c.id === S.tplSel ? ' sel' : ''), i+1);
+    let m = TMAP.markers[c.id];
+    if(!m){
+      m = L.marker([c.lat, c.lng], { icon, draggable:true }).addTo(TMAP.map);
+      m.on('dragend', ev => {
+        const p = ev.target.getLatLng();
+        c.lat = Math.round(p.lat * 1e6) / 1e6;
+        c.lng = Math.round(p.lng * 1e6) / 1e6;
+        S.tplDirty = true; paintClueGeo(c.id); paintTplSummary();
+      });
+      m.on('click', () => selectClue(c.id));
+      TMAP.markers[c.id] = m;
+    } else { m.setLatLng([c.lat, c.lng]); m.setIcon(icon); }
+    m.bindTooltip(esc(c.title || ('Indice '+(i+1))), { direction:'top' });
+  });
+  Object.keys(TMAP.markers).forEach(id => {
+    if(live.has(id)) return;
+    try{ TMAP.map.removeLayer(TMAP.markers[id]); }catch(_){}
+    delete TMAP.markers[id];
+  });
+}
+
+/* ── Enregistrement ── */
+// ⚠️ UPDATE ciblé : ni `is_template`, ni `logo_url`, ni `admin_id` ne figurent dans le
+// payload — une sauvegarde de contenu ne doit pas pouvoir sortir la ligne du tiroir ni
+// perdre le logo du lieu. `.select()` obligatoire : sous RLS, un UPDATE qui ne touche
+// aucune ligne ne remonte PAS d'erreur (même famille de pannes muettes que #26/#43/#50).
+async function saveTemplate(btn){
+  const t = S.tpl; if(!t || !sb) return;
+  const u = S.user || await currentUser();
+  if(!u){ toast('Session expirée — reconnectez-vous','error',5000); return; }
+  const name = (t.name || '').trim();
+  if(!name){ toast('Donnez un nom au modèle','error'); $('#tpl-name')?.focus(); return; }
+  if(t.clues.length === 0){ toast('Ajoutez au moins un indice','error'); return; }
+  const nameless = t.clues.findIndex(c => !c.title.trim());
+  if(nameless >= 0){
+    toast(`L'indice ${nameless+1} n'a pas de titre`,'error',4500);
+    $('#tc-'+t.clues[nameless].id)?.scrollIntoView({ behavior:'smooth', block:'center' });
+    return;
+  }
+  const payload = {
+    name,
+    location: (t.location || '').trim() || null,
+    duration_minutes: t.duration,
+    per_clue_minutes: t.perClue,
+    clues: normClues(t.clues)
+  };
+  if(btn){ btn.disabled = true; btn.textContent = 'Enregistrement…'; }
+  let code = t.code;
+  if(t.isNew){
+    code = await freeCode();
+    if(!code){ if(btn){ btn.disabled=false; btn.textContent='Enregistrer'; } toast('Aucun code libre trouvé, réessayez','error',5000); return; }
+    const { error } = await sb.from('games').insert({
+      code, ...payload, hunt_date:null, status:'setup', admin_id:u.id, is_template:true
+    });
+    if(error){ if(btn){ btn.disabled=false; btn.textContent='Enregistrer'; } toast('Création impossible : '+error.message,'error',6000); return; }
+  } else {
+    const { data, error } = await sb.from('games').update(payload).eq('code', code).select('code');
+    if(error){ if(btn){ btn.disabled=false; btn.textContent='Enregistrer'; } toast('Sauvegarde : '+error.message,'error',6000); return; }
+    if(!data || !data.length){
+      if(btn){ btn.disabled=false; btn.textContent='Enregistrer'; }
+      toast('Refusé par le serveur : ce modèle n\'appartient pas à ce compte.','error',6000); return;
+    }
+  }
+  S.tpl.code = code; S.tpl.isNew = false; S.tplDirty = false;
+  if(btn){ btn.disabled = false; btn.textContent = 'Enregistrer'; }
+  toast('Modèle enregistré','success');
+  S.templates = await loadTemplates();
+  paintTplSummary();
+}
+
+/* ── Import / export d'un scénario JSON ── */
+// Le JSON collé est une DONNÉE, jamais du code : tout passe par normClues() puis par esc()
+// au rendu. Les id fournis sont réduits à [A-Za-z0-9_-], les nombres bornés.
+function tplParse(raw){
+  const out = { clues:[], meta:{}, error:null };
+  const txt = String(raw || '').trim();
+  if(!txt){ out.error = 'Rien à importer'; return out; }
+  let j;
+  try{ j = JSON.parse(txt); }
+  catch(e){ out.error = 'JSON invalide : ' + e.message; return out; }
+  let arr = null;
+  if(Array.isArray(j)) arr = j;
+  else if(j && typeof j === 'object'){
+    arr = Array.isArray(j.clues) ? j.clues : null;
+    out.meta = {
+      name: typeof j.name === 'string' ? j.name.trim().slice(0,120) : '',
+      location: typeof j.location === 'string' ? j.location.trim().slice(0,120) : '',
+      duration: Math.round(Number(j.durationMinutes ?? j.duration_minutes)) || 0,
+      perClue: Math.round(Number(j.perClueMinutes ?? j.per_clue_minutes)) || 0
+    };
+  }
+  if(!arr){ out.error = 'Attendu : un tableau d\'indices, ou un objet avec une clé « clues »'; return out; }
+  if(arr.length === 0){ out.error = 'Aucun indice dans ce JSON'; return out; }
+  out.clues = normClues(arr);
+  const noTitle = out.clues.filter(c => !c.title).length;
+  out.warn = [
+    arr.length > TPL_MAX_CLUES ? `tronqué à ${TPL_MAX_CLUES} indices` : null,
+    noTitle ? `${noTitle} indice(s) sans titre — à compléter avant d'enregistrer` : null
+  ].filter(Boolean);
+  return out;
+}
+function openTplImport(){
+  $('#tplimp-text').value = '';
+  $('#tplimp-report').innerHTML = '';
+  $('#tplimp-acts').innerHTML = '';
+  $('#tplimp-ov').classList.add('open');
+  setTimeout(() => $('#tplimp-text')?.focus(), 60);
+}
+function closeTplImport(){ $('#tplimp-ov').classList.remove('open'); }
+function checkTplImport(){
+  const r = tplParse($('#tplimp-text').value);
+  const rep = $('#tplimp-report'), acts = $('#tplimp-acts');
+  if(r.error){
+    rep.innerHTML = `<div class="hint warn">${esc(r.error)}</div>`;
+    acts.innerHTML = ''; return;
+  }
+  rep.innerHTML = `<div class="hint">✓ ${r.clues.length} indice${r.clues.length>1?'s':''} · ${tplPoints(r.clues)} pts · ${tplPlaced(r.clues)} géolocalisé${tplPlaced(r.clues)>1?'s':''}${r.meta.name?` · « ${esc(r.meta.name)} »`:''}</div>`
+    + (r.warn.length ? `<div class="hint warn">⚠ ${r.warn.map(esc).join(' · ')}</div>` : '');
+  acts.innerHTML = S.view === 'tpl-edit'
+    ? `<button class="btn gold" onclick="doTplImport('replace')">Remplacer les indices</button>
+       <button class="btn ghost" onclick="doTplImport('append')">Ajouter à la suite</button>`
+    : `<button class="btn gold" onclick="doTplImport('new')">Créer le modèle</button>`;
+}
+function doTplImport(mode){
+  const r = tplParse($('#tplimp-text').value);
+  if(r.error){ toast(r.error,'error',5000); return; }
+  if(mode === 'new'){
+    S.tpl = {
+      code:null, name:r.meta.name || '', location:r.meta.location || '', logoUrl:null,
+      duration:r.meta.duration || 90, perClue:r.meta.perClue || 15,
+      clues:r.clues, isNew:true, legacy:false
+    };
+    S.tplSel = r.clues[0].id; S.tplDirty = true;
+    closeTplImport(); viewTplEditor();
+    toast('Scénario chargé — vérifiez puis enregistrez','success',4500);
+    return;
+  }
+  if(!S.tpl) return;
+  if(mode === 'replace'){
+    if(!confirm(`Remplacer les ${S.tpl.clues.length} indice(s) actuels par les ${r.clues.length} importés ?`)) return;
+    S.tpl.clues = r.clues;
+    if(r.meta.name && !S.tpl.name) S.tpl.name = r.meta.name;
+  } else {
+    const room = TPL_MAX_CLUES - S.tpl.clues.length;
+    if(room <= 0){ toast(`Maximum ${TPL_MAX_CLUES} indices`,'error'); return; }
+    S.tpl.clues = normClues(S.tpl.clues.concat(r.clues.slice(0, room)));
+  }
+  S.tplSel = S.tpl.clues[0].id; S.tplDirty = true;
+  closeTplImport(); viewTplEditor();
+  toast('Indices importés','success');
+}
+function exportDraft(){
+  const t = S.tpl; if(!t) return;
+  tplDownload({
+    name:t.name, location:t.location, durationMinutes:t.duration, perClueMinutes:t.perClue,
+    clues: normClues(t.clues).map(c => ({ title:c.title, text:c.text, points:c.points, lat:c.lat, lng:c.lng }))
+  }, t.name);
+}
+
+/* ── Lancer une vraie chasse depuis un modèle ── */
+// Le modèle n'est ni modifié ni consommé. Les indices reçoivent des id NEUFS et le logo est
+// RECOPIÉ sous le nouveau code : la chasse créée ne dépend plus du tout du modèle.
+function openLaunch(code){
+  const t = (S.templates || []).find(x => x.code === code);
+  if(!t){ toast('Modèle introuvable','error'); return; }
+  S.launchTpl = t;
+  const today = new Date().toISOString().slice(0,10);
+  $('#tpllaunch-body').innerHTML = `
+    <p class="hint" style="margin:0 0 12px">Depuis « ${esc(t.name)} » — ${(t.clues||[]).length} indice(s). Le modèle reste dans le tiroir.</p>
+    <label class="lbl">Nom de la chasse</label>
+    <input id="lc-name" class="input" value="${esc(t.name || '')}">
+    <label class="lbl" style="margin-top:10px">Date prévue</label>
+    <input id="lc-date" class="input" type="date" value="${today}">
+    <label class="lbl" style="margin-top:10px">Lieu</label>
+    <input id="lc-loc" class="input" value="${esc(t.location || '')}" placeholder="Camping, ville, entreprise…">
+    <div class="row" style="margin-top:10px">
+      <div style="flex:1"><label class="lbl">Durée (min)</label>
+        <input id="lc-dur" class="input mono" type="number" min="5" max="600" value="${t.duration_minutes || 90}"></div>
+      <div style="flex:1"><label class="lbl">Minutes / indice</label>
+        <input id="lc-pc" class="input mono" type="number" min="1" max="120" value="${t.per_clue_minutes || 15}"></div>
+    </div>
+    <button class="btn gold wide" style="margin-top:16px" onclick="doLaunch(this)">Créer la chasse →</button>
+    <p class="hint" style="margin-top:8px">La chasse est créée en préparation : la console s'ouvre dessus, il reste à inscrire les équipes.</p>`;
+  $('#tpllaunch-ov').classList.add('open');
+}
+function closeLaunch(){ $('#tpllaunch-ov').classList.remove('open'); S.launchTpl = null; }
+async function doLaunch(btn){
+  const t = S.launchTpl; if(!t || !sb) return;
+  const u = S.user || await currentUser();
+  if(!u){ toast('Session expirée — reconnectez-vous','error',5000); return; }
+  const name = ($('#lc-name').value || '').trim() || t.name || 'Chasse au trésor';
+  const huntDate = $('#lc-date').value || null;
+  const location = ($('#lc-loc').value || '').trim() || null;
+  const duration = Math.max(5, Math.round(Number($('#lc-dur').value)) || 90);
+  const perClue = Math.max(1, Math.round(Number($('#lc-pc').value)) || 15);
+  const clues = freshClues(t.clues);
+  if(clues.length === 0){ toast('Ce modèle n\'a aucun indice','error'); return; }
+  btn.disabled = true; btn.textContent = 'Création…';
+  const code = await freeCode();
+  if(!code){ btn.disabled = false; btn.textContent = 'Créer la chasse →'; toast('Aucun code libre trouvé, réessayez','error',5000); return; }
+  const { error } = await sb.from('games').insert({
+    code, name, hunt_date:huntDate, location, status:'setup',
+    duration_minutes:duration, per_clue_minutes:perClue,
+    clues, admin_id:u.id, is_template:false
+  });
+  if(error){ btn.disabled = false; btn.textContent = 'Créer la chasse →'; toast('Création impossible : '+error.message,'error',6000); return; }
+  // Le logo part APRÈS l'insert : la policy du bucket vérifie que le code du chemin
+  // appartient bien à auth.uid().
+  if(t.logo_url){
+    const logo = await tplCopyLogo(t.logo_url, code);
+    if(logo) await sb.from('games').update({ logo_url: logo }).eq('code', code);
+  }
+  closeLaunch();
+  S.tpl = null; S.tplDirty = false; S.view = 'console';
+  toast(`Chasse « ${name} » créée · code ${code}`,'success',5000);
+  await openGame(code);
 }
 
 /* ───────────────────────── Vue : console ───────────────────────── */
@@ -2420,6 +3091,8 @@ const anyOpen = () => $$('.ov.open').length > 0;
 function closeTop(){
   if(S.burst) return closeBurst();
   if($('#print-ov').classList.contains('open')) return closePrint();
+  if($('#tplimp-ov').classList.contains('open')) return closeTplImport();
+  if($('#tpllaunch-ov').classList.contains('open')) return closeLaunch();
   if($('#merge-ov').classList.contains('open')) return closeMerge();
   if($('#map-ov').classList.contains('open')) return closeMap();
   if($('#order-ov').classList.contains('open')) return closeOrder();
