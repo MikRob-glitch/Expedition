@@ -211,6 +211,15 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
 .rc-geo{font-size:11.5px;color:var(--ink-mute);margin-top:9px}
 .rc-geo .warn{color:var(--oxblood)}
 .hidden-file{display:none}
+#recon-map-box{border:1.5px solid var(--line-strong);border-radius:14px;overflow:hidden;margin-bottom:10px;background:var(--parchment-3)}
+#recon-map-box.closed{display:none}
+#recon-map{height:min(40vh,380px)}
+.recon-mapbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.recon-mapbar .me{font-family:'Geist Mono',monospace;font-size:11px;color:var(--ink-mute);flex:1;min-width:120px}
+.reconclue.flash{border-color:var(--gold-dark);box-shadow:0 0 0 3px rgba(201,165,90,.3)}
+.rc-dist{font-family:'Geist Mono',monospace;font-size:11.5px;color:var(--forest);margin-left:6px}
+.pin-clue.done{background:var(--forest)}
+.pin-me{background:var(--oxblood)}
 .dropzone{border:2px dashed var(--line-strong);border-radius:14px;padding:26px 18px;text-align:center;background:rgba(255,255,255,.3);transition:border-color .15s,background .15s}
 .dropzone.over{border-color:var(--gold-dark);background:rgba(201,165,90,.12)}
 .dropzone p{margin:0 0 12px;color:var(--ink-soft);font-size:13.5px}
@@ -535,7 +544,7 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
      n'utilise que des UPDATE ciblés, jamais d'upsert sur `games`.
    ===================================================================== */
 
-const BUILD = '2026-08-30.3';
+const BUILD = '2026-08-30.4';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -580,6 +589,7 @@ const S = {
   recon: null,                     // chasse en cours de repérage terrain
   reconList: [],                   // modèles + chasses en préparation, repérables
   reconLoading: false,
+  reconMapOpen: true,              // carte du repérage dépliée (#73)
   lastSig: ''
 };
 
@@ -1788,7 +1798,7 @@ async function openRecon(){
   S.reconLoading = false;
   if(S.view === 'recon-list') viewReconList();
 }
-function leaveRecon(){ S.view = 'picker'; S.recon = null; render(); }
+function leaveRecon(){ destroyReconMap(); S.view = 'picker'; S.recon = null; render(); }
 
 function reconStats(clues){
   const n = (clues || []).length;
@@ -1837,7 +1847,7 @@ async function openReconGame(code){
   S.view = 'recon-edit';
   viewRecon();
 }
-function backToReconList(){ S.recon = null; openRecon(); }
+function backToReconList(){ destroyReconMap(); S.recon = null; openRecon(); }
 
 function viewRecon(){
   S.view = 'recon-edit';
@@ -1853,10 +1863,17 @@ function viewRecon(){
     </div>
     <div class="tplwrap" style="max-width:720px">
       <div class="reconbar" id="recon-progress"></div>
-      <p class="hint" style="margin:10px 0 16px">Sur chaque indice : <b>📷</b> la photo que l'équipe achètera, <b>📍</b> la position relevée là où vous êtes. Tout part en base à chaque geste — inutile d'enregistrer.</p>
+      <div class="recon-mapbar" style="margin-top:10px">
+        <button class="btn sm gold" id="recon-follow" onclick="toggleFollow()">◎ Me suivre</button>
+        <button class="btn ghost sm" id="recon-map-toggle" onclick="toggleReconMap()">Masquer la carte</button>
+        <span class="me" id="recon-me">Position en cours d'acquisition…</span>
+      </div>
+      <div id="recon-map-box"><div id="recon-map"></div></div>
+      <p class="hint" style="margin:0 0 16px">Touchez un point de la carte pour ouvrir sa fiche. Sur chaque indice : <b>📷</b> la photo que l'équipe achètera, <b>📍</b> la position relevée là où vous êtes. Tout part en base à chaque geste — inutile d'enregistrer.</p>
       <div id="recon-clues"></div>
     </div>`;
   paintReconClues();
+  setTimeout(initReconMap, 60);
 }
 function paintReconProgress(){
   const el = $('#recon-progress'); if(!el || !S.recon) return;
@@ -1874,7 +1891,7 @@ function reconCard(c, i){
   const geo = (c.lat != null && c.lng != null);
   return `<div class="reconclue" id="rc-${esc(c.id)}">
     <div class="rc-head"><span class="tc-num">${i+1}</span>
-      <b style="flex:1;min-width:0">${esc(c.title || 'Sans titre')}</b>
+      <b style="flex:1;min-width:0">${esc(c.title || 'Sans titre')}<span class="rc-dist" id="rcdist-${esc(c.id)}"></span></b>
       <span class="chip">${c.points} pts</span></div>
     <p class="rc-text">${esc(c.text || '')}</p>
     <div class="rc-shot" id="rcshot-${esc(c.id)}">${reconShotHtml(c)}</div>
@@ -1884,6 +1901,8 @@ function reconCard(c, i){
       <button class="btn sm" onclick="document.getElementById('rcfile-${esc(c.id)}').click()">📷 ${c.hintUrl ? 'Refaire' : 'Photo indice'}</button>
       ${c.hintUrl ? `<button class="btn ghost sm ox" onclick="reconDropPhoto('${esc(c.id)}')">Retirer</button>` : ''}
       <button class="btn sm ${geo?'ghost':''}" onclick="reconHere('${esc(c.id)}', this)">📍 ${geo ? 'Corriger la position' : 'Je suis ici'}</button>
+      ${geo ? `<button class="btn ghost sm" onclick="focusReconClue('${esc(c.id)}')">🗺 Sur la carte</button>
+               <button class="btn ghost sm" onclick="reconRoute('${esc(c.id)}')">➜ Itinéraire</button>` : ''}
       <label class="rc-cost">coût
         <input class="input mono" type="number" min="0" max="9999" step="5" value="${hintCostOf(c)}"
                onchange="reconCost('${esc(c.id)}', this.value)"></label>
@@ -1930,7 +1949,7 @@ async function reconPhoto(clueId, input){
   const { data } = sb.storage.from('photos').getPublicUrl(path);
   c.hintUrl = data.publicUrl + '?v=' + Date.now();   // l'URL est stable : cache-buster obligatoire
   if(!(await reconSave())){ if(shot) shot.innerHTML = reconShotHtml(c); return; }
-  paintReconClues();
+  paintReconClues(); syncReconMarkers(); paintReconDistances();
   toast('Photo indice enregistrée','success');
 }
 async function reconDropPhoto(clueId){
@@ -1939,7 +1958,7 @@ async function reconDropPhoto(clueId){
   if(!confirm('Retirer la photo indice de cet indice ?')) return;
   try{ await sb.storage.from('photos').remove([`${r.code}/hints/${clueId}.jpg`]); }catch(_){}
   c.hintUrl = null;
-  if(await reconSave()){ paintReconClues(); toast('Photo retirée','success'); }
+  if(await reconSave()){ paintReconClues(); syncReconMarkers(); toast('Photo retirée','success'); }
 }
 // ⚠️ Le GPS d'un téléphone ment volontiers à l'arrêt sous un bâtiment : on affiche la
 // précision annoncée et on la signale au-delà de RECON_ACC_WARN plutôt que de l'ignorer.
@@ -1955,7 +1974,7 @@ function reconHere(clueId, btn){
     c.__acc = pos.coords.accuracy || 0;
     if(btn){ btn.disabled = false; btn.textContent = label; }
     if(await reconSave()){
-      paintReconClues();
+      paintReconClues(); syncReconMarkers(); paintReconDistances();
       toast(c.__acc > RECON_ACC_WARN ? `Position relevée, mais à ±${Math.round(c.__acc)} m` : 'Position relevée', c.__acc > RECON_ACC_WARN ? 'error' : 'success', 4000);
     }
   }, err => {
@@ -1996,6 +2015,152 @@ function hintCompress(file){
     };
     fr.readAsDataURL(file);
   });
+}
+
+/* ───────── Carte du repérage : se déplacer entre les indices (#73) ─────────
+   Sur le terrain, la liste ne suffit pas : il faut voir où sont les points, où l'on est,
+   et dans quel ordre les enchaîner. La carte est donc au-dessus de la liste, avec la
+   position en direct.
+   ⚠️ `watchPosition` doit être ARRÊTÉ en quittant l'écran : sinon le GPS continue de
+   tourner en arrière-plan (batterie) et des callbacks écrivent dans un DOM détruit. */
+const RMAP = { map:null, markers:{}, me:null, halo:null, watch:null, follow:true, pos:null };
+
+function reconMapOpen(){ return S.reconMapOpen !== false; }   // ouverte par défaut
+function toggleReconMap(){
+  S.reconMapOpen = !reconMapOpen();
+  const box = $('#recon-map-box');
+  if(box) box.classList.toggle('closed', !reconMapOpen());
+  const b = $('#recon-map-toggle');
+  if(b) b.textContent = reconMapOpen() ? 'Masquer la carte' : 'Afficher la carte';
+  if(reconMapOpen()) setTimeout(() => { try{ RMAP.map?.invalidateSize(); }catch(_){} }, 60);
+}
+
+// Distance à vol d'oiseau — largement suffisant pour décider par où commencer.
+function haversine(a, b){
+  const R = 6371000, rad = d => d * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const s = Math.sin(dLat/2)**2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng/2)**2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(s)));
+}
+function fmtDist(m){ return m < 1000 ? `${m} m` : `${(m/1000).toFixed(m < 10000 ? 1 : 0)} km`; }
+
+function initReconMap(){
+  const el = $('#recon-map'); if(!el || !S.recon) return;
+  if(typeof L === 'undefined'){ el.innerHTML = '<div class="rc-noshot">Carte indisponible (Leaflet non chargé)</div>'; return; }
+  stopReconWatch();
+  if(RMAP.map){ try{ RMAP.map.remove(); }catch(_){} }
+  RMAP.map = null; RMAP.markers = {}; RMAP.me = null; RMAP.halo = null;
+  const placed = S.recon.clues.filter(c => c.lat != null && c.lng != null);
+  RMAP.map = L.map(el, { zoomControl:true })
+    .setView(placed[0] ? [placed[0].lat, placed[0].lng] : [46.6, 2.4], placed.length ? 15 : 5);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' })
+    .addTo(RMAP.map);
+  // Faire glisser la carte, c'est vouloir regarder ailleurs : on cesse de recentrer.
+  RMAP.map.on('dragstart', () => { RMAP.follow = false; paintFollowBtn(); });
+  syncReconMarkers();
+  if(placed.length > 1) RMAP.map.fitBounds(placed.map(c => [c.lat, c.lng]), { padding:[36,36] });
+  setTimeout(() => { try{ RMAP.map?.invalidateSize(); }catch(_){} }, 80);
+  startReconWatch();
+}
+
+function syncReconMarkers(){
+  if(!RMAP.map || !S.recon) return;
+  const live = new Set();
+  S.recon.clues.forEach((c,i) => {
+    if(c.lat == null || c.lng == null) return;
+    live.add(c.id);
+    const done = !!c.hintUrl;
+    const icon = pinIcon('pin-clue' + (done ? ' done' : ''), i+1);
+    let m = RMAP.markers[c.id];
+    if(!m){
+      m = L.marker([c.lat, c.lng], { icon }).addTo(RMAP.map);
+      m.on('click', () => focusReconClue(c.id));
+      RMAP.markers[c.id] = m;
+    } else { m.setLatLng([c.lat, c.lng]); m.setIcon(icon); }
+    m.bindTooltip(`${i+1}. ${esc(c.title || '')}${done ? ' · 📷' : ''}`, { direction:'top' });
+  });
+  Object.keys(RMAP.markers).forEach(id => {
+    if(live.has(id)) return;
+    try{ RMAP.map.removeLayer(RMAP.markers[id]); }catch(_){}
+    delete RMAP.markers[id];
+  });
+}
+
+// Marqueur « moi », avec le halo de précision : un point sans son incertitude ment.
+function paintMe(){
+  if(!RMAP.map || !RMAP.pos) return;
+  const { lat, lng, acc } = RMAP.pos;
+  if(!RMAP.me){
+    RMAP.me = L.marker([lat, lng], { icon: pinIcon('pin-me', '●'), zIndexOffset:1200 }).addTo(RMAP.map);
+    RMAP.halo = L.circle([lat, lng], { radius:acc||0, color:'#2d4a3a', weight:1, fillOpacity:.10 }).addTo(RMAP.map);
+  } else {
+    RMAP.me.setLatLng([lat, lng]);
+    try{ RMAP.halo.setLatLng([lat, lng]); RMAP.halo.setRadius(acc||0); }catch(_){}
+  }
+  RMAP.me.bindTooltip(`Vous · ±${Math.round(acc||0)} m`, { direction:'top' });
+  if(RMAP.follow) RMAP.map.setView([lat, lng], Math.max(RMAP.map.getZoom() || 16, 16));
+}
+
+function startReconWatch(){
+  if(!navigator.geolocation){ const s = $('#recon-me'); if(s) s.textContent = 'GPS indisponible sur cet appareil'; return; }
+  RMAP.watch = navigator.geolocation.watchPosition(p => {
+    RMAP.pos = { lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy || 0 };
+    paintMe(); paintReconDistances();
+    const s = $('#recon-me');
+    if(s) s.textContent = `Vous : ±${Math.round(RMAP.pos.acc)} m`;
+  }, err => {
+    const s = $('#recon-me');
+    if(s) s.textContent = 'Position refusée ou indisponible — la carte reste utilisable';
+  }, { enableHighAccuracy:true, maximumAge:5000, timeout:20000 });
+}
+function stopReconWatch(){
+  if(RMAP.watch != null && navigator.geolocation){ try{ navigator.geolocation.clearWatch(RMAP.watch); }catch(_){} }
+  RMAP.watch = null;
+}
+function destroyReconMap(){
+  stopReconWatch();
+  if(RMAP.map){ try{ RMAP.map.remove(); }catch(_){} }
+  RMAP.map = null; RMAP.markers = {}; RMAP.me = null; RMAP.halo = null; RMAP.pos = null;
+}
+
+function toggleFollow(){
+  RMAP.follow = !RMAP.follow;
+  paintFollowBtn();
+  if(RMAP.follow && RMAP.pos && RMAP.map) RMAP.map.setView([RMAP.pos.lat, RMAP.pos.lng], Math.max(RMAP.map.getZoom() || 16, 16));
+}
+function paintFollowBtn(){
+  const b = $('#recon-follow'); if(!b) return;
+  b.textContent = RMAP.follow ? '◎ Me suivre' : '○ Me suivre';
+  b.classList.toggle('gold', RMAP.follow);
+}
+
+// Distances mises à jour SANS repeindre la liste : la saisie en cours n'est jamais perdue.
+function paintReconDistances(){
+  if(!S.recon) return;
+  S.recon.clues.forEach(c => {
+    const el = $('#rcdist-'+c.id); if(!el) return;
+    if(!RMAP.pos || c.lat == null || c.lng == null){ el.textContent = ''; return; }
+    el.textContent = '· à ' + fmtDist(haversine(RMAP.pos, c));
+  });
+}
+
+// Clic sur un marqueur : la carte cadre le point ET la fiche remonte sous les yeux.
+function focusReconClue(id){
+  const c = S.recon?.clues.find(x => x.id === id); if(!c) return;
+  if(RMAP.map && c.lat != null){ RMAP.follow = false; paintFollowBtn(); RMAP.map.setView([c.lat, c.lng], Math.max(RMAP.map.getZoom() || 17, 17)); }
+  const card = $('#rc-'+id);
+  if(card){
+    card.scrollIntoView({ behavior:'smooth', block:'start' });
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 1400);
+  }
+}
+// Itinéraire dans l'application de cartes du téléphone. `dir` plutôt que `geo:` : `geo:`
+// n'ouvre rien sur iOS, l'URL Google Maps bascule sur l'app installée ou sur le web.
+function reconRoute(id){
+  const c = S.recon?.clues.find(x => x.id === id);
+  if(!c || c.lat == null || c.lng == null){ toast('Cet indice n\'a pas encore de position','error'); return; }
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lng}&travelmode=bicycling`, '_blank', 'noopener');
 }
 
 // QR pour passer le repérage sur le téléphone : la régie est publiée au même endroit que

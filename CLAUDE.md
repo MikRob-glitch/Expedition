@@ -3,9 +3,9 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** : code du lot #72 = **le commit qui porte ces lignes**
-> (hash inscrit au lot suivant), précédé des lots #71 = `b7d6370` et #70 = `97101c2`.
-> `BUILD` régie `2026-08-30.3`, `BUILD` app `2026-08-30.1`, `CACHE` `expedition-v38`.
+> **réellement poussé sur GitHub** : code du lot #73 = **le commit qui porte ces lignes**
+> (hash inscrit au lot suivant), précédé de #72 = `48f8e34`, #71 = `b7d6370`, #70 = `97101c2`.
+> `BUILD` régie `2026-08-30.4`, `BUILD` app `2026-08-30.1`, `CACHE` `expedition-v39`.
 > ⚠️ **`migration-hints.sql` doit être jouée** dans Supabase pour que l'indice photo existe.
 > ✅ **Publication VÉRIFIÉE sur le contenu réellement servi le 2026-08-30**, deux fois :
 > `…/sw.js?probe=20260830-0930a` → `expedition-v36` (#70), puis
@@ -1895,6 +1895,48 @@ tourne, il n'y a simplement pas d'indice photo.
 ni la caméra, ni le GPS réel, ni les RLS, ni le Storage. À exercer sur une chasse jetable avant
 de le vendre — en particulier la prise de photo depuis un téléphone, qui est le seul geste du
 lot dont personne n'a jamais vu le résultat.
+
+### Poussés sur GitHub (2026-08-30) — Carte du repérage : se déplacer entre les indices (#73)
+
+**Demande.** « Il faut la carte des indices de la chasse sur le mode repérage pour que je puisse
+m'y déplacer. » Juste : la liste dit **ce qu'il reste à faire**, elle ne dit pas **où aller
+maintenant**. Sur seize points répartis sur 28 km, c'est la moitié du travail qui manquait.
+
+**Ce qui a été ajouté.** Une carte Leaflet au-dessus de la liste, avec :
+· un marqueur numéroté par indice **localisé** (vert dès que sa photo est prise, doré sinon) —
+  les indices sans position n'ont rien à montrer et n'encombrent pas la carte ;
+· la **position en direct** (`watchPosition`) avec son **halo de précision** — un point sans son
+  incertitude ment, et à ±60 m sous un bâtiment on croirait être sur le bon point ;
+· un bouton **« Me suivre »** qui recentre, et qui **se coupe dès qu'on fait glisser la carte** :
+  faire glisser, c'est vouloir regarder ailleurs, reprendre la main de force est insupportable ;
+· la **distance à vol d'oiseau** sur chaque fiche d'indice, mise à jour à chaque position ;
+· **➜ Itinéraire** qui ouvre l'application de cartes du téléphone en mode vélo, et
+  **🗺 Sur la carte** / clic sur un marqueur qui cadre le point **et** fait remonter sa fiche ;
+· la carte se replie, pour rendre l'écran à la liste quand on est arrivé sur un point.
+
+**Trois pièges traités, à ne pas redécouvrir.**
+(1) ⚠️ **`watchPosition` doit être arrêté en quittant l'écran** (`destroyReconMap`, appelé par
+    les deux sorties). Sinon le GPS tourne en arrière-plan — batterie sur une journée de
+    repérage — et des callbacks écrivent dans un DOM détruit. Le banc vérifie le `clearWatch`.
+(2) ⚠️ **Les distances s'écrivent dans le DOM sans repeindre la liste** (`paintReconDistances`,
+    un `<span>` par fiche). Repeindre à chaque position perdrait la saisie en cours — même
+    raison que `paintClueGeo` au lot #70, règle #49.
+(3) ⚠️ **`geo:` n'ouvre rien sur iOS** : l'itinéraire passe par une URL Google Maps `dir`, qui
+    bascule sur l'application installée ou sur le web selon l'appareil.
+
+**Banc** : `tests/test-hints.js` passe de 62 à **91 tests** — instanciation, marqueurs (un par
+indice localisé, pastille photo, aucun pour les non localisés), cadrage, halo au rayon annoncé
+et **non recréé** à chaque position, distances écrites et vides quand il n'y a pas de position,
+recentrage puis arrêt au glissé, mise en évidence de la fiche, itinéraire (coordonnées, mode
+vélo, refus sans position), repli, et **arrêt du suivi à la sortie**. Total des bancs : **331**.
+⚠️ **Piège de banc rencontré** : `viewRecon` initialise la carte par un `setTimeout` — celui de
+la section précédente retombait au milieu de la nouvelle et ses marqueurs se comptaient avec les
+nôtres. On laisse d'abord retomber le timer, on détruit, puis on remet les compteurs à zéro.
+
+**Aucune migration.** `BUILD` régie → `2026-08-30.4`, `CACHE` **v38→v39**.
+
+⚠️ **Toujours pas vu dans un vrai navigateur** : ni le rendu Leaflet, ni le GPS réel, ni le
+comportement du suivi en marchant. C'est le geste à exercer en premier sur le terrain.
 
 ## Dette technique / points de vigilance connus
 

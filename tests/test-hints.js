@@ -18,14 +18,21 @@ const ok = (cond, msg) => { if(cond){ pass++; } else { fail++; console.error('  
 const UID = '11111111-1111-4111-8111-111111111111';
 
 function leafletStub(log){
-  const marker = () => { const m = { handlers:{}, addTo(){ log.markers.push(m); return m; },
-    bindTooltip(){ return m; }, setLatLng(){ return m; }, setIcon(){ return m; },
+  const marker = () => { const m = { handlers:{}, tip:'', addTo(){ log.markers.push(m); return m; },
+    bindTooltip(t){ m.tip = t; return m; }, setLatLng(ll){ m.latlng = ll; return m; },
+    setIcon(i){ m.icon = i; return m; },
     on(e,c){ m.handlers[e]=c; return m; }, getLatLng(){ return m.latlng; } }; return m; };
-  return { divIcon:o=>o, marker:(ll,o)=>{ const m=marker(); m.latlng=ll; m.opts=o; return m; },
-    tileLayer:()=>({ addTo(){ return this; } }), layerGroup:()=>({ addTo(){ return this; } }),
-    map:()=>{ const mp={ handlers:{}, setView(){return mp}, fitBounds(){return mp},
-      invalidateSize(){}, remove(){}, removeLayer(){}, on(e,c){ mp.handlers[e]=c; return mp } };
-      log.map=mp; return mp; } };
+  return { divIcon:o=>o, marker:(ll,o)=>{ const m=marker(); m.latlng=ll; m.opts=o; m.icon=o&&o.icon; return m; },
+    circle:(ll,o)=>{ const c={ latlng:ll, opts:o, radius:o&&o.radius,
+      addTo(){ log.circles.push(c); return c; }, setLatLng(x){ c.latlng=x; return c; },
+      setRadius(r){ c.radius=r; return c; } }; return c; },
+    tileLayer:()=>({ addTo(){ log.tiles++; return this; } }), layerGroup:()=>({ addTo(){ return this; } }),
+    map:()=>{ const mp={ handlers:{}, zoom:15, views:[], removed:[],
+      setView(ll,z){ mp.views.push({ll,z}); if(z!=null) mp.zoom=z; return mp; },
+      getZoom(){ return mp.zoom; }, fitBounds(b){ mp.bounds=b; return mp; },
+      invalidateSize(){}, remove(){ log.mapRemoved++; }, removeLayer(m){ mp.removed.push(m); },
+      on(e,c){ mp.handlers[e]=c; return mp; } };
+      log.map=mp; log.maps++; return mp; } };
 }
 function sbStub(log){
   const mk = table => {
@@ -59,7 +66,7 @@ function loadPage(file, stubs){
 }
 
 /* ═════════ RÉGIE ═════════ */
-const llog = { markers:[], map:null };
+const llog = { markers:[], circles:[], map:null, maps:0, tiles:0, mapRemoved:0 };
 const slog = { inserts:[], updates:[], rpcs:[], removed:[], uploads:[], copies:[], copyErr:false,
                reply: () => ({ data:null, error:null }) };
 const R = loadPage('regie.html', {
@@ -183,6 +190,91 @@ S.user = { id:UID, email:'mj@exemple.test' };
   ok(slog.uploads[0].type === 'image/jpeg', 'repli : type MIME correct');
   slog.copyErr = false;
   ok((await rw.hintCopyTo('https://exemple.test/photos/NEW2/hints/c9.jpg', 'NEW2', 'c9')) !== null, 'photo déjà sous le bon code : rien à faire');
+
+  /* ═════════ CARTE DU REPÉRAGE (#73) ═════════ */
+  console.log('— carte du repérage —');
+  ok(rw.haversine({lat:47.2755,lng:-2.2050}, {lat:47.2755,lng:-2.2050}) === 0, 'distance nulle sur le même point');
+  const d = rw.haversine({lat:47.2755,lng:-2.2050}, {lat:47.2765,lng:-2.2050});
+  ok(d > 105 && d < 118, 'un centième de degré de latitude ≈ 111 m');
+  ok(rw.fmtDist(240) === '240 m', 'distance courte en mètres');
+  ok(rw.fmtDist(1500) === '1.5 km', 'distance longue en kilomètres');
+
+  // Une position posée, une non posée, une photo prise : trois cas dans la même carte.
+  S.recon = { code:'AB23', name:'Essai', isTemplate:false, clues: rw.normClues([
+    { id:'c1', title:'Un',   points:100, lat:47.2755, lng:-2.2050, hintUrl:'https://exemple.test/photos/AB23/hints/c1.jpg' },
+    { id:'c2', title:'Deux', points:100, lat:47.2800, lng:-2.2100 },
+    { id:'c3', title:'Trois',points:100 } ]) };
+  S.view = 'recon-edit';
+  let watchCb = null, watchCleared = null, watchId = 77;
+  rw.navigator.geolocation = {
+    watchPosition:(ok_, ko, opts) => { watchCb = { ok_, ko, opts }; return watchId; },
+    clearWatch:id => { watchCleared = id; },
+    getCurrentPosition:() => {}
+  };
+  // ⚠️ `viewRecon` initialise la carte via un setTimeout : on laisse d'abord retomber
+  // celui qu'a posé la section précédente, SINON ses marqueurs se comptent avec les nôtres.
+  await new Promise(r => setTimeout(r, 150));
+  rw.destroyReconMap();
+  llog.markers.length = 0; llog.circles.length = 0; llog.maps = 0; llog.mapRemoved = 0; llog.tiles = 0;
+  rw.viewRecon();
+  await new Promise(r => setTimeout(r, 120));
+
+  ok(llog.maps === 1, 'carte instanciée à l\'ouverture du repérage');
+  ok(llog.tiles > 0, 'fond de carte OpenStreetMap ajouté');
+  ok(llog.markers.length === 2, 'un marqueur par indice localisé, aucun pour les autres');
+  ok(llog.map.bounds && llog.map.bounds.length === 2, 'la carte cadre les points connus');
+  ok(/1\. Un/.test(llog.markers[0].tip) && /📷/.test(llog.markers[0].tip), 'marqueur numéroté, photo signalée');
+  ok(!/📷/.test(llog.markers[1].tip), 'indice sans photo : pas de pastille photo');
+  ok(watchCb && watchCb.opts.enableHighAccuracy === true, 'suivi de position démarré en haute précision');
+
+  // Première position reçue : marqueur « moi », halo de précision, distances écrites.
+  watchCb.ok_({ coords:{ latitude:47.2760, longitude:-2.2050, accuracy:9 } });
+  ok(llog.markers.length === 3, 'marqueur de position propre ajouté');
+  ok(llog.circles.length === 1 && llog.circles[0].radius === 9, 'halo de précision au rayon annoncé');
+  ok(/±9 m/.test(rw.document.getElementById('recon-me').textContent), 'précision affichée à l\'écran');
+  const dist1 = rw.document.getElementById('rcdist-c1').textContent;
+  ok(/à \d+ m/.test(dist1), 'distance affichée sur la fiche d\'un indice localisé');
+  ok(rw.document.getElementById('rcdist-c3').textContent === '', 'aucune distance pour un indice sans position');
+
+  // Suivi : recentrage tant qu'on ne touche pas la carte, arrêt dès qu'on la fait glisser.
+  const before = llog.map.views.length;
+  watchCb.ok_({ coords:{ latitude:47.2770, longitude:-2.2050, accuracy:9 } });
+  ok(llog.map.views.length > before, 'la carte suit la position');
+  llog.map.handlers.dragstart();
+  const after = llog.map.views.length;
+  watchCb.ok_({ coords:{ latitude:47.2780, longitude:-2.2050, accuracy:9 } });
+  ok(llog.map.views.length === after, 'faire glisser la carte arrête le recentrage');
+  ok(/○ Me suivre/.test(rw.document.getElementById('recon-follow').textContent), 'le bouton reflète l\'arrêt du suivi');
+  rw.toggleFollow();
+  ok(/◎ Me suivre/.test(rw.document.getElementById('recon-follow').textContent), 'le suivi se réactive au bouton');
+
+  // Le halo suit sans créer de doublon
+  ok(llog.circles.length === 1, 'un seul halo, mis à jour et non recréé');
+
+  // Clic sur un marqueur : la fiche remonte
+  rw.focusReconClue('c2');
+  ok(rw.document.getElementById('rc-c2').classList.contains('flash'), 'la fiche de l\'indice est mise en évidence');
+
+  // Itinéraire
+  let opened = null;
+  rw.open = (u) => { opened = u; return null; };
+  rw.reconRoute('c2');
+  ok(/destination=47\.28,-2\.21/.test(opened), 'itinéraire vers les bonnes coordonnées');
+  ok(/travelmode=bicycling/.test(opened), 'itinéraire à vélo');
+  opened = null;
+  rw.reconRoute('c3');
+  ok(opened === null, 'aucun itinéraire vers un indice sans position');
+
+  // Repli / dépli
+  rw.toggleReconMap();
+  ok(rw.document.getElementById('recon-map-box').classList.contains('closed'), 'carte repliable');
+  rw.toggleReconMap();
+  ok(!rw.document.getElementById('recon-map-box').classList.contains('closed'), 'carte dépliable');
+
+  // ⚠️ Quitter l'écran DOIT couper le GPS : sinon il tourne en fond et écrit dans un DOM mort.
+  rw.destroyReconMap();
+  ok(watchCleared === watchId, 'le suivi de position est arrêté en quittant');
+  ok(llog.mapRemoved === 1, 'la carte est détruite');
 
   /* ═════════ APPLICATION ÉQUIPE ═════════ */
   console.log('— app équipe —');
