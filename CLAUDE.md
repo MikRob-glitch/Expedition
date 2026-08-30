@@ -3,9 +3,10 @@
 Guide de référence pour travailler sur l'application. À lire avant toute modification.
 
 > Source de vérité = le dépôt GitHub `MikRob-glitch/Expedition`. Ce fichier décrit l'état
-> **réellement poussé sur GitHub** : code du lot #71 = commit `b7d6370` (2026-08-30), précédé
-> du lot #70 = commit `97101c2` (même jour). `BUILD` régie `2026-08-30.2`, `BUILD` app
-> `2026-08-17.1` (fichier non touché), `CACHE` `expedition-v37`.
+> **réellement poussé sur GitHub** : code du lot #72 = **le commit qui porte ces lignes**
+> (hash inscrit au lot suivant), précédé des lots #71 = `b7d6370` et #70 = `97101c2`.
+> `BUILD` régie `2026-08-30.3`, `BUILD` app `2026-08-30.1`, `CACHE` `expedition-v38`.
+> ⚠️ **`migration-hints.sql` doit être jouée** dans Supabase pour que l'indice photo existe.
 > ✅ **Publication VÉRIFIÉE sur le contenu réellement servi le 2026-08-30**, deux fois :
 > `…/sw.js?probe=20260830-0930a` → `expedition-v36` (#70), puis
 > `…/sw.js?probe=20260830-lot71b` → `expedition-v37` (#71).
@@ -1824,6 +1825,76 @@ affiché, création du modèle, ajout à la suite depuis l'éditeur, et validati
 fait rien. Total des bancs : **240**.
 
 **Aucune migration.** `BUILD` régie → `2026-08-30.2`, `CACHE` **v36→v37**.
+
+### Poussés sur GitHub (2026-08-30) — Indice photo payant + repérage terrain (#72)
+
+**Demande.** Une équipe coincée doit pouvoir demander la « photo indice » — un cliché du lieu —
+contre des points (30 par défaut). La photo se prend **au repérage**, donc il faut un accès
+mobile à une chasse en préparation, indice par indice.
+
+⚠️ **Point de départ à ne pas réexpliquer** : la question posée était « la régie est locale sur
+mon PC, comment la rendre mobile ? ». Elle **ne l'est pas** — `regie.html` est publiée sur Pages
+au même endroit que l'application (`PUBLIC_BASE`), en HTTPS, avec la même connexion par code
+email et une bascule en trois onglets sous 900 px. Ouverte par double-clic (`file://`), elle
+paraît locale **et** la caméra comme le GPS seraient refusés. Le repérage vit donc dans la
+régie, avec un **QR « Repérage »** qui ouvre le téléphone directement sur la bonne chasse
+(`regie.html?recon=CODE`).
+
+**Où vit quoi.**
+· La photo et son prix → `games.clues[]` (`hintUrl`, `hintCost`), **aucune migration** : c'est
+  du JSONB. Écrits par l'admin authentifié seul (Lot 1) — donc **hors de portée des équipes**.
+· La trace d'un achat → nouvelle table `hint_reveals` (`migration-hints.sql`). Il en FAUT une :
+  une équipe anonyme ne peut qu'**INSÉRER** (RLS UPDATE réservée à l'admin), elle ne peut donc
+  écrire son achat ni dans `teams` ni dans `games`. Même contrat que `submissions` : INSERT
+  ouvert, lecture publique, **aucun UPDATE ni DELETE** — un achat ne se reprend pas.
+
+**La décision qui porte tout le lot : le score se calcule sur `games.clues[].hintCost`, jamais
+sur `hint_reveals.cost`.** La colonne `cost` n'est qu'une copie d'audit de ce qui a été affiché.
+Une équipe peut insérer la ligne qu'elle veut — y compris `cost: 0` — cela ne change pas son
+score d'un point. Le banc porte exactement ce cas.
+
+**Ce qui a été fait.**
+(1) `migration-hints.sql` : table, index, `unique (team_id, clue_id)`, RLS, publication
+    Realtime posée dans un `do $$` (un `add table` sur une table déjà publiée échoue).
+(2) **Achat côté équipe** (`expedition.html`) : bloc sur l'écran de capture, trois états —
+    rien à vendre / achetable au prix de l'indice / déjà acheté (la photo reste visible).
+    Confirmation explicite du coût, INSERT **idempotent** : `23505` = déjà acheté = succès,
+    même règle que les preuves (#26). ⚠️ Avant achat, **l'URL de la photo n'est pas dans le
+    HTML** — sinon il suffirait d'ouvrir l'inspecteur pour ne pas payer. Le banc le vérifie.
+(3) **Score** : un seul calcul par surface (`teamScore` / `scoreOf`), la dette y est déduite.
+    Les **quatre** endroits qui recalculaient un total à la main (écran équipe, fin de chasse,
+    classement admin, diaporama) passent par lui. Le score **peut devenir négatif** : refuser
+    l'achat bloquerait l'équipe au moment précis où elle est coincée.
+(4) **Repérage** (`regie.html`, vue mobile) : liste des repérables (modèles + chasses en
+    `setup` — une chasse lancée est fermée au repérage), puis, indice par indice, 📷 la photo
+    (compression 1400 px / JPEG 0,72, `{code}/hints/{clueId}.jpg`) et 📍 « je suis ici »
+    (`enableHighAccuracy`, `maximumAge: 0`). **La précision annoncée est affichée** et
+    signalée au-delà de 25 m — un GPS de téléphone ment volontiers sous un bâtiment, et une
+    position à ±80 m ne vaut pas mieux qu'une lecture de carte. Chaque geste part en base
+    immédiatement, avec le garde-fou `.select()`.
+(5) **Coût réglable indice par indice**, dans l'éditeur de modèle comme sur le terrain.
+(6) ⚠️ **Une photo indice appartient à UNE chasse.** Elle est **recopiée** sous le code de la
+    chasse créée depuis un modèle (`hintCopyTo` : copie côté serveur d'abord, repli
+    télécharger-puis-renvoyer si le bucket la refuse — on ne sait pas d'avance ce que les
+    policies laissent passer), et elle **ne voyage pas par JSON** : l'import écarte `hintUrl`
+    et le dit. Même raisonnement que le logo : supprimer le modèle emporte son dossier Storage.
+(7) `hintUrl` finit dans un `src=` : `normClue` n'accepte que `http(s)://`. `javascript:`,
+    `data:` et les URL protocole-relatif tombent.
+(8) **Ménage** : `purgeGamePhotos` nomme désormais les `{code}/hints/*.jpg` (`list()` n'est pas
+    récursif, il faut les déduire des indices), et la suppression d'un modèle emporte les
+    siennes. Sans ça, chaque chasse repérée laissait 16 fichiers orphelins — la même famille
+    de fuite que les 89 fichiers de #50.
+(9) `tests/test-hints.js` — **62 tests JSDOM**, aucun réseau. Total des bancs : **302**.
+
+**Migration à jouer** : `migration-hints.sql` (Supabase → SQL Editor). Tant qu'elle n'est pas
+passée, `loadHints` renvoie une liste vide **sans casser** l'application ni la console : le jeu
+tourne, il n'y a simplement pas d'indice photo.
+`BUILD` régie → `2026-08-30.3`, `BUILD` app → `2026-08-30.1`, `CACHE` **v37→v38**.
+
+⚠️ **Rien de tout cela n'a tourné dans un vrai navigateur ni sur un événement.** Le banc ne voit
+ni la caméra, ni le GPS réel, ni les RLS, ni le Storage. À exercer sur une chasse jetable avant
+de le vendre — en particulier la prise de photo depuis un téléphone, qui est le seul geste du
+lot dont personne n'a jamais vu le résultat.
 
 ## Dette technique / points de vigilance connus
 

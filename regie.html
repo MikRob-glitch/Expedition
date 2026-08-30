@@ -197,6 +197,20 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
 .tplrow .bd b{display:block;font-size:15px}
 .tplrow .bd small{color:var(--ink-mute);font-size:12px}
 .tplmeta{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:14px}
+/* ───────── Repérage terrain + indice photo (#72) ───────── */
+.reconbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.reconclue{border:1.5px solid var(--line);border-radius:14px;background:rgba(255,255,255,.45);padding:12px;margin-bottom:12px}
+.rc-head{display:flex;gap:9px;align-items:center;margin-bottom:6px}
+.rc-text{font-size:13px;color:var(--ink-soft);margin:0 0 10px;line-height:1.45}
+.rc-shot{border-radius:11px;overflow:hidden;background:var(--parchment-3);margin-bottom:10px}
+.rc-shot img{display:block;width:100%;max-height:46vh;object-fit:cover}
+.rc-noshot{padding:18px 14px;text-align:center;font-size:12.5px;color:var(--ink-mute)}
+.rc-acts{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.rc-cost{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-mute)}
+.rc-cost .input{width:74px;text-align:right;padding:6px 8px;font-size:13px}
+.rc-geo{font-size:11.5px;color:var(--ink-mute);margin-top:9px}
+.rc-geo .warn{color:var(--oxblood)}
+.hidden-file{display:none}
 .dropzone{border:2px dashed var(--line-strong);border-radius:14px;padding:26px 18px;text-align:center;background:rgba(255,255,255,.3);transition:border-color .15s,background .15s}
 .dropzone.over{border-color:var(--gold-dark);background:rgba(201,165,90,.12)}
 .dropzone p{margin:0 0 12px;color:var(--ink-soft);font-size:13.5px}
@@ -521,7 +535,7 @@ label.lbl{display:block;font-family:'Geist Mono',monospace;font-size:10.5px;text
      n'utilise que des UPDATE ciblés, jamais d'upsert sur `games`.
    ===================================================================== */
 
-const BUILD = '2026-08-30.2';
+const BUILD = '2026-08-30.3';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -562,6 +576,10 @@ const S = {
   tplLoading: false,
   launchTpl: null,                 // modèle en cours de duplication vers une vraie chasse
   tplImport: null,                 // scénario lu depuis un fichier, en attente de validation
+  hints: [],                       // révélations d'indices photo de la chasse ouverte (#72)
+  recon: null,                     // chasse en cours de repérage terrain
+  reconList: [],                   // modèles + chasses en préparation, repérables
+  reconLoading: false,
   lastSig: ''
 };
 
@@ -712,6 +730,7 @@ function startRealtime(code){
     .on('postgres_changes', { event:'*', schema:'public', table:'games',       filter:`code=eq.${code}` }, refresh)
     .on('postgres_changes', { event:'*', schema:'public', table:'teams',       filter:`game_code=eq.${code}` }, refresh)
     .on('postgres_changes', { event:'*', schema:'public', table:'submissions', filter:`game_code=eq.${code}` }, refresh)
+    .on('postgres_changes', { event:'*', schema:'public', table:'hint_reveals', filter:`game_code=eq.${code}` }, refresh)
     .subscribe();
   // Positions live des équipes : broadcast éphémère émis par expedition.html pendant la
   // phase active (rien en base). On écoute dès l'ouverture de la chasse, pour que la
@@ -756,7 +775,8 @@ async function refresh(){
   if(g === undefined) return;                       // coupure transitoire : on ignore le cycle
   if(g === null){ toast('Cette chasse a été supprimée','error',5000); backToPicker(); return; }
   const subs = await loadSubs(S.game.code);
-  S.game = g; S.subs = subs;
+  const hints = await loadHints(S.game.code);
+  S.game = g; S.subs = subs; S.hints = hints;
   paintIfChanged();
 }
 
@@ -766,6 +786,7 @@ function signature(){
   return [g.status, g.startedAt, g.endedAt, g.durationMinutes,
           g.teams.map(t => t.id+t.startClueId+t.printSubId+(t.photoUrl?'1':'0')).join(','),
           S.subs.map(s => s.id+s.status+s.points+s.bonusPoints).join(','),
+          (S.hints||[]).map(h => h.id).join(','),
           S.fStatus, S.fTeam, S.fClue, S.tab].join('|');
 }
 function paintIfChanged(){
@@ -848,7 +869,8 @@ const clueOf = id => S.game?.clues.find(c => c.id === id) || null;
 
 function scoreOf(teamId){
   return S.subs.filter(s => s.teamId === teamId)
-               .reduce((n,s) => n + (s.points||0) + (s.bonusPoints||0), 0);
+               .reduce((n,s) => n + (s.points||0) + (s.bonusPoints||0), 0)
+       - hintDebt(teamId);          // indices photo achetés (#72) — le score peut passer sous zéro
 }
 
 function ava(t, size = 34, clickable = true){
@@ -868,6 +890,8 @@ async function render(){
   if(!S.user) return viewLogin();
   if(S.view === 'tpl-list') return viewTemplates();
   if(S.view === 'tpl-edit') return viewTplEditor();
+  if(S.view === 'recon-list') return viewReconList();
+  if(S.view === 'recon-edit') return viewRecon();
   if(!S.game){ S.games = await loadMyGames(); return viewPicker(); }
   paintConsole();
 }
@@ -943,6 +967,7 @@ function viewPicker(){
       <div class="ident"><em>${esc(S.user?.email || '')}</em></div>
       <div class="acts">
         <button class="btn ghost sm" onclick="openTemplates()">☆ Chasses types</button>
+        <button class="btn ghost sm" onclick="openRecon()">📍 Repérage</button>
         <a class="btn ghost sm" href="${APP_URL}">Application ↗</a>
         <button class="btn ghost sm" onclick="reloadGames()">↻ Actualiser</button>
         <button class="btn ghost sm" onclick="logout()">Déconnexion</button>
@@ -976,6 +1001,7 @@ async function openGame(code){
   if(g.isTemplate){ toast('C\'est une chasse type : utilisez-la depuis l\'application','error',5000); return; }
   S.game = g;
   S.subs = await loadSubs(code);
+  S.hints = await loadHints(code);
   S.startDraft = {}; S.lastSig = '';
   loadOrder();                       // panier de tirages propre à cette chasse
   S.tab = g.status === 'setup' ? 'pilot' : 'work';
@@ -1041,7 +1067,12 @@ function normClue(c){
     text: String(o.text ?? '').trim().slice(0, TPL_MAX_TEXT),
     points: Number.isFinite(p) ? Math.max(0, Math.min(9999, p)) : 100,
     lat: tplCoord(o.lat, 90),
-    lng: tplCoord(o.lng, 180)
+    lng: tplCoord(o.lng, 180),
+    // Indice photo (#72). `hintUrl` appartient à UNE chasse : c'est un chemin Storage sous
+    // son code. Il se recopie au lancement d'une chasse depuis un modèle, il ne voyage
+    // jamais par JSON — l'import le laisse tomber volontairement.
+    hintUrl: (typeof o.hintUrl === 'string' && /^https?:\/\//i.test(o.hintUrl)) ? o.hintUrl.slice(0, 500) : null,
+    hintCost: Number.isFinite(+o.hintCost) ? Math.max(0, Math.min(9999, Math.round(+o.hintCost))) : HINT_COST_DEFAULT
   };
 }
 // Deux indices de même id désapparieraient les preuves : on réattribue en silence.
@@ -1093,6 +1124,37 @@ async function tplCopyLogo(srcUrl, code){
   }catch(e){ toast('Logo du lieu non recopié : '+e.message,'error',4500); return null; }
 }
 
+// Photo indice d'un modèle → même fichier sous le code de la chasse créée (#72).
+// On tente d'abord la copie CÔTÉ SERVEUR (aucun transfert), et on retombe sur
+// télécharger-puis-renvoyer si le bucket la refuse — on ne sait pas d'avance ce que les
+// policies laissent passer, et un lancement de chasse ne doit pas échouer là-dessus.
+async function hintCopyTo(srcUrl, code, clueId){
+  if(!srcUrl) return null;
+  const dst = `${code}/hints/${clueId}.jpg`;
+  if(srcUrl.includes(`/${code}/hints/`)) return srcUrl;      // déjà en place
+  const m = srcUrl.match(/\/photos\/(.+?)(?:\?|$)/);
+  if(m){
+    try{
+      try{ await sb.storage.from('photos').remove([dst]); }catch(_){}
+      const { error } = await sb.storage.from('photos').copy(decodeURIComponent(m[1]), dst);
+      if(!error){
+        const { data } = sb.storage.from('photos').getPublicUrl(dst);
+        return data.publicUrl + '?v=' + Date.now();
+      }
+    }catch(_){}
+  }
+  try{
+    const res = await fetch(srcUrl);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const blob = await res.blob();
+    try{ await sb.storage.from('photos').remove([dst]); }catch(_){}
+    const { error } = await sb.storage.from('photos').upload(dst, blob, { contentType:'image/jpeg', upsert:false });
+    if(error) throw new Error(error.message);
+    const { data } = sb.storage.from('photos').getPublicUrl(dst);
+    return data.publicUrl + '?v=' + Date.now();
+  }catch(e){ console.warn('[hint copy]', e.message); return null; }
+}
+
 /* ───────────────────────── Vue : tiroir des chasses types ───────────────────────── */
 async function openTemplates(){
   S.view = 'tpl-list'; S.tpl = null; S.tplLoading = true;
@@ -1139,6 +1201,7 @@ function viewTemplates(){
       <div class="row" style="margin-bottom:16px">
         <button class="btn gold" onclick="newTemplate()">＋ Nouveau modèle</button>
         <button class="btn ghost" onclick="openTplImport()">⇱ Importer un JSON</button>
+        <button class="btn ghost" onclick="openRecon()">📍 Repérage terrain</button>
         <button class="btn ghost" onclick="openTemplates()">↻ Actualiser</button>
       </div>
       ${body}
@@ -1167,7 +1230,9 @@ function tplRow(t){
 
 async function removeTemplate(code, name){
   if(!confirm(`Retirer « ${name} » du tiroir ?\n\nLes chasses déjà créées à partir de ce modèle ne sont pas touchées.`)) return;
-  try{ await sb.storage.from('photos').remove([`${code}/logo.png`]); }catch(_){}
+  const tpl = (S.templates || []).find(x => x.code === code);
+  const dead = [`${code}/logo.png`].concat(((tpl && tpl.clues) || []).filter(c => c && c.id).map(c => `${code}/hints/${c.id}.jpg`));
+  try{ await sb.storage.from('photos').remove(dead); }catch(_){}
   const { error } = await sb.rpc('admin_purge_game', { p_code: code });
   if(error){ toast('Suppression impossible : '+error.message,'error',6000); return; }
   toast('Modèle retiré du tiroir','success');
@@ -1286,6 +1351,10 @@ function clueCard(c, i, n){
       <input class="input mono" id="lng-${esc(c.id)}" placeholder="longitude" value="${c.lng ?? ''}" oninput="setClue('${esc(c.id)}','lng',this.value)">
       <button class="btn ghost xs" onclick="event.stopPropagation();selectClue('${esc(c.id)}')">📍 poser sur la carte</button>
       <button class="btn ghost xs" onclick="event.stopPropagation();clearCoord('${esc(c.id)}')">effacer</button>
+      <label class="rc-cost">indice photo
+        <input class="input mono" type="number" min="0" max="9999" step="5" value="${hintCostOf(c)}"
+               onclick="event.stopPropagation()" oninput="setClue('${esc(c.id)}','hintCost',this.value)"></label>
+      <span class="tag">${c.hintUrl ? '📷 photo prise au repérage' : '📷 aucune photo — à faire au repérage'}</span>
     </div>
   </div>`;
 }
@@ -1300,9 +1369,9 @@ function setTplMeta(field, value){
 }
 function setClue(id, field, value){
   const c = S.tpl?.clues.find(x => x.id === id); if(!c) return;
-  if(field === 'points'){
+  if(field === 'points' || field === 'hintCost'){
     const n = Math.round(Number(value));
-    c.points = Number.isFinite(n) ? Math.max(0, Math.min(9999, n)) : 0;
+    c[field] = Number.isFinite(n) ? Math.max(0, Math.min(9999, n)) : (field === 'points' ? 0 : HINT_COST_DEFAULT);
   } else if(field === 'lat' || field === 'lng'){
     c[field] = tplCoord(value, field === 'lat' ? 90 : 180);
     syncTplMarkers();
@@ -1481,8 +1550,11 @@ function tplParse(raw){
   if(arr.length === 0){ out.error = 'Aucun indice dans ce JSON'; return out; }
   out.clues = normClues(arr);
   const noTitle = out.clues.filter(c => !c.title).length;
+  const hadHints = out.clues.filter(c => c.hintUrl).length;
+  out.clues.forEach(c => { c.hintUrl = null; });   // la photo appartient à la chasse d'origine
   out.warn = [
     arr.length > TPL_MAX_CLUES ? `tronqué à ${TPL_MAX_CLUES} indices` : null,
+    hadHints ? `${hadHints} photo(s) indice non importée(s) — à refaire au repérage` : null,
     noTitle ? `${noTitle} indice(s) sans titre — à compléter avant d'enregistrer` : null
   ].filter(Boolean);
   return out;
@@ -1626,10 +1698,324 @@ async function doLaunch(btn){
     const logo = await tplCopyLogo(t.logo_url, code);
     if(logo) await sb.from('games').update({ logo_url: logo }).eq('code', code);
   }
+  // Photos indice : RECOPIÉES sous le nouveau code, jamais partagées avec le modèle —
+  // supprimer le modèle emporterait son dossier Storage et crèverait la chasse (#72).
+  const withHints = clues.filter(c => c.hintUrl);
+  if(withHints.length){
+    btn.textContent = `Photos indice 0/${withHints.length}…`;
+    let done = 0, failed = 0;
+    for(const c of withHints){
+      const url = await hintCopyTo(c.hintUrl, code, c.id);
+      if(url) c.hintUrl = url; else { c.hintUrl = null; failed++; }
+      btn.textContent = `Photos indice ${++done}/${withHints.length}…`;
+    }
+    await sb.from('games').update({ clues }).eq('code', code);
+    if(failed) toast(`${failed} photo(s) indice non recopiée(s) — à refaire au repérage`,'error',6000);
+  }
   closeLaunch();
   S.tpl = null; S.tplDirty = false; S.view = 'console';
   toast(`Chasse « ${name} » créée · code ${code}`,'success',5000);
   await openGame(code);
+}
+
+/* ═══════════════════ Indice photo payant + repérage terrain (#72) ═══════════════════
+   Une équipe coincée peut demander la « photo indice » — un cliché du lieu pris au
+   repérage — contre des points (`clues[].hintCost`, 30 par défaut).
+
+   OÙ VIT QUOI
+     · la photo et son prix  → `games.clues[]` (`hintUrl`, `hintCost`), écrits par l'admin
+       authentifié : hors de portée des équipes, donc le prix fait foi au score ;
+     · la trace d'un achat   → table `hint_reveals`, INSERT ouvert et idempotent
+       (`unique (team_id, clue_id)`, 23505 = succès). Voir `migration-hints.sql`.
+
+   ⚠️ Le repérage écrit le TABLEAU `clues` en entier à chaque geste : deux téléphones qui
+   repèrent la même chasse en même temps s'écrasent l'un l'autre (dernier arrivé gagne).
+   Repérage à un seul appareil — c'est le cas d'usage, et le coût d'un verrou ne se
+   justifie pas ici.
+   ⚠️ Chemin Storage `{code}/hints/{clueId}.jpg` : le premier segment est le code, donc la
+   policy `photos_delete_owner` (#50) s'applique telle quelle. Bucket sans policy UPDATE :
+   `remove()` PUIS `upload()`, jamais d'upsert (#26/#43/#50).                            */
+
+const HINT_COST_DEFAULT = 30;
+const HINT_MAX = 1400;          // côté long de la photo indice
+const HINT_Q = 0.72;
+const RECON_ACC_WARN = 25;      // au-delà, la position relevée mérite une seconde tentative
+
+// ⚠️ Déclaration `function`, pas `const` : le banc JSDOM n'expose sur `window` que les
+// fonctions déclarées (une `const` reste dans la portée lexicale de l'eval).
+function hintCostOf(c){
+  return (c && Number.isFinite(+c.hintCost)) ? Math.max(0, Math.min(9999, Math.round(+c.hintCost))) : HINT_COST_DEFAULT;
+}
+
+// Dette d'une équipe : somme des coûts LUS DANS `games.clues`, jamais dans `hint_reveals`
+// — une équipe peut insérer la ligne qu'elle veut, elle ne peut pas écrire le prix.
+function hintDebt(teamId){
+  const g = S.game; if(!g) return 0;
+  return (S.hints || []).filter(h => h.teamId === teamId).reduce((n, h) => {
+    const c = g.clues.find(x => x.id === h.clueId);
+    return n + (c ? hintCostOf(c) : 0);
+  }, 0);
+}
+function hintsOf(teamId){ return (S.hints || []).filter(h => h.teamId === teamId); }
+
+async function loadHints(code){
+  if(!code || !sb) return [];
+  const { data, error } = await sb.from('hint_reveals').select('*').eq('game_code', code);
+  if(error){
+    // Table absente (migration non jouée) : on n'ampute pas la console pour autant.
+    if(/hint_reveals|schema cache|PGRST/i.test(error.message || '')) return [];
+    toast('Lecture des indices photo : '+error.message,'error',4500); return [];
+  }
+  return (data || []).map(r => ({ id:r.id, gameCode:r.game_code, teamId:r.team_id,
+                                  clueId:r.clue_id, cost:r.cost,
+                                  revealedAt:new Date(r.revealed_at).getTime() }));
+}
+
+/* ───────────────────────── Repérage : liste des chasses ───────────────────────── */
+// Repérable = ce qui n'a pas encore été joué : un modèle, ou une chasse en préparation.
+async function openRecon(){
+  S.view = 'recon-list'; S.recon = null; S.reconLoading = true;
+  viewReconList();
+  if(sb && S.user){
+    const { data, error } = await sb.from('games')
+      .select('code,name,location,status,hunt_date,clues,is_template,admin_id')
+      .order('created_at', { ascending:false }).limit(120);
+    if(error) toast('Lecture des chasses : '+error.message,'error',5000);
+    S.reconList = (data || [])
+      .filter(r => (r.admin_id === S.user.id || !isUuid(r.admin_id)))
+      .filter(r => r.is_template || r.status === 'setup');
+  }
+  S.reconLoading = false;
+  if(S.view === 'recon-list') viewReconList();
+}
+function leaveRecon(){ S.view = 'picker'; S.recon = null; render(); }
+
+function reconStats(clues){
+  const n = (clues || []).length;
+  return { n,
+    photos: (clues || []).filter(c => c.hintUrl).length,
+    geo: (clues || []).filter(c => c.lat != null && c.lng != null).length };
+}
+function viewReconList(){
+  S.view = 'recon-list';
+  const rows = S.reconList || [];
+  const body = S.reconLoading
+    ? '<div class="empty">Chargement…</div>'
+    : (rows.length === 0
+        ? '<div class="empty">Rien à repérer : ni modèle, ni chasse en préparation.</div>'
+        : '<div class="glist">' + rows.map(r => {
+            const st = reconStats(r.clues);
+            const meta = [ r.is_template ? 'chasse type' : 'en préparation',
+                           `${st.photos}/${st.n} photo${st.photos>1?'s':''}`,
+                           `${st.geo}/${st.n} position${st.geo>1?'s':''}`,
+                           r.location || null ].filter(Boolean).map(esc).join(' · ');
+            return `<button class="gitem" onclick="openReconGame('${esc(r.code)}')">
+              <span class="chip ${r.is_template ? 'gold' : ''}">${r.is_template ? '☆' : '●'}</span>
+              <span class="bd"><b>${esc(r.name || 'Sans nom')}</b><small>${meta}</small></span>
+              <span class="cd">${esc(r.code)}</span>
+            </button>`;
+          }).join('') + '</div>');
+  app().innerHTML = `
+    <div class="topbar">
+      <div class="brand"><i>✦</i>Repérage</div>
+      <div class="ident"><em>${esc(S.user?.email || '')}</em></div>
+      <div class="acts"><button class="btn ghost sm" onclick="leaveRecon()">← Vos chasses</button></div>
+    </div>
+    <div class="tplwrap" style="max-width:720px">
+      <h1 class="display" style="font-size:28px;margin-bottom:6px">Repérage</h1>
+      <p class="hint" style="margin:0 0 14px">Sur place, indice par indice : la <b>photo indice</b> que les équipes pourront acheter, et la <b>position réelle</b> relevée au GPS. Chaque geste est enregistré immédiatement.</p>
+      ${body}
+    </div>`;
+}
+
+/* ───────────────────────── Repérage : une chasse ───────────────────────── */
+async function openReconGame(code){
+  const g = await loadGame(code);
+  if(!g){ toast('Chasse introuvable','error'); return; }
+  if(g.status !== 'setup' && !g.isTemplate){ toast('Cette chasse est déjà lancée : le repérage est fermé','error',5500); return; }
+  S.recon = { code:g.code, name:g.name, isTemplate:g.isTemplate, clues:normClues(g.clues) };
+  S.view = 'recon-edit';
+  viewRecon();
+}
+function backToReconList(){ S.recon = null; openRecon(); }
+
+function viewRecon(){
+  S.view = 'recon-edit';
+  const r = S.recon; if(!r) return openRecon();
+  app().innerHTML = `
+    <div class="topbar">
+      <div class="brand"><i>✦</i>Repérage</div>
+      <div class="ident"><b>${esc(r.name)}</b><span>${esc(r.code)}</span></div>
+      <div class="acts">
+        <button class="btn ghost sm" onclick="showReconQR('${esc(r.code)}')">QR mobile</button>
+        <button class="btn ghost sm" onclick="backToReconList()">← Liste</button>
+      </div>
+    </div>
+    <div class="tplwrap" style="max-width:720px">
+      <div class="reconbar" id="recon-progress"></div>
+      <p class="hint" style="margin:10px 0 16px">Sur chaque indice : <b>📷</b> la photo que l'équipe achètera, <b>📍</b> la position relevée là où vous êtes. Tout part en base à chaque geste — inutile d'enregistrer.</p>
+      <div id="recon-clues"></div>
+    </div>`;
+  paintReconClues();
+}
+function paintReconProgress(){
+  const el = $('#recon-progress'); if(!el || !S.recon) return;
+  const st = reconStats(S.recon.clues);
+  el.innerHTML = `<span class="chip ${st.photos===st.n?'forest':''}">📷 ${st.photos}/${st.n}</span>
+                  <span class="chip ${st.geo===st.n?'forest':''}">📍 ${st.geo}/${st.n}</span>
+                  <span class="muted mono" style="font-size:11.5px">${st.n} indice${st.n>1?'s':''}</span>`;
+}
+function paintReconClues(){
+  const host = $('#recon-clues'); if(!host || !S.recon) return;
+  host.innerHTML = S.recon.clues.map((c,i) => reconCard(c,i)).join('');
+  paintReconProgress();
+}
+function reconCard(c, i){
+  const geo = (c.lat != null && c.lng != null);
+  return `<div class="reconclue" id="rc-${esc(c.id)}">
+    <div class="rc-head"><span class="tc-num">${i+1}</span>
+      <b style="flex:1;min-width:0">${esc(c.title || 'Sans titre')}</b>
+      <span class="chip">${c.points} pts</span></div>
+    <p class="rc-text">${esc(c.text || '')}</p>
+    <div class="rc-shot" id="rcshot-${esc(c.id)}">${reconShotHtml(c)}</div>
+    <div class="rc-acts">
+      <input type="file" accept="image/*" capture="environment" class="hidden-file" id="rcfile-${esc(c.id)}"
+             onchange="reconPhoto('${esc(c.id)}', this)">
+      <button class="btn sm" onclick="document.getElementById('rcfile-${esc(c.id)}').click()">📷 ${c.hintUrl ? 'Refaire' : 'Photo indice'}</button>
+      ${c.hintUrl ? `<button class="btn ghost sm ox" onclick="reconDropPhoto('${esc(c.id)}')">Retirer</button>` : ''}
+      <button class="btn sm ${geo?'ghost':''}" onclick="reconHere('${esc(c.id)}', this)">📍 ${geo ? 'Corriger la position' : 'Je suis ici'}</button>
+      <label class="rc-cost">coût
+        <input class="input mono" type="number" min="0" max="9999" step="5" value="${hintCostOf(c)}"
+               onchange="reconCost('${esc(c.id)}', this.value)"></label>
+    </div>
+    <div class="rc-geo mono" id="rcgeo-${esc(c.id)}">${reconGeoHtml(c)}</div>
+  </div>`;
+}
+function reconShotHtml(c){
+  return c.hintUrl
+    ? `<img src="${esc(c.hintUrl)}" alt="Photo indice" loading="lazy">`
+    : '<div class="rc-noshot">aucune photo indice — les équipes n\'auront rien à acheter sur cet indice</div>';
+}
+function reconGeoHtml(c){
+  if(c.lat == null || c.lng == null) return '<span class="warn">position non relevée</span>';
+  const acc = c.__acc ? ` · ±${Math.round(c.__acc)} m${c.__acc > RECON_ACC_WARN ? ' ⚠ approximatif, refaites à l\'arrêt' : ''}` : '';
+  return `📍 ${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}${acc}`;
+}
+
+// Écriture : le tableau `clues` part en entier, avec le garde-fou `.select()` habituel.
+async function reconSave(){
+  const r = S.recon; if(!r || !sb) return false;
+  const clues = normClues(r.clues);
+  const { data, error } = await sb.from('games').update({ clues }).eq('code', r.code).select('code');
+  if(error){ toast('Enregistrement : '+error.message,'error',6000); return false; }
+  if(!data || !data.length){ toast('Refusé par le serveur : cette chasse n\'appartient pas à ce compte.','error',6000); return false; }
+  return true;
+}
+
+async function reconPhoto(clueId, input){
+  const file = input.files?.[0];
+  input.value = '';
+  const r = S.recon; if(!r || !file) return;
+  const c = r.clues.find(x => x.id === clueId); if(!c) return;
+  const shot = $('#rcshot-'+clueId);
+  if(shot) shot.innerHTML = '<div class="rc-noshot">Compression…</div>';
+  let blob;
+  try{ blob = await hintCompress(file); }
+  catch(e){ toast('Image illisible : '+e.message,'error',5000); if(shot) shot.innerHTML = reconShotHtml(c); return; }
+  if(shot) shot.innerHTML = '<div class="rc-noshot">Envoi… ' + Math.round(blob.size/1024) + ' Ko</div>';
+  const path = `${r.code}/hints/${clueId}.jpg`;
+  try{ await sb.storage.from('photos').remove([path]); }catch(_){}
+  const { error } = await sb.storage.from('photos').upload(path, blob, { contentType:'image/jpeg', upsert:false });
+  if(error){ toast('Envoi de la photo : '+error.message,'error',6000); if(shot) shot.innerHTML = reconShotHtml(c); return; }
+  const { data } = sb.storage.from('photos').getPublicUrl(path);
+  c.hintUrl = data.publicUrl + '?v=' + Date.now();   // l'URL est stable : cache-buster obligatoire
+  if(!(await reconSave())){ if(shot) shot.innerHTML = reconShotHtml(c); return; }
+  paintReconClues();
+  toast('Photo indice enregistrée','success');
+}
+async function reconDropPhoto(clueId){
+  const r = S.recon; if(!r) return;
+  const c = r.clues.find(x => x.id === clueId); if(!c || !c.hintUrl) return;
+  if(!confirm('Retirer la photo indice de cet indice ?')) return;
+  try{ await sb.storage.from('photos').remove([`${r.code}/hints/${clueId}.jpg`]); }catch(_){}
+  c.hintUrl = null;
+  if(await reconSave()){ paintReconClues(); toast('Photo retirée','success'); }
+}
+// ⚠️ Le GPS d'un téléphone ment volontiers à l'arrêt sous un bâtiment : on affiche la
+// précision annoncée et on la signale au-delà de RECON_ACC_WARN plutôt que de l'ignorer.
+function reconHere(clueId, btn){
+  const r = S.recon; if(!r) return;
+  const c = r.clues.find(x => x.id === clueId); if(!c) return;
+  if(!navigator.geolocation){ toast('Géolocalisation indisponible sur cet appareil','error',5000); return; }
+  const label = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '📍 relevé…'; }
+  navigator.geolocation.getCurrentPosition(async pos => {
+    c.lat = Math.round(pos.coords.latitude  * 1e6) / 1e6;
+    c.lng = Math.round(pos.coords.longitude * 1e6) / 1e6;
+    c.__acc = pos.coords.accuracy || 0;
+    if(btn){ btn.disabled = false; btn.textContent = label; }
+    if(await reconSave()){
+      paintReconClues();
+      toast(c.__acc > RECON_ACC_WARN ? `Position relevée, mais à ±${Math.round(c.__acc)} m` : 'Position relevée', c.__acc > RECON_ACC_WARN ? 'error' : 'success', 4000);
+    }
+  }, err => {
+    if(btn){ btn.disabled = false; btn.textContent = label; }
+    toast('Position refusée ou indisponible : '+err.message,'error',6000);
+  }, { enableHighAccuracy:true, timeout:20000, maximumAge:0 });
+}
+async function reconCost(clueId, value){
+  const r = S.recon; if(!r) return;
+  const c = r.clues.find(x => x.id === clueId); if(!c) return;
+  const n = Math.round(Number(value));
+  c.hintCost = Number.isFinite(n) ? Math.max(0, Math.min(9999, n)) : HINT_COST_DEFAULT;
+  if(await reconSave()) toast('Coût enregistré : '+c.hintCost+' pts','success',2200);
+}
+
+// Compression dédiée : une photo indice n'est pas une preuve, elle n'ira jamais à l'impression.
+function hintCompress(file){
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error('lecture impossible'));
+    fr.onload = e => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('essayez un JPEG ou un PNG'));
+      img.onload = () => {
+        let w = img.width || HINT_MAX, h = img.height || HINT_MAX;
+        if(w > HINT_MAX || h > HINT_MAX){
+          if(w > h){ h = Math.round(h * HINT_MAX / w); w = HINT_MAX; }
+          else { w = Math.round(w * HINT_MAX / h); h = HINT_MAX; }
+        }
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, w, h);
+        cv.toBlob(b => b ? resolve(b) : reject(new Error('encodage impossible')), 'image/jpeg', HINT_Q);
+      };
+      img.src = e.target.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+// QR pour passer le repérage sur le téléphone : la régie est publiée au même endroit que
+// l'application, ce n'est pas un fichier local.
+function showReconQR(code){
+  const url = appBase() + 'regie.html?recon=' + encodeURIComponent(code);
+  const box = $('#qr-canvas');
+  try{
+    if(typeof qrcode === 'undefined') throw new Error('lib QR absente');
+    const qr = qrcode(0,'M'); qr.addData(url); qr.make();
+    box.innerHTML = qr.createDataURL ? `<img alt="QR repérage" src="${qr.createDataURL(8,4)}">` : qr.createSvgTag({cellSize:8,margin:4});
+  }catch(e){
+    box.innerHTML = `<p class="hint">QR indisponible. Ouvrez ce lien sur le téléphone : <strong>${esc(url)}</strong></p>`;
+  }
+  $('#qr-title').textContent = 'Repérage sur le téléphone';
+  $('#qr-hint').innerHTML = 'Scannez avec le téléphone qui fera le repérage : la console s\'y ouvre directement sur cette chasse. Connexion par code email à faire une fois.'
+    + (isServed() ? '' : '<br><strong style="color:var(--oxblood)">⚠ Console ouverte depuis un fichier local : ce QR renvoie vers le site en ligne, pas vers cette copie.</strong>');
+  $('#qr-code-text').textContent = code;
+  $('#qr-url-text').textContent = url;
+  $('#qr-ov').classList.add('open');
 }
 
 /* ───────────────────────── Vue : console ───────────────────────── */
@@ -1784,7 +2170,7 @@ function paneTeams(){
       ${ava(t, 36)}
       <span class="nm">
         <b>${esc(t.name)}</b>
-        <small>${done}/${g.clues.length} validé${done>1?'s':''}${last?` · dernière ${hhmm(last)}`:' · rien envoyé'}</small>
+        <small>${done}/${g.clues.length} validé${done>1?'s':''}${last?` · dernière ${hhmm(last)}`:' · rien envoyé'}${hintsOf(t.id).length?` · ${hintsOf(t.id).length} indice photo −${hintDebt(t.id)}`:''}</small>
         <span class="dots">${dots}</span>
       </span>
       ${g.status === 'setup' ? '' : `<span class="sc">${scoreOf(t.id)}</span>`}
@@ -2914,6 +3300,9 @@ async function purgeGamePhotos(code){
   const { data: teams } = await sb.from('teams').select('id').eq('game_code', code);
   (teams||[]).forEach(t => paths.push(`${code}/team_${t.id}.jpg`));
   paths.push(`${code}/logo.png`);
+  // Photos indice : `list()` n'est pas récursif, on les nomme depuis les indices (#72).
+  const { data: gm } = await sb.from('games').select('clues').eq('code', code).maybeSingle();
+  ((gm && gm.clues) || []).forEach(c => { if(c && c.id) paths.push(`${code}/hints/${c.id}.jpg`); });
   let err = null;
   for(let i = 0; i < paths.length; i += 100){
     const { error } = await sb.storage.from('photos').remove(paths.slice(i, i+100));
@@ -3182,8 +3571,11 @@ console.log('%cExpédition · Régie', 'font-weight:700', 'build', BUILD);
 (async () => {
   initClient();
   // Reprise directe par URL : regie.html?code=XXXX
-  const code = new URLSearchParams(location.search).get('code');
+  const q = new URLSearchParams(location.search);
+  const code = q.get('code');
+  const recon = q.get('recon');            // QR « Repérage » : le téléphone arrive ici (#72)
   S.user = await currentUser();
+  if(S.user && recon){ await openReconGame(recon.toUpperCase()); if(S.recon) return; }
   if(S.user && code){ await openGame(code.toUpperCase()); if(S.game) return; }
   render();
 })();

@@ -379,7 +379,7 @@ textarea.input{resize:vertical;min-height:80px;font-family:inherit}
 
 <script>
 // ============ STATE & STORAGE ============
-const STATE = { me:null, game:null, submissions:[], teams:[], realtimeChannel:null, pollTimer:null, currentClueId:null, perClueStartTime:{}, capturedPhoto:null, draftClues:null, adminTab:null, outbox:[] };
+const STATE = { me:null, game:null, submissions:[], teams:[], hints:[], realtimeChannel:null, pollTimer:null, currentClueId:null, perClueStartTime:{}, capturedPhoto:null, draftClues:null, adminTab:null, outbox:[] };
 
 // ────── Fiabilité : capture des erreurs non gérées (+ Sentry optionnel) ──────
 // But : ne plus être aveugle en cas de bug sur le terrain. Sans clé Sentry, la
@@ -422,7 +422,7 @@ function toast(msg, kind='', dur=2400){
 // Version du build : affichée en bas de l'écran de préparation et loguée au démarrage.
 // Sert à savoir d'un coup d'œil quelle version tourne réellement sur l'appareil
 // (un service worker ou un cache HTTP peut servir une app-shell périmée).
-const BUILD = '2026-08-17.1';
+const BUILD = '2026-08-30.1';
 
 const SUPABASE_DEFAULTS = {
   url: 'https://rwagwbzztcehvdztkscj.supabase.co',
@@ -927,6 +927,63 @@ async function handleLogoPick(e){
 }
 function clearGameLogo(){ STATE.logoDraft = { data:null, url:null }; refreshLogoField(); }
 
+/* ═══════════════════ Indice photo payant (#72) ═══════════════════
+   Une équipe coincée achète la « photo indice » — un cliché du lieu pris au repérage —
+   contre `clues[].hintCost` points (30 par défaut). Voir `migration-hints.sql`.
+   ⚠️ Le coût est lu dans `games.clues`, écrit par l'admin seul : une équipe ne peut pas
+   se fabriquer un prix. La ligne insérée dans `hint_reveals` n'en est qu'une copie d'audit.
+   ⚠️ INSERT SEUL et idempotent (`unique (team_id, clue_id)`) : 23505 = déjà acheté = succès,
+   même règle que les preuves (#26). Un achat ne se reprend pas — aucune policy UPDATE. */
+const HINT_COST_DEFAULT = 30;
+// ⚠️ Déclaration `function`, pas `const` : le banc JSDOM n'expose sur `window` que les
+// fonctions déclarées (une `const` reste dans la portée lexicale de l'eval).
+function hintCostOf(c){
+  return (c && Number.isFinite(+c.hintCost)) ? Math.max(0, Math.min(9999, Math.round(+c.hintCost))) : HINT_COST_DEFAULT;
+}
+
+async function loadHints(code){
+  if(!code || !sb) return [];
+  const { data, error } = await sb.from('hint_reveals').select('*').eq('game_code', code);
+  if(error) return [];                     // table absente ou réseau : le jeu continue sans
+  return (data||[]).map(r => ({ id:r.id, teamId:r.team_id, clueId:r.clue_id, cost:r.cost }));
+}
+function hintDebt(teamId){
+  const g = STATE.game; if(!g) return 0;
+  return (STATE.hints||[]).filter(h => h.teamId === teamId).reduce((n,h) => {
+    const c = g.clues.find(x => x.id === h.clueId);
+    return n + (c ? hintCostOf(c) : 0);
+  }, 0);
+}
+// Score net d'une équipe : preuves — indices photo achetés. Peut passer sous zéro, c'est
+// assumé : refuser l'achat bloquerait l'équipe au moment précis où elle est coincée.
+function teamScore(teamId){
+  return STATE.submissions.filter(s => s.teamId === teamId)
+              .reduce((p,s) => p + (s.points||0) + (s.bonusPoints||0), 0)
+       - hintDebt(teamId);
+}
+function hintRevealed(teamId, clueId){ return (STATE.hints||[]).some(h => h.teamId === teamId && h.clueId === clueId); }
+
+async function revealHint(clueId, btn){
+  const g = STATE.game, teamId = STATE.me?.teamId;
+  if(!g || !teamId) return;
+  const c = g.clues.find(x => x.id === clueId);
+  if(!c || !c.hintUrl) return;
+  const cost = hintCostOf(c);
+  if(!confirm(`Afficher la photo indice ?\n\nElle coûte ${cost} point${cost>1?'s':''}, retirés du score de l'équipe. L'achat est définitif.`)) return;
+  if(btn){ btn.disabled = true; btn.textContent = 'Achat…'; }
+  const row = { id: uid()+Date.now().toString(36), game_code:g.code, team_id:teamId, clue_id:clueId, cost };
+  const { error } = await sb.from('hint_reveals').insert(row);
+  // 23505 = la ligne existe déjà : l'achat avait abouti, un retry ne refait pas payer.
+  if(error && error.code !== '23505'){
+    if(btn){ btn.disabled = false; btn.textContent = `Voir la photo indice — ${cost} pts`; }
+    toast('Achat impossible : '+error.message, 'error', 6000); return;
+  }
+  STATE.hints = (STATE.hints||[]).concat([{ id:row.id, teamId, clueId, cost }]);
+  toast(`Photo indice débloquée — ${cost} pts`, 'success', 3500);
+  render();
+}
+
+
 // ============ REALTIME ============
 function startRealtime(){
   stopRealtime();
@@ -936,6 +993,7 @@ function startRealtime(){
     .on('postgres_changes', { event:'*', schema:'public', table:'games', filter:`code=eq.${code}` }, ()=>refreshState())
     .on('postgres_changes', { event:'*', schema:'public', table:'teams', filter:`game_code=eq.${code}` }, ()=>refreshState())
     .on('postgres_changes', { event:'*', schema:'public', table:'submissions', filter:`game_code=eq.${code}` }, ()=>refreshState())
+    .on('postgres_changes', { event:'*', schema:'public', table:'hint_reveals', filter:`game_code=eq.${code}` }, ()=>refreshState())
     .subscribe();
   // Filet de sécurité : poll lent au cas où le ws lâche
   if(STATE.pollTimer) clearInterval(STATE.pollTimer);
@@ -997,10 +1055,12 @@ async function refreshState(){
     await clearMe(); STATE.game=null; stopRealtime(); render(); return;
   }
   const subs = await loadSubmissions(STATE.me.gameCode);
+  const hints = await loadHints(STATE.me.gameCode);
   const gameChanged = JSON.stringify(g)!==JSON.stringify(STATE.game);
   const subsChanged = JSON.stringify(subs.map(s=>s.id+s.status+s.points+s.bonusPoints))!==JSON.stringify(STATE.submissions.map(s=>s.id+s.status+s.points+s.bonusPoints));
-  if(gameChanged || subsChanged){
-    STATE.game=g; STATE.submissions=subs;
+  const hintsChanged = hints.length !== (STATE.hints||[]).length;
+  if(gameChanged || subsChanged || hintsChanged){
+    STATE.game=g; STATE.submissions=subs; STATE.hints=hints;
     const cur = $('[data-screen]')?.dataset.screen;
     if(['admin-lobby','admin-live','admin-validation','admin-judging','admin-end','team-lobby','team-active','team-waiting','team-end','team-submitted'].includes(cur)){
       render();
@@ -2585,7 +2645,8 @@ function renderLeaderboard(showStats){
     const teamSubs = subs.filter(s=>s.teamId===t.id);
     const approved = teamSubs.filter(s=>s.status==='approved');
     // Total = points d'indice (conformes) + points de vote (toutes photos, refusées incluses)
-    const points = teamSubs.reduce((sum,s)=>sum+(s.points||0)+(s.bonusPoints||0),0);
+    // − indices photo achetés (#72). Un seul calcul de score dans l'app : `teamScore`.
+    const points = teamScore(t.id);
     return {team:t, points, approved:approved.length, total:teamSubs.length};
   }).sort((a,b)=>b.points-a.points);
   
@@ -2854,7 +2915,7 @@ function screenTeamActive(){
   const remaining = Math.max(0, g.durationMinutes*60 - elapsed);
   const mySubs = myTeamSubs();
   
-  const myPoints = mySubs.filter(s=>s.status==='approved').reduce((p,s)=>p+(s.points||0)+(s.bonusPoints||0),0);
+  const myPoints = teamScore(STATE.me.teamId);   // net des indices photo achetés (#72)
   
   // Verrou "indice de départ" : tant qu'il n'est pas réalisé, l'équipe ne voit que lui.
   const scid = myStartClueId();
@@ -2970,6 +3031,8 @@ function screenTeamCapture(){
         <p class="italic-d" style="font-size:17px;line-height:1.5;margin:0">"${escapeHtml(clue.text)}"</p>
       </div>
       
+      ${hintBlockHtml(clue)}
+
       <h3>Photo de l'équipe sur le lieu</h3>
       <p class="help-text" style="margin-bottom:10px">Toute l'équipe devant le lieu, bien visible en arrière-plan.</p>
       <label class="photo-preview" for="capture-input">
@@ -2983,6 +3046,27 @@ function screenTeamCapture(){
         <button class="btn oxblood" onclick="submitClue()" ${!STATE.capturedPhoto?'disabled':''}>Envoyer la preuve →</button>
       </div>
     </div>`;
+}
+
+// Bloc « indice photo » de l'écran de capture. Trois états : rien à vendre, achetable,
+// déjà acheté. Une fois acheté, la photo reste visible jusqu'à la fin de la chasse.
+function hintBlockHtml(clue){
+  if(!clue || !clue.hintUrl) return '';
+  const cost = hintCostOf(clue);
+  if(hintRevealed(STATE.me?.teamId, clue.id)){
+    return `<div class="card" style="margin-bottom:18px">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
+        <h3 style="flex:1;margin:0">Photo indice</h3>
+        <span class="chip">−${cost} pts</span>
+      </div>
+      <img src="${escapeHtml(clue.hintUrl)}" alt="Photo indice" style="display:block;width:100%;border-radius:10px" loading="lazy">
+    </div>`;
+  }
+  return `<div class="card" style="margin-bottom:18px">
+    <h3 style="margin:0 0 6px">Bloqués ?</h3>
+    <p class="help-text" style="margin:0 0 10px">Une photo du lieu existe. La voir coûte <strong>${cost} point${cost>1?'s':''}</strong>, retirés du score de l'équipe. Définitif.</p>
+    <button class="btn ghost" onclick="revealHint('${escapeHtml(clue.id)}', this)">Voir la photo indice — ${cost} pts</button>
+  </div>`;
 }
 
 async function handleCapture(e){
@@ -3095,12 +3179,10 @@ function screenTeamEnd(){
   const g = STATE.game;
   const mySubs = STATE.submissions.filter(s=>s.teamId===STATE.me.teamId);
   const myApproved = mySubs.filter(s=>s.status==='approved');
-  const myPoints = mySubs.reduce((p,s)=>p+(s.points||0)+(s.bonusPoints||0),0);
+  const myPoints = teamScore(STATE.me.teamId);
 
-  const board = g.teams.map(t=>{
-    const ts = STATE.submissions.filter(s=>s.teamId===t.id);
-    return {team:t, points:ts.reduce((p,s)=>p+(s.points||0)+(s.bonusPoints||0),0)};
-  }).sort((a,b)=>b.points-a.points);
+  const board = g.teams.map(t=>({ team:t, points: teamScore(t.id) }))
+                       .sort((a,b)=>b.points-a.points);
   const myRank = board.findIndex(b=>b.team.id===STATE.me.teamId)+1;
   
   app().innerHTML = `

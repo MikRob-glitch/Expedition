@@ -46,10 +46,12 @@ migration-print-choice.sql ← teams.print_submission_id (tirage souvenir)
 migration-venue-logo.sql   ← games.logo_url (logo du lieu sur le tirage)
 migration-storage-delete-fix.sql ← policy DELETE du bucket : `name` mal résolu (obligatoire)
 migration-templates.sql    ← games.is_template (tiroir de chasses types, hors purge 90 j)
+migration-hints.sql        ← hint_reveals : indices photo achetés par les équipes (obligatoire pour #72)
 tests/test-print.js        ← banc JSDOM : géométrie du cadre de tirage (38 tests, zone de sécurité)
 tests/test-map.js          ← banc JSDOM : carte live + minimap + émetteur de position (50 tests)
 tests/test-merge.js        ← banc JSDOM : fusion d'équipes en doublon (29 tests, ordre des écritures)
 tests/test-templates.js    ← banc JSDOM : chasses types dans la régie (123 tests, import par fichier)
+tests/test-hints.js        ← banc JSDOM : indice photo payant + repérage terrain (62 tests)
 .github/workflows/keepalive.yml ← ping Supabase (anti-pause tier gratuit)
 .nojekyll                  ← désactive Jekyll sur GitHub Pages
 scenarios/                 ← BIBLIOTHÈQUE DE PARCOURS (hors dépôt Git) — un scénario = 3 fichiers
@@ -164,9 +166,14 @@ teams        (id PK, game_code FK, name, start_clue_id, photo_url,
 submissions  (id PK, game_code FK, team_id FK, clue_id, photo_url,
               status, points, bonus_points, submitted_at, judged_at,
               lat, lng  ← hérités, inutilisés)
+
+hint_reveals (id PK, game_code FK, team_id FK, clue_id, cost, revealed_at,
+              unique (team_id, clue_id))
 ```
 
-- `games.clues` (JSONB) : `[{id, title, text, points, lat, lng}, ...]` — `lat`/`lng` **optionnels** (géoloc d'indice, `null` si non localisé). **Aucune migration** : les coords vivent dans le jsonb.
+- `games.clues` (JSONB) : `[{id, title, text, points, lat, lng, hintUrl, hintCost}, ...]` — tout est **optionnel** sauf `id`/`title`. **Aucune migration** : coordonnées, photo indice et son prix vivent dans le jsonb.
+- **`hint_reveals`** — trace des « indices photo » achetés (#72). Il FAUT une table : une équipe anonyme ne peut qu'**INSÉRER** (RLS UPDATE réservée à l'admin), elle ne peut donc écrire son achat ni dans `teams` ni dans `games`. INSERT ouvert, lecture publique, **aucun UPDATE ni DELETE** — un achat ne se reprend pas. `unique (team_id, clue_id)` rend l'achat idempotent : `23505` = déjà acheté = succès.
+  ⚠️ **`hint_reveals.cost` n'est qu'une copie d'audit.** Le score se calcule sur `games.clues[].hintCost`, seule valeur qu'une équipe ne peut pas écrire — sinon il suffirait d'insérer `cost: 0` pour s'offrir tous les indices. Migration : `migration-hints.sql`.
 - `games.hunt_date` / `games.location` : date et lieu de l'activité (optionnels) — repris sur le cadre du tirage souvenir et dans les listes de chasses.
 - `games.logo_url` : logo du lieu (optionnel), fichier `{code}/logo.png` du bucket `photos`, affiché à droite du cartouche du tirage. Recopié sous le nouveau code lors d'une duplication.
 - `games.admin_id` : reçoit `auth.uid()` (Supabase Auth) — l'admin propriétaire, vérifié par les RLS. ⚠️ Les chasses d'avant juin 2026 portent un identifiant client non-UUID (voir `migration-legacy-admin.sql`).
@@ -367,6 +374,24 @@ Leaflet. Tout le reste du travail du jour J est là.
 
 ⚠️ **Jamais ouverte dans un vrai navigateur ni sur un événement** au 2026-08-05 : syntaxe validée
 et 45 tests fonctionnels JSDOM au vert, ce qui n'est pas un essai terrain.
+
+### Indice photo payant (#72)
+Une équipe coincée achète la **photo indice** — un cliché du lieu pris au repérage — contre `clues[].hintCost` points (**30 par défaut**, réglable indice par indice). Trois états sur l'écran de capture : rien à vendre, achetable, déjà acheté (la photo reste alors visible jusqu'à la fin).
+
+⚠️ **Avant l'achat, l'URL de la photo n'est pas dans le HTML** — sinon l'inspecteur du navigateur suffirait à ne pas payer.
+
+⚠️ **Le score se calcule sur `games.clues[].hintCost`, jamais sur `hint_reveals.cost`.** Une équipe peut insérer la ligne qu'elle veut ; le prix, lui, vit dans `games`, que seul l'admin authentifié peut écrire. La colonne `cost` n'est qu'une copie d'audit de ce qui a été affiché.
+
+**Le score peut passer sous zéro**, et c'est voulu : refuser l'achat faute de points bloquerait l'équipe au moment précis où elle est coincée. Un seul calcul de score par surface (`teamScore` côté app, `scoreOf` côté régie) — les quatre endroits qui totalisaient à la main passent par lui.
+
+⚠️ **Une photo indice appartient à UNE chasse** (`{code}/hints/{clueId}.jpg`). Elle est **recopiée** sous le code de la chasse créée depuis un modèle, et **ne voyage pas par JSON** : l'import l'écarte et le signale. Même raisonnement que le logo du lieu. `hintUrl` finissant dans un `src=`, seul `http(s)://` est accepté.
+
+### Repérage terrain (#72)
+Régie → **📍 Repérage**, pensé pour le téléphone. La console **n'est pas locale** : elle est publiée sur Pages au même endroit que l'application, en HTTPS, avec la même connexion par code email. Un bouton **QR mobile** ouvre le téléphone directement sur la chasse à repérer (`regie.html?recon=CODE`). ⚠️ Ouverte en `file://`, elle paraît locale **et** la caméra comme le GPS sont refusés.
+
+Repérable = ce qui n'a pas encore été joué : une **chasse type** ou une chasse en **préparation**. Indice par indice : 📷 la photo (compression 1400 px / JPEG 0,72) et 📍 « je suis ici » (`enableHighAccuracy`, `maximumAge: 0`). ⚠️ **La précision annoncée par le GPS est affichée**, et signalée au-delà de 25 m : une position à ±80 m ne vaut pas mieux qu'une lecture de carte. Chaque geste part en base immédiatement, avec le garde-fou `.select()`.
+
+⚠️ **Le repérage réécrit le tableau `clues` en entier à chaque geste** : deux téléphones sur la même chasse s'écrasent l'un l'autre (dernier arrivé gagne). Repérage à un seul appareil.
 
 ### Indices de départ (dispersion)
 Dans le **lobby**, l'admin assigne un **indice de départ distinct par équipe** (menu + « Répartir auto »). Chaque équipe ne voit **que son indice de départ** ; dès qu'elle l'a **réalisé (photo envoyée)**, les autres se débloquent. Optionnel (`teams.start_clue_id`, « — Aucun — »).
@@ -596,6 +621,12 @@ Corbeille 🗑 sur chaque ligne de la liste, et bouton sur l'écran de fin. Doub
 | `exportTemplate` / `exportDraft` / `tplDownload` | Export du scénario en `.json` (même format que l'import) |
 | `openLaunch` / `doLaunch` / `tplCopyLogo` | Chasse créée depuis un modèle : indices à id neufs, logo **recopié** sous le nouveau code |
 | `genCode` / `freeCode` | Code à 4 caractères (alphabet réduit), sondé jusqu'à six tirages pour éviter une collision |
+| `hintCostOf` / `hintDebt` / `hintsOf` | Prix et dette d'indices photo — lus dans `games.clues`, jamais dans `hint_reveals` |
+| `openRecon` / `openReconGame` / `viewRecon` / `paintReconClues` | Repérage terrain : liste des repérables, puis une chasse indice par indice |
+| `reconPhoto` / `reconDropPhoto` / `hintCompress` | Photo indice : compression 1400 px, `remove()` puis `upload()` (bucket sans policy UPDATE) |
+| `reconHere` / `reconCost` / `reconSave` | Position relevée au GPS (précision affichée), coût, écriture immédiate avec `.select()` |
+| `hintCopyTo` | Photo indice recopiée sous le code de la chasse créée : copie serveur, repli sur renvoi |
+| `showReconQR` | QR pour passer le repérage sur le téléphone (`regie.html?recon=CODE`) |
 
 ---
 
@@ -644,13 +675,15 @@ Historiquement « sans auth, RLS permissives ». **Durci** depuis (Lots 1–2) :
 8. **Tirage souvenir** : composé côté client (canvas), sortie fixe 10×15 à ~300 dpi — la qualité plafonne à ce que vaut la photo envoyée (1600 px). Depuis le 2026-08-17 le cadre tient dans une **zone de sécurité de 4,5 mm** (`tests/test-print.js` refuse tout élément décoratif à moins de 4 mm du bord), ✅ **validée sur tirage réel en paysage ET en portrait** — le cadre complet arrive sur le papier. ⚠️ Le portrait n'avait jamais été imprimé jusque-là et portait le même défaut : **un format de sortie non imprimé n'est pas un format validé**, même si son jumeau l'est.
 9. **Reprise d'une chasse terminée** : `resumeHunt` restitue le temps restant mais ne « rejoue » rien — une équipe déjà déconnectée doit se reconnecter par la liste des équipes.
 10. **Deux surfaces, un seul module partagé.** Le cadre de tirage est mutualisé (`print-frame.js`, #59) ; le socle — mapping DB, export ZIP, purge, zoom, QR — reste **dupliqué** entre `expedition.html` et `regie.html`. **Un changement de schéma se répercute à la main dans les deux.** Prochain candidat à l'extraction si la douleur vient : le mapping DB.
-11. **La régie a servi sur un événement réel** (2026-08-06 : 3 équipes, 9 indices, 17 preuves, validation **et** vote menés depuis la console, arbitrage étalé sur toute la chasse). ⚠️ Deux réserves : cet événement tournait sur la version d'avant la carte live, la minimap et la fusion d'équipes — **ces trois-là n'ont jamais servi sur le terrain** (carte et minimap vérifiées en navigateur depuis) ; et **17 photos ne mettent aucune pression sur le débit d'arbitrage**, qui reste le vrai inconnu à effectif élevé. Restent aussi non éprouvés à l'œil : le **mode rafale** et l'affichage plein cadre des photos. Bancs **rejouables** conservés dans `tests/` : 38 (géométrie du cadre) + 50 (carte live, minimap, émetteur de position) + 29 (fusion d'équipes) + 123 (chasses types) = **240**. Le banc du cadre a dû être **réécrit** : celui de #59 vivait dans `/tmp` et a été perdu — c'est précisément pour cela qu'un cadre imprimé hors du papier n'a été découvert qu'au tirage. Le parcours admin de `expedition.html` reste le chemin éprouvé.
+11. **La régie a servi sur un événement réel** (2026-08-06 : 3 équipes, 9 indices, 17 preuves, validation **et** vote menés depuis la console, arbitrage étalé sur toute la chasse). ⚠️ Deux réserves : cet événement tournait sur la version d'avant la carte live, la minimap et la fusion d'équipes — **ces trois-là n'ont jamais servi sur le terrain** (carte et minimap vérifiées en navigateur depuis) ; et **17 photos ne mettent aucune pression sur le débit d'arbitrage**, qui reste le vrai inconnu à effectif élevé. Restent aussi non éprouvés à l'œil : le **mode rafale** et l'affichage plein cadre des photos. Bancs **rejouables** conservés dans `tests/` : 38 (géométrie du cadre) + 50 (carte live, minimap, émetteur de position) + 29 (fusion d'équipes) + 123 (chasses types) + 62 (indice photo et repérage) = **302**. Le banc du cadre a dû être **réécrit** : celui de #59 vivait dans `/tmp` et a été perdu — c'est précisément pour cela qu'un cadre imprimé hors du papier n'a été découvert qu'au tirage. Le parcours admin de `expedition.html` reste le chemin éprouvé.
 12. **Le site vitrine n'a ni versionnement ni retour arrière** (déployé par FTP), et son **devis n'est pas un envoi garanti** : le formulaire prépare le message et propose trois sorties (Gmail, `mailto:`, copie), mais rien ne prouve que le visiteur aille au bout, et aucune trace n'est conservée. Un envoi certain supposerait un service tiers (Formspree, Web3Forms, Netlify Forms).
 13. **Aucun banc ne voit les pixels — quatre défauts l'ont prouvé.** Chromium ne s'installe pas dans l'environnement de développement : les bancs JSDOM vérifient le comportement et la géométrie, jamais le rendu. Sont passés au travers, et ont tous été **vus à l'œil par l'organisateur** : sur le site (2026-08-05) un `mailto:` **muet** sur un Windows sans client mail et du **gras noir sur fond noir** ; dans la régie (2026-08-16) des **photos tronquées à la validation** (`max-height:100%` sous un parent flexible : la contrainte saute, l'image s'affiche à sa taille réelle) et un **QR encodant un chemin `file://`**. Les deux premiers sont couverts par des tests ; les deux derniers ne peuvent pas l'être. **Règle qui en découle : borner une image en unités viewport ou dans un bloc positionné, jamais en pourcentage sous un parent flexible.**
 14. **Les tests du cadre ne dessinent pas de pixels** : `node-canvas` ne s'installe pas dans l'environnement de développement, `tests/test-print.js` utilise un contexte 2D *enregistreur* et vérifie la **géométrie** (dimensions, rectangle dessiné, rayon et centre du sceau, textes tracés, distance au bord). Il attraperait une régression de mise en page, pas un défaut de rendu — ni ce que fait le labo du fichier. C'est un tirage réel, pas un test, qui a corrigé #55 (voir #58) puis #69 — et c'est un tirage réel, non le banc, qui a fermé #69 en confirmant les deux orientations.
 15. **L'éditeur de chasses types n'a jamais tourné dans un vrai navigateur** (#70/#71), ni sur un événement. Ses 123 tests sont du JSDOM : ils ne voient ni le rendu Leaflet réel, ni les RLS, ni le Storage, et le **glisser-déposer** d'un fichier n'est exercé que par le chemin `File` — l'événement `drop` lui-même ne l'est pas. À exercer une fois sur un modèle jetable avant de s'en servir pour un client.
 16. **Un scénario écrit au bureau n'est pas un scénario vendable.** Les coordonnées lues sur une carte valent ±50 à 150 m ; l'application juge sur photo **et** position. Un relevé sur le terrain, point par point, reste obligatoire avant de facturer — c'est vrai du parcours Saint-Nazaire livré dans `scenarios/`.
-17. **La carte live dépend du premier plan.** Une équipe n'émet sa position que si son application est ouverte et visible, GPS autorisé : téléphone verrouillé, appareil photo ouvert ou onglet en arrière-plan → le marqueur se fige. L'âge de chaque position est affiché pour cette raison ; **un marqueur immobile n'est pas une équipe immobile**. Contournement impossible en web : il faudrait une application native. Aucun historique non plus — le transport est éphémère, une position perdue l'est définitivement.
+17. **L'indice photo et le repérage n'ont jamais tourné dans un vrai navigateur** (#72), ni sur un événement. Le banc ne voit ni la caméra, ni le GPS réel, ni les RLS, ni le Storage : la prise de photo depuis un téléphone est le seul geste du lot dont personne n'a encore vu le résultat. ⚠️ `migration-hints.sql` doit être jouée — sans elle il n'y a simplement pas d'indice photo, l'application et la console continuent de fonctionner.
+18. **Repérage à un seul appareil.** Chaque geste réécrit le tableau `clues` en entier : deux téléphones sur la même chasse s'écrasent l'un l'autre.
+19. **La carte live dépend du premier plan.** Une équipe n'émet sa position que si son application est ouverte et visible, GPS autorisé : téléphone verrouillé, appareil photo ouvert ou onglet en arrière-plan → le marqueur se fige. L'âge de chaque position est affiché pour cette raison ; **un marqueur immobile n'est pas une équipe immobile**. Contournement impossible en web : il faudrait une application native. Aucun historique non plus — le transport est éphémère, une position perdue l'est définitivement.
 
 ---
 
@@ -725,6 +758,7 @@ node tests/test-print.js    # 38 — géométrie du cadre, zone de sécurité 4 
 node tests/test-map.js      # 50 — carte live, minimap, émetteur de position
 node tests/test-merge.js    # 29 — fusion d'équipes (ordre des écritures)
 node tests/test-templates.js # 123 — chasses types : normalisation, import fichier, carte, garde-fous
+node tests/test-hints.js    # 62 — indice photo payant (le prix fait foi côté games) + repérage
 node site/test-site.js      # 85 — site vitrine (dossier hors dépôt)
 ```
 
@@ -748,6 +782,6 @@ select public.purge_game('XXXX');
 
 ## Historique des évolutions
 
-Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu, **épreuve filigranée**, **sortie de secours de la phase validation**, tiroir de chasses types, QR du diaporama, **sceau et centrage du cadre**, la **console maître du jeu `regie.html`**, l'extraction du moteur de cadre dans **`print-frame.js`**, les **tirages à la demande**, le **site vitrine mis en ligne**, la **carte live du maître du jeu**, la **minimap**, la **fusion d'équipes en doublon**, les **photos entières à la validation**, le **QR robuste hors http**, la **zone de sécurité d'impression du cadre**, l'**éditeur de chasses types dans la console** et l'**import d'un scénario par fichier**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
+Le **journal détaillé et numéroté** des correctifs (D4CK live, export ZIP, sécurité Lots 1–2, RGPD, géoloc/carte, PWA app-shell + outbox, reconnexion, branding, envoi idempotent, zoom, QR d'accès, `.nojekyll`, lieu de chasse + duplication par liste, purge Storage, **tirage souvenir** 10×15, photos 1600 px, logo du lieu, **épreuve filigranée**, **sortie de secours de la phase validation**, tiroir de chasses types, QR du diaporama, **sceau et centrage du cadre**, la **console maître du jeu `regie.html`**, l'extraction du moteur de cadre dans **`print-frame.js`**, les **tirages à la demande**, le **site vitrine mis en ligne**, la **carte live du maître du jeu**, la **minimap**, la **fusion d'équipes en doublon**, les **photos entières à la validation**, le **QR robuste hors http**, la **zone de sécurité d'impression du cadre**, l'**éditeur de chasses types dans la console**, l'**import d'un scénario par fichier**, l'**indice photo payant** et le **repérage terrain**) est maintenu dans [`CLAUDE.md`](CLAUDE.md) — section « Journal des correctifs ».
 
 > ⚠️ **Un bug de service worker trouvé en ajoutant la régie** (#57, `CACHE` v25→v26) : depuis #35, le handler de navigation écrivait **toute** réponse sous `'./expedition.html'`. Ouvrir `regie.html` une seule fois écrasait donc l'app-shell en cache — hors ligne, un **joueur** serait retombé sur la console du maître du jeu. Le chemin de cache est désormais celui du document réellement demandé.
